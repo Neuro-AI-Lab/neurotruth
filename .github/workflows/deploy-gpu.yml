@@ -1,0 +1,26 @@
+name: Deploy — GPU Server (서버 A)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'llm-server/**'
+      - 'docker-compose.gpu.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH로 서버 A(GPU)에 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.GPU_SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /app
+            git pull origin main
+            docker-compose -f docker-compose.gpu.yml up -d --build
+            docker image prune -f

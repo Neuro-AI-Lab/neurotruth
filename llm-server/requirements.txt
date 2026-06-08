@@ -1,0 +1,14 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-dotenv==1.0.1
+httpx==0.27.0
+
+# ── 외부 API 방식 ──
+openai==1.30.0        # OpenAI API 사용 시
+# anthropic==0.28.0   # Claude API 사용 시
+
+# ── 로컬 모델 방식 (필요 시 주석 해제) ──
+# vllm==0.4.2         # vLLM (고성능 GPU 추론)
+# llama-cpp-python==0.2.77  # llama.cpp (경량)
+# transformers==4.41.0
+# torch==2.3.0

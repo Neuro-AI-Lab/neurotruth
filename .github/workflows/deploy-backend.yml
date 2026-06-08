@@ -1,0 +1,28 @@
+name: Deploy — Backend Server (서버 B)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'db/**'
+      - 'docker-compose.backend.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH로 서버 B에 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.BACKEND_SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /app
+            git pull origin main
+            docker-compose -f docker-compose.backend.yml up -d --build
+            docker image prune -f
