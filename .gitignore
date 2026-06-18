@@ -22,3 +22,49 @@ frontend/build/
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Android / Gradle build outputs
+*.iml
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Android Studio / local machine settings
+.idea/
+local.properties
+.DS_Store
+Thumbs.db
+
+# Samsung Health Sensor SDK binaries and local reference drops
+# Download the AAR manually and place it under wearos/libs/.
+wearos/libs/*.aar
+wearos/libs/*.jar
+samsung_health_sensor_sdk/
+aar_extracted/
+
+# Signing / secrets
+*.jks
+*.keystore
+*.p12
+*.env
+.env.*
+google-services.json
+
+# Measurement exports and local logs
+sensor_*.csv
+*.tsv
+*.log
+*.hprof
+
+# Local assistant/tool state
+.claude/
+.codex/
+.agents/
