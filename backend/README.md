@@ -119,6 +119,24 @@ docker build -t neurotruth-backend-test ./backend
 docker run -d --rm --name neurotruth-backend-monitor -p 8000:8000 neurotruth-backend-test
 ```
 
+GPU에서 실행하려면 NVIDIA driver, Docker Desktop WSL2 integration, NVIDIA Container Toolkit이 필요합니다. GPU 이미지 빌드와 실행:
+
+```powershell
+docker build `
+  --build-arg TORCH_FLAVOR=cu124 `
+  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 `
+  -t neurotruth-backend-gpu ./backend
+
+docker run -d --rm `
+  --gpus all `
+  --name neurotruth-backend-gpu `
+  -p 8000:8000 `
+  -e MODEL_DEVICE=cuda `
+  neurotruth-backend-gpu
+```
+
+GPU가 정상 연결되면 `/model/status`의 `device`가 `cuda:0` 또는 `cuda`로 표시됩니다.
+
 상태 확인:
 
 ```powershell
