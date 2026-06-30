@@ -2,18 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 시스템 패키지 설치
+# scipy/torch wheels are prebuilt, but gcc is kept for packages that may need
+# small native extensions during install.
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# 의존성 먼저 설치 (캐시 활용)
+# Install dependencies before copying source so Docker can cache this layer.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 소스 복사
+# `model/` contains the active checkpoint and the exact training-time code used
+# by the inference service.
 COPY app/ ./app/
+COPY model/ ./model/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,37 @@
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.keystore
+
+# Python local artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model artifacts and local experiment outputs
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.joblib
+*.npy
+*.npz
+model/weights/*
+!model/weights/.gitkeep
+model/runs/
+model/cache/
+
+# Local data exports and databases
+*.csv
+*.tsv
+*.db
+*.sqlite
+*.sqlite3
+*.log
