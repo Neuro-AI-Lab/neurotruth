@@ -1,37 +1,146 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
-from fastapi.middleware.cors import CORSMiddleware
-import httpx
+from __future__ import annotations
+
+"""FastAPI entrypoint for the Android <-> prediction server contract.
+
+The mobile app posts 10-second sensor windows to `/sensor-window` and keeps an
+SSE connection open to `/prediction-stream` for craving class results.
+"""
+
+import asyncio
+import json
 import os
+from contextlib import asynccontextmanager
+from typing import Any
 
-app = FastAPI(title="Backend API", version="1.0.0")
+import httpx
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
-# CORS 설정 (모바일 앱 + React 프론트에서 접근 허용)
+from app.inference import ModelUnavailableError, RealtimePredictionService
+
+LLM_SERVER_URL = os.getenv("LLM_SERVER_URL", "http://localhost:8001")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+SSE_KEEPALIVE_SECONDS = float(os.getenv("SSE_KEEPALIVE_SECONDS", "10"))
+
+# One process-wide service keeps the torch model loaded and owns the inference
+# queue. FastAPI routes only validate/request data and hand work to this service.
+prediction_service = RealtimePredictionService()
+
+
+class SensorSample(BaseModel):
+    """One flat sensor sample from the Android payload."""
+
+    model_config = ConfigDict(extra="allow")
+
+    sensor: str
+    timestampMs: int
+    value: float
+
+
+class SensorWindow(BaseModel):
+    """10-second rolling window sent by the Android app once per second."""
+
+    model_config = ConfigDict(extra="allow")
+
+    sessionStartedAtMs: int
+    sequence: int
+    sentAtMs: int
+    windowStartMs: int
+    windowEndMs: int
+    windowMs: int = Field(default=10_000)
+    samples: list[SensorSample] = Field(default_factory=list)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load the model at startup and stop the inference worker on shutdown."""
+
+    await prediction_service.start()
+    try:
+        yield
+    finally:
+        await prediction_service.stop()
+
+
+app = FastAPI(
+    title="Alcohol Craving Prediction Server API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 배포 시 실제 도메인으로 교체
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-LLM_SERVER_URL = os.getenv("LLM_SERVER_URL", "http://localhost:8001")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 
-
-# ───────────────────────────
-# 헬스체크
-# ───────────────────────────
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health() -> dict[str, Any]:
+    """Liveness check plus compact model/runtime status."""
+
+    return {"status": "ok", "model": prediction_service.status()}
 
 
-# ───────────────────────────
-# LLM 서버 호출 예시
-# ───────────────────────────
+@app.get("/model/status")
+async def model_status() -> dict[str, Any]:
+    """Detailed status for debugging the latest preprocessing/prediction."""
+
+    return prediction_service.status()
+
+
+@app.post("/sensor-window")
+async def sensor_window(payload: SensorWindow) -> dict[str, bool]:
+    """Accept one sensor window and enqueue it for background inference."""
+
+    try:
+        await prediction_service.submit(payload.model_dump())
+    except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.get("/prediction-stream")
+async def prediction_stream(request: Request) -> StreamingResponse:
+    """SSE stream used by the app to receive `event: craving` predictions."""
+
+    async def event_generator():
+        queue = await prediction_service.hub.subscribe()
+        try:
+            yield ": connected\n\n"
+            while not await request.is_disconnected():
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(), timeout=SSE_KEEPALIVE_SECONDS
+                    )
+                    data = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                    yield f"event: craving\ndata: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # Android keeps a 15s read timeout, so send a harmless SSE
+                    # comment before that timeout can fire.
+                    yield ": ping\n\n"
+        finally:
+            await prediction_service.hub.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/api/llm/chat")
-async def llm_chat(body: dict):
-    """백엔드에서 GPU 서버(LLM)로 요청을 중계합니다."""
+async def llm_chat(body: dict[str, Any]) -> Any:
+    """Legacy LLM proxy endpoint kept for the rest of the backend project."""
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             response = await client.post(
@@ -41,16 +150,14 @@ async def llm_chat(body: dict):
             )
             response.raise_for_status()
             return response.json()
-        except httpx.ConnectError:
-            raise HTTPException(status_code=503, detail="LLM 서버에 연결할 수 없습니다")
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=str(e))
+        except httpx.ConnectError as exc:
+            raise HTTPException(status_code=503, detail="LLM server is unavailable") from exc
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(status_code=exc.response.status_code, detail=str(exc)) from exc
 
 
-# ───────────────────────────
-# 예시 라우터 (나중에 분리 가능)
-# ───────────────────────────
 @app.get("/api/users")
-async def get_users():
-    # TODO: DB 연결 후 실제 구현
-    return [{"id": 1, "name": "테스트 유저"}]
+async def get_users() -> list[dict[str, Any]]:
+    """Placeholder route from the original backend scaffold."""
+
+    return [{"id": 1, "name": "test user"}]

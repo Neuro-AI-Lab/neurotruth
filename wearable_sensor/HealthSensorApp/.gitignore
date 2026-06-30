@@ -1,29 +1,3 @@
-# 환경변수 (절대 커밋 금지)
-.env
-*.env
-
-# 로컬 LLM 모델 파일 (용량이 매우 큼)
-llm-server/models/
-
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-
-# Node
-node_modules/
-frontend/build/
-
-# Docker
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-
 # Android / Gradle build outputs
 *.iml
 .gradle/
