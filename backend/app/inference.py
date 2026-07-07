@@ -440,14 +440,18 @@ class RealtimePredictionService:
                 recv_ms = payload.get("_recvWallMs")
                 comm_ms = (recv_ms - sent_ms) if (sent_ms is not None and recv_ms is not None) else None
                 server_ms = (time.perf_counter() - enqueue_perf) * 1000.0
-                self.latency.record(
-                    sequence=payload.get("sequence"),
-                    comm_ms=comm_ms,
-                    queue_ms=queue_ms,
-                    feature_ms=debug.get("featureMs"),
-                    model_ms=debug.get("modelMs"),
-                    server_ms=server_ms,
-                )
+                # Stash per-stage latencies on the event so main.py can log them
+                # together with the SSE send time (downlink) at the moment the
+                # event is actually pushed to the app. `_readyPerf` marks
+                # "prediction ready to send"; main.py diffs it against send time.
+                event["_lat"] = {
+                    "comm_ms": comm_ms,
+                    "queue_ms": queue_ms,
+                    "feature_ms": debug.get("featureMs"),
+                    "model_ms": debug.get("modelMs"),
+                    "server_ms": server_ms,
+                }
+                event["_readyPerf"] = time.perf_counter()
                 await self.hub.broadcast(event)
             except Exception:
                 LOGGER.exception("Prediction failed")

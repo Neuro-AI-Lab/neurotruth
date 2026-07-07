@@ -159,7 +159,7 @@ docker stop neurotruth-backend-monitor
 
 ## 지연시간 측정
 
-`app/inference_time.py`의 `LatencyRecorder`가 각 sensor window의 처리 지연을 단계별로 기록합니다. `prediction-stream` 연결이 시작될 때 `app/inference_time.txt`를 새로 덮어쓰고, 연결이 끊길 때 단계별 min/mean/max 요약을 덧붙입니다. 즉 항상 "마지막 연결" 세션 기록만 남습니다.
+`app/inference_time.py`의 `LatencyRecorder`가 각 sensor window의 처리 지연을 업링크→처리→다운링크 단계별로 기록합니다. 한 줄(row) 기록은 예측 결과를 앱에 SSE로 실제 전송하는 순간 `app/main.py`에서 남기므로, 서버 내부 처리시간뿐 아니라 앱까지 나가는 전송시간(`send_ms`)까지 한 줄에 담깁니다.
 
 | Metric | Meaning |
 |---|---|
@@ -168,8 +168,13 @@ docker stop neurotruth-backend-monitor
 | `feature_ms` | PPG/GSR 피처 추출 시간 |
 | `model_ms` | RandomForest 추론 시간 |
 | `server_ms` | 서버 총 처리시간 (큐 진입 → 예측 완료) |
+| `send_ms` | 다운링크 = 예측 완료 → SSE로 앱에 전송하는 순간 (`app/main.py`에서 측정) |
+
+세션은 활성 `prediction-stream` 연결 수를 참조 카운트로 관리합니다. 첫 연결이 열릴 때 `app/inference_time.txt`를 새로 덮어쓰고 마지막 연결이 닫힐 때 단계별 min/mean/max 요약을 덧붙이며, 앱이 재연결하며 연결이 잠깐 겹쳐도 기록이 중간에 끊기지 않습니다.
 
 로그 경로는 `LATENCY_LOG_PATH` 환경 변수로 바꿀 수 있으며, 기록 실패는 추론을 막지 않도록 무시됩니다.
+
+> ⚠️ Docker로 실행하면 이 파일은 컨테이너 내부(`/app/app/inference_time.txt`)에 써집니다. 호스트에서 바로 보려면 실행 시 볼륨을 마운트하거나(`-v`) `LATENCY_LOG_PATH`를 마운트된 경로로 지정하세요.
 
 ## Debug Checklist
 

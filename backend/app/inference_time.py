@@ -10,10 +10,13 @@ Records per-window latency to `inference_time.txt` next to this file:
 - feature_ms  : PPG/GSR 피처 추출 시간
 - model_ms    : RandomForest 추론 시간
 - server_ms   : 서버 총 처리시간 (큐 진입 → 예측 완료)
+- send_ms     : 다운링크 시간 = 예측 완료 → SSE로 앱에 전송하는 순간
+                (`app/main.py`의 prediction-stream 제너레이터에서 측정)
 
-파일은 prediction-stream 연결이 시작될 때마다 새로 덮어쓰이고(truncate),
-연결이 끊길 때 min/mean/max 요약이 덧붙습니다. 즉 항상 "마지막 연결" 세션의
-기록만 남습니다.
+파일은 첫 prediction-stream 연결이 열릴 때 새로 덮어써지고(truncate),
+마지막 연결이 닫힐 때 min/mean/max 요약이 덧붙습니다. 세션은 활성 SSE 연결
+수를 참조 카운트로 관리하므로, 앱이 재연결하며 연결이 잠깐 겹쳐도 기록이
+중간에 끊기지 않습니다. 즉 "연결이 하나라도 살아있는 동안"의 기록이 남습니다.
 """
 
 import os
@@ -33,6 +36,7 @@ _COLUMNS = [
     ("feature_ms", "feature"),
     ("model_ms", "model"),
     ("server_ms", "server"),
+    ("send_ms", "send"),
 ]
 
 
@@ -50,28 +54,36 @@ def _fmt_ts(epoch: float) -> str:
 
 
 class LatencyRecorder:
-    """Truncate-on-connect latency log. Thread-safe (worker thread + event loop)."""
+    """Latency log tied to live SSE connections. Thread-safe (worker + event loop).
+
+    The log session spans "at least one prediction-stream connection is open".
+    `start_session`/`end_session` are reference-counted so overlapping reconnects
+    do not truncate mid-session or silently stop recording.
+    """
 
     def __init__(self, log_path: Path = DEFAULT_LOG_PATH) -> None:
         self.log_path = log_path
         self._lock = threading.Lock()
         self._records: list[dict[str, Any]] = []
-        self._session_active = False
+        self._active_connections = 0
         self._session_start = 0.0
 
     def start_session(self, client: str = "") -> None:
-        """Overwrite the log file and begin a fresh latency session."""
+        """Register an SSE connection; the first one truncates the log file."""
 
         with self._lock:
+            self._active_connections += 1
+            if self._active_connections > 1:
+                # Another connection is already recording; keep its session.
+                return
             self._records = []
-            self._session_active = True
             self._session_start = time.time()
             header = (
                 f"# latency session start {_fmt_ts(self._session_start)}"
                 + (f"  client={client}" if client else "")
                 + "\n"
                 + "# times in milliseconds; comm_ms uses app clock (may be skewed)\n"
-                + "# seq\tcomm_ms\tqueue_ms\tfeature_ms\tmodel_ms\tserver_ms\n"
+                + "# seq\tcomm_ms\tqueue_ms\tfeature_ms\tmodel_ms\tserver_ms\tsend_ms\n"
             )
             self._write(header, mode="w")
 
@@ -84,11 +96,12 @@ class LatencyRecorder:
         feature_ms: float | None = None,
         model_ms: float | None = None,
         server_ms: float | None = None,
+        send_ms: float | None = None,
     ) -> None:
-        """Append one window's latency row (no-op if no active session)."""
+        """Append one window's latency row (no-op if no connection is open)."""
 
         with self._lock:
-            if not self._session_active:
+            if self._active_connections <= 0:
                 return
             rec = {
                 "sequence": sequence,
@@ -97,21 +110,26 @@ class LatencyRecorder:
                 "feature_ms": feature_ms,
                 "model_ms": model_ms,
                 "server_ms": server_ms,
+                "send_ms": send_ms,
             }
             self._records.append(rec)
             line = (
                 f"{_fmt(sequence)}\t{_fmt(comm_ms)}\t{_fmt(queue_ms)}\t"
-                f"{_fmt(feature_ms)}\t{_fmt(model_ms)}\t{_fmt(server_ms)}\n"
+                f"{_fmt(feature_ms)}\t{_fmt(model_ms)}\t{_fmt(server_ms)}\t"
+                f"{_fmt(send_ms)}\n"
             )
             self._write(line, mode="a")
 
     def end_session(self) -> None:
-        """Append a summary and close the current session."""
+        """Deregister an SSE connection; the last one appends a summary."""
 
         with self._lock:
-            if not self._session_active:
+            if self._active_connections <= 0:
                 return
-            self._session_active = False
+            self._active_connections -= 1
+            if self._active_connections > 0:
+                # Other connections are still recording; keep the session open.
+                return
             self._write(self._summary(), mode="a")
 
     def _summary(self) -> str:
