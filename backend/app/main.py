@@ -110,6 +110,10 @@ async def prediction_stream(request: Request) -> StreamingResponse:
 
     async def event_generator():
         queue = await prediction_service.hub.subscribe()
+        # Reset the latency log at the start of each connection; append a summary
+        # when it closes. Each connect overwrites the previous session's file.
+        client = request.client.host if request.client else ""
+        prediction_service.latency.start_session(client=client)
         try:
             yield ": connected\n\n"
             while not await request.is_disconnected():
@@ -125,6 +129,7 @@ async def prediction_stream(request: Request) -> StreamingResponse:
                     yield ": ping\n\n"
         finally:
             await prediction_service.hub.unsubscribe(queue)
+            prediction_service.latency.end_session()
 
     return StreamingResponse(
         event_generator(),
