@@ -1,0 +1,12 @@
+# latency session start 2026-07-07 16:35:30  client=127.0.0.1
+# times in milliseconds; comm_ms uses app clock (may be skewed)
+# seq	comm_ms	queue_ms	feature_ms	model_ms	server_ms
+1.000	30.812	0.088	43.980	140.408	186.146
+2.000	30.441	0.156	41.992	127.364	170.625
+3.000	30.500	0.125	37.332	123.596	161.801
+# latency session end 2026-07-07 16:35:32  (3 windows, 1.2s)
+# comm     min=30.44  mean=30.58  max=30.81  (n=3)
+# queue    min=0.09  mean=0.12  max=0.16  (n=3)
+# feature  min=37.33  mean=41.10  max=43.98  (n=3)
+# model    min=123.60  mean=130.46  max=140.41  (n=3)
+# server   min=161.80  mean=172.86  max=186.15  (n=3)

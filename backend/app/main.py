@@ -9,6 +9,7 @@ SSE connection open to `/prediction-stream` for craving class results.
 import asyncio
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -110,6 +111,10 @@ async def prediction_stream(request: Request) -> StreamingResponse:
 
     async def event_generator():
         queue = await prediction_service.hub.subscribe()
+        # Reset the latency log at the start of each connection; append a summary
+        # when it closes. Each connect overwrites the previous session's file.
+        client = request.client.host if request.client else ""
+        prediction_service.latency.start_session(client=client)
         try:
             yield ": connected\n\n"
             while not await request.is_disconnected():
@@ -117,7 +122,25 @@ async def prediction_stream(request: Request) -> StreamingResponse:
                     event = await asyncio.wait_for(
                         queue.get(), timeout=SSE_KEEPALIVE_SECONDS
                     )
-                    data = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                    # Downlink latency: time from "prediction ready" (stamped by
+                    # the worker) to the moment we hand it to this SSE response.
+                    # Log the full per-window row here so it also captures the
+                    # send time that only this endpoint can observe. (With N
+                    # connected clients each logs its own row; normally N=1.)
+                    ready_perf = event.get("_readyPerf")
+                    send_ms = (
+                        (time.perf_counter() - ready_perf) * 1000.0
+                        if ready_perf is not None
+                        else None
+                    )
+                    prediction_service.latency.record(
+                        sequence=event.get("sequence"),
+                        send_ms=send_ms,
+                        **(event.get("_lat") or {}),
+                    )
+                    # Never leak internal timing keys into the app payload.
+                    public = {k: v for k, v in event.items() if not k.startswith("_")}
+                    data = json.dumps(public, ensure_ascii=False, separators=(",", ":"))
                     yield f"event: craving\ndata: {data}\n\n"
                 except asyncio.TimeoutError:
                     # Android keeps a 15s read timeout, so send a harmless SSE
@@ -125,6 +148,7 @@ async def prediction_stream(request: Request) -> StreamingResponse:
                     yield ": ping\n\n"
         finally:
             await prediction_service.hub.unsubscribe(queue)
+            prediction_service.latency.end_session()
 
     return StreamingResponse(
         event_generator(),

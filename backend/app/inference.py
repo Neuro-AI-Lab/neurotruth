@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-"""Realtime craving inference service.
+"""Realtime craving inference service (feature-based RandomForest).
 
-This module adapts the Android sensor payload to the current training code in
-`backend/model`: DualBranchNet expects PPG `(B, 1, 250)` and GSR `(B, 1, 10)`.
-The preprocessing and scaling settings are read from the model checkpoint and
-model/config.py so server inference stays aligned with training.
+The Android app posts 10-second sensor windows. This service upsamples the sparse
+app samples (PPG ~25Hz, EDA ~1Hz) onto the 51.2Hz training grid, extracts the same
+NeuroKit PPG features (HR/HRV/SI/RR) + EDA tonic statistics used in training via
+`backend/model/features.py`, and runs the saved RandomForest bundle
+(keep + imputer + scaler + clf) from `backend/model/weights`. No torch/GPU is used.
 """
 
 import asyncio
@@ -18,6 +19,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
+
+try:  # package run (uvicorn app.main) vs. direct import in tests
+    from app.inference_time import LatencyRecorder
+except ImportError:  # pragma: no cover
+    from inference_time import LatencyRecorder
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,105 +76,91 @@ class PredictionHub:
                 LOGGER.warning("Dropped prediction for a slow SSE subscriber")
 
 
-class TorchCravingModel:
-    """Loads the torch checkpoint and performs one-window predictions."""
+class CravingModel:
+    """Loads the RandomForest joblib bundle and performs one-window predictions."""
 
-    def __init__(self, model_path: Path, device: str = "auto") -> None:
+    def __init__(self, model_path: Path) -> None:
         self.model_path = model_path
-        self.requested_device = device
-        self.device: Any | None = None
-        self.model: Any | None = None
-        self.torch: Any | None = None
-        self.preprocessing: Any | None = None
+        self.features: Any | None = None
         self.config: Any | None = None
 
+        # Bundle contents (see feature_classification/classify.py fit_predict).
+        self.keep: list[str] | None = None
+        self.imputer: Any | None = None
+        self.scaler: Any | None = None
+        self.clf: Any | None = None
+        self.feature_names: list[str] | None = None
+        self.class_labels: list[str] = []
+        self.model_name: str | None = None
         self.n_classes = 3
-        self.scale_mode = "perwin"
-        self.scale_method = "minmax"
-        self.ppg_scaler: tuple[np.ndarray | None, np.ndarray | None] = (None, None)
-        self.gsr_scaler: tuple[np.ndarray | None, np.ndarray | None] = (None, None)
         self.last_debug: dict[str, Any] | None = None
 
+        # Raw grid the sparse app samples are interpolated onto before feature
+        # extraction. Mirrors model/config.py (training used 51.2Hz x 512).
         self.fs_raw = 51.2
-        self.fs_ppg = 25.0
-        self.fs_gsr = 1.0
+        self.fs_gsr = 51.2
         self.win_sec = 10.0
         self.raw_win_len = 512
-        self.ppg_win = 250
-        self.gsr_win = 10
 
     @property
     def ready(self) -> bool:
-        return self.model is not None and self.torch is not None
+        return self.clf is not None
 
     def load(self) -> None:
-        """Load model code, preprocessing code, config, checkpoint, and weights."""
+        """Load feature/config code and the RandomForest bundle."""
 
         if not self.model_path.exists():
-            raise FileNotFoundError(f"Model checkpoint not found: {self.model_path}")
+            raise FileNotFoundError(f"Model bundle not found: {self.model_path}")
 
-        torch = importlib.import_module("torch")
-        self.torch = torch
-        self.device = self._resolve_device(torch)
+        import joblib
 
         model_dir = self._find_model_code_dir()
         if str(model_dir) not in sys.path:
             sys.path.insert(0, str(model_dir))
-        # The training package uses bare imports (`import model`, `import config`).
-        # Drop any earlier model package so reloads or model swaps use this path.
-        for module_name in ("model", "preprocessing", "config"):
+        # features.py uses bare imports (`import config`). Drop any earlier copy so
+        # reloads or model swaps use this path.
+        for module_name in ("config", "features"):
             sys.modules.pop(module_name, None)
         self.config = importlib.import_module("config")
-        model_module = importlib.import_module("model")
-        self.preprocessing = importlib.import_module("preprocessing")
+        self.features = importlib.import_module("features")
         self._load_runtime_config()
 
-        checkpoint = self._load_checkpoint(torch)
-        state_dict = checkpoint
-        if isinstance(checkpoint, dict):
-            state_dict = checkpoint.get("state_dict", checkpoint)
-            self.n_classes = int(checkpoint.get("n_classes", self.n_classes))
-            self.scale_mode = str(checkpoint.get("scale_mode", self.scale_mode))
-            self.scale_method = str(checkpoint.get("scale_method", self.scale_method))
-            self.ppg_scaler = self._as_scaler_tuple(checkpoint.get("ppg_scaler"))
-            self.gsr_scaler = self._as_scaler_tuple(checkpoint.get("gsr_scaler"))
-
-        DualBranchNet = getattr(model_module, "DualBranchNet")
-        self.model = DualBranchNet(out_dim=self.n_classes)
-        try:
-            self.model.load_state_dict(state_dict)
-        except RuntimeError:
-            stripped = {
-                key.removeprefix("module."): value for key, value in state_dict.items()
-            }
-            self.model.load_state_dict(stripped)
-        self.model.to(self.device)
-        self.model.eval()
+        bundle = joblib.load(self.model_path)
+        self.keep = list(bundle["keep"])
+        self.imputer = bundle["imputer"]
+        self.scaler = bundle["scaler"]
+        self.clf = bundle["clf"]
+        self.feature_names = list(bundle.get("features", self.keep))
+        self.class_labels = list(bundle.get("class_labels", []))
+        self.model_name = bundle.get("model_name")
+        self.n_classes = int(getattr(self.clf, "n_classes_", len(self.class_labels) or 3))
         LOGGER.info(
-            "Loaded craving model from %s on %s (PPG=%s, GSR=%s, scale=%s/%s)",
+            "Loaded %s craving model from %s (%d features, classes=%s)",
+            self.model_name,
             self.model_path,
-            self.device,
-            self.ppg_win,
-            self.gsr_win,
-            self.scale_mode,
-            self.scale_method,
+            len(self.keep),
+            self.class_labels,
         )
 
     def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Run preprocessing, scaling, torch inference, and SSE event shaping."""
+        """Run feature extraction, preprocessing, RF inference, and SSE shaping."""
 
         if not self.ready:
             raise ModelUnavailableError("Model is not loaded")
+        assert self.imputer is not None and self.scaler is not None and self.clf is not None
 
-        xp, xg, debug = self._payload_to_tensors(payload)
-        torch = self.torch
-        assert torch is not None
-        assert self.model is not None
-        with torch.no_grad():
-            ppg_tensor = torch.from_numpy(xp).to(self.device)
-            gsr_tensor = torch.from_numpy(xg).to(self.device)
-            logits = self.model(ppg_tensor, gsr_tensor)
-            probabilities = torch.softmax(logits, dim=1).cpu().numpy()[0]
+        feature_t0 = time.perf_counter()
+        feat_row, debug = self._payload_to_features(payload)
+        feature_ms = (time.perf_counter() - feature_t0) * 1000.0
+
+        # Match classify._apply_preprocess: select keep columns (missing -> NaN),
+        # then imputer(median) + scaler, then predict.
+        model_t0 = time.perf_counter()
+        frame = pd.DataFrame([feat_row]).reindex(columns=self.keep)
+        imputed = self.imputer.transform(frame)
+        scaled = self.scaler.transform(imputed)
+        probabilities = self.clf.predict_proba(scaled)[0]
+        model_ms = (time.perf_counter() - model_t0) * 1000.0
 
         craving_class = int(np.argmax(probabilities))
         timestamp_ms = int(time.time() * 1000)
@@ -187,134 +180,84 @@ class TorchCravingModel:
                 "confidence": event["confidence"],
                 "predictionTimestampMs": timestamp_ms,
                 "sequence": sequence,
+                "featureMs": round(feature_ms, 3),
+                "modelMs": round(model_ms, 3),
             }
         )
         self.last_debug = debug
         LOGGER.info(
             "prediction sequence=%s class=%s probs=%s ppg_raw=%s gsr_raw=%s "
-            "ppg_scaled=[%.4f,%.4f] gsr_scaled=[%.4f,%.4f]",
+            "features_used=%s/%s",
             sequence,
             craving_class,
             debug["probabilities"],
             debug["channels"]["ppg"]["rawSampleCount"],
             debug["channels"]["gsr"]["rawSampleCount"],
-            debug["scaled"]["ppg"]["min"],
-            debug["scaled"]["ppg"]["max"],
-            debug["scaled"]["gsr"]["min"],
-            debug["scaled"]["gsr"]["max"],
+            debug["usedFeatureCount"],
+            len(self.keep or []),
         )
         return event
 
-    def _resolve_device(self, torch: Any) -> Any:
-        requested = self.requested_device.strip().lower()
-        if requested == "auto":
-            selected = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            selected = requested
-        if selected.startswith("cuda") and not torch.cuda.is_available():
-            LOGGER.warning("CUDA requested but unavailable; falling back to CPU")
-            selected = "cpu"
-        return torch.device(selected)
-
-    def _load_checkpoint(self, torch: Any) -> Any:
-        try:
-            return torch.load(self.model_path, map_location="cpu", weights_only=False)
-        except TypeError:
-            return torch.load(self.model_path, map_location="cpu")
-
     def _find_model_code_dir(self) -> Path:
         for candidate in (self.model_path.parent, *self.model_path.parents):
-            if (candidate / "model.py").exists():
+            if (candidate / "features.py").exists() and (candidate / "config.py").exists():
                 return candidate
         return Path(__file__).resolve().parents[1] / "model"
 
     def _load_runtime_config(self) -> None:
-        """Mirror model/config.py signal lengths and sampling rates."""
+        """Mirror model/config.py signal grid so serving matches training."""
 
         config = self.config
         if config is None:
             return
         self.fs_raw = float(getattr(config, "FS_RAW", self.fs_raw))
-        self.fs_ppg = float(getattr(config, "FS_PPG", self.fs_ppg))
-        self.fs_gsr = float(getattr(config, "FS_GSR", self.fs_gsr))
+        self.fs_gsr = float(getattr(config, "FS_GSR", self.fs_raw))
         self.win_sec = float(getattr(config, "WIN_SEC", self.win_sec))
-        self.raw_win_len = int(round(self.fs_raw * self.win_sec))
-        self.ppg_win = int(getattr(config, "PPG_WIN", round(self.fs_ppg * self.win_sec)))
-        self.gsr_win = int(getattr(config, "GSR_WIN", round(self.fs_gsr * self.win_sec)))
+        self.raw_win_len = int(getattr(config, "WIN_LEN", round(self.fs_raw * self.win_sec)))
 
-    def _payload_to_tensors(
+    def _payload_to_features(
         self, payload: dict[str, Any]
-    ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-        """Convert one JSON payload into model-ready PPG/GSR tensors."""
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Convert one JSON payload into the RF feature row."""
 
         samples = payload.get("samples") or []
-        raw_target_ms = self._target_timestamps(payload, samples, self.raw_win_len)
+        target_ms = self._target_timestamps(payload, samples, self.raw_win_len)
 
-        # First place sparse/irregular app samples on the training raw grid
-        # (51.2Hz, 512 points). model/preprocessing.py then performs the same
-        # filter/resample path used in training: PPG 25Hz and GSR 1Hz.
-        ppg_raw, ppg_info = self._resample_payload_channel(samples, PPG_SENSORS, raw_target_ms)
-        gsr_raw, gsr_info = self._resample_payload_channel(samples, GSR_SENSORS, raw_target_ms)
+        # Interpolate sparse/irregular app samples onto the 51.2Hz training grid.
+        # PPG ~25Hz and EDA ~1Hz are both upsampled to 512 points so NeuroKit
+        # features are computed at the same fs used during training.
+        ppg_raw, ppg_info = self._resample_payload_channel(samples, PPG_SENSORS, target_ms)
+        gsr_raw, gsr_info = self._resample_payload_channel(samples, GSR_SENSORS, target_ms)
 
-        ppg, ppg_finite = self._preprocess_ppg(ppg_raw)
-        gsr, gsr_finite = self._preprocess_gsr(gsr_raw)
-        ppg = self._fit_length(ppg, self.ppg_win)
-        gsr = self._fit_length(gsr, self.gsr_win)
-        ppg_finite = self._fit_length(ppg_finite.astype(np.float32), self.ppg_win) > 0.5
-        gsr_finite = self._fit_length(gsr_finite.astype(np.float32), self.gsr_win) > 0.5
+        assert self.features is not None
+        feat: dict[str, Any] = {}
+        try:
+            feat.update(self.features.extract_ppg_features(ppg_raw, fs=self.fs_raw, preprocess=True))
+        except Exception:
+            LOGGER.exception("PPG feature extraction failed")
+        try:
+            feat.update(self.features.extract_gsr_features(gsr_raw, fs=self.fs_gsr))
+        except Exception:
+            LOGGER.exception("GSR feature extraction failed")
 
-        xp = ppg[None, None, :].astype(np.float32)
-        xg = gsr[None, None, :].astype(np.float32)
-        # The checkpoint currently records per-window MinMax scaling. If future
-        # checkpoints store global scalers, _scale_channel will use them.
-        xp_scaled = self._scale_channel(xp, self.ppg_scaler)
-        xg_scaled = self._scale_channel(xg, self.gsr_scaler)
-
+        used = [
+            c
+            for c in (self.keep or [])
+            if c in feat and feat[c] is not None and feat[c] == feat[c]  # non-NaN
+        ]
         debug = {
             "windowMs": payload.get("windowMs"),
             "windowStartMs": payload.get("windowStartMs"),
             "windowEndMs": payload.get("windowEndMs"),
-            "scaleMode": self.scale_mode,
-            "scaleMethod": self.scale_method,
             "rawSamplingHz": self.fs_raw,
-            "ppgSamplingHz": self.fs_ppg,
             "gsrSamplingHz": self.fs_gsr,
-            "ppgSamples": self.ppg_win,
-            "gsrSamples": self.gsr_win,
-            "channels": {
-                "ppg": {
-                    **ppg_info,
-                    "preprocessedLength": int(ppg.size),
-                    "preprocessedFiniteRatio": _finite_ratio(ppg_finite),
-                    "preprocessedMin": _finite_min(ppg),
-                    "preprocessedMax": _finite_max(ppg),
-                },
-                "gsr": {
-                    **gsr_info,
-                    "preprocessedLength": int(gsr.size),
-                    "preprocessedFiniteRatio": _finite_ratio(gsr_finite),
-                    "preprocessedMin": _finite_min(gsr),
-                    "preprocessedMax": _finite_max(gsr),
-                },
-            },
-            "scaled": {
-                "ppg": {
-                    "shape": list(xp_scaled.shape),
-                    "min": _finite_min(xp_scaled),
-                    "max": _finite_max(xp_scaled),
-                    "mean": _finite_mean(xp_scaled),
-                    "std": _finite_std(xp_scaled),
-                },
-                "gsr": {
-                    "shape": list(xg_scaled.shape),
-                    "min": _finite_min(xg_scaled),
-                    "max": _finite_max(xg_scaled),
-                    "mean": _finite_mean(xg_scaled),
-                    "std": _finite_std(xg_scaled),
-                },
-            },
+            "rawWindowLength": self.raw_win_len,
+            "modelName": self.model_name,
+            "extractedFeatureCount": int(len(feat)),
+            "usedFeatureCount": int(len(used)),
+            "channels": {"ppg": ppg_info, "gsr": gsr_info},
         }
-        return xp_scaled.astype(np.float32), xg_scaled.astype(np.float32), debug
+        return feat, debug
 
     def _target_timestamps(
         self, payload: dict[str, Any], samples: list[dict[str, Any]], length: int
@@ -347,7 +290,7 @@ class TorchCravingModel:
     ) -> tuple[np.ndarray, dict[str, Any]]:
         """Select one sensor channel and interpolate it onto `target_ms`."""
 
-        by_sensor = {name: [] for name in sensor_names}
+        by_sensor: dict[str, list[tuple[float, float]]] = {name: [] for name in sensor_names}
         for sample in samples:
             sensor = str(sample.get("sensor", "")).upper()
             if sensor not in by_sensor:
@@ -409,79 +352,6 @@ class TorchCravingModel:
             "resampledMax": _finite_max(resampled),
         }
 
-    def _preprocess_ppg(self, ppg_raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        if self.preprocessing is None:
-            raise ModelUnavailableError("Model preprocessing module is not loaded")
-        try:
-            ppg, finite = self.preprocessing.preprocess_ppg(ppg_raw)
-            return ppg.astype(np.float32), np.asarray(finite, dtype=bool)
-        except Exception:
-            LOGGER.exception("PPG preprocessing failed; using raw resampled channel")
-            return ppg_raw.astype(np.float32), np.isfinite(ppg_raw)
-
-    def _preprocess_gsr(self, gsr_raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        if self.preprocessing is None:
-            raise ModelUnavailableError("Model preprocessing module is not loaded")
-        try:
-            gsr, finite = self.preprocessing.preprocess_gsr(gsr_raw)
-            return gsr.astype(np.float32), np.asarray(finite, dtype=bool)
-        except Exception:
-            LOGGER.exception("GSR preprocessing failed; using raw resampled channel")
-            return gsr_raw.astype(np.float32), np.isfinite(gsr_raw)
-
-    def _fit_length(self, values: np.ndarray, length: int) -> np.ndarray:
-        """Guarantee exact model input lengths even after signal resampling."""
-
-        values = np.asarray(values)
-        if values.size == length:
-            return values.astype(np.float32)
-        if values.size == 0:
-            return np.zeros(length, dtype=np.float32)
-        source_x = np.linspace(0.0, 1.0, values.size, endpoint=False)
-        target_x = np.linspace(0.0, 1.0, length, endpoint=False)
-        return np.interp(target_x, source_x, values.astype(float)).astype(np.float32)
-
-    def _scale_channel(
-        self,
-        x: np.ndarray,
-        scaler: tuple[np.ndarray | None, np.ndarray | None],
-    ) -> np.ndarray:
-        """Apply checkpoint scaling semantics to one branch input."""
-
-        if self.scale_mode == "perwin" or scaler[0] is None or scaler[1] is None:
-            offset, scale = self._stats(x, axis=2)
-        else:
-            offset, scale = scaler
-            assert offset is not None
-            assert scale is not None
-            expected_shape = (1, x.shape[1], 1)
-            if offset.shape != expected_shape:
-                offset = offset.reshape(expected_shape)
-            if scale.shape != expected_shape:
-                scale = scale.reshape(expected_shape)
-        return (x - offset) / (scale + 1e-8)
-
-    def _stats(self, x: np.ndarray, axis: int | tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
-        if self.scale_method == "minmax":
-            offset = x.min(axis=axis, keepdims=True)
-            scale = x.max(axis=axis, keepdims=True) - offset
-        else:
-            offset = x.mean(axis=axis, keepdims=True)
-            scale = x.std(axis=axis, keepdims=True)
-        return offset.astype(np.float32), (scale + 1e-8).astype(np.float32)
-
-    def _as_numpy(self, value: Any) -> np.ndarray | None:
-        if value is None:
-            return None
-        if hasattr(value, "detach"):
-            value = value.detach().cpu().numpy()
-        return np.asarray(value, dtype=np.float32)
-
-    def _as_scaler_tuple(self, value: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
-        if not isinstance(value, (tuple, list)) or len(value) != 2:
-            return None, None
-        return self._as_numpy(value[0]), self._as_numpy(value[1])
-
 
 class RealtimePredictionService:
     """Owns the loaded model, input queue, worker task, and SSE hub."""
@@ -489,11 +359,11 @@ class RealtimePredictionService:
     def __init__(self) -> None:
         backend_dir = Path(__file__).resolve().parents[1]
         default_model_path = _default_model_path(backend_dir)
-        self.model = TorchCravingModel(
+        self.model = CravingModel(
             Path(os.getenv("MODEL_PATH", str(default_model_path))),
-            os.getenv("MODEL_DEVICE", "auto"),
         )
         self.hub = PredictionHub()
+        self.latency = LatencyRecorder()
         self.queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
             maxsize=int(os.getenv("INFERENCE_QUEUE_MAX", "100"))
         )
@@ -525,6 +395,9 @@ class RealtimePredictionService:
         if not self.model.ready:
             detail = self.startup_error or "Model is not loaded"
             raise ModelUnavailableError(detail)
+        # Stamp receive time so the worker can compute uplink + queue latency.
+        payload["_enqueuePerf"] = time.perf_counter()
+        payload["_recvWallMs"] = time.time() * 1000.0
         if self.queue.full():
             try:
                 self.queue.get_nowait()
@@ -536,16 +409,13 @@ class RealtimePredictionService:
         return {
             "ready": self.model.ready,
             "modelPath": str(self.model.model_path),
-            "device": str(self.model.device) if self.model.device is not None else None,
-            "scaleMode": self.model.scale_mode,
-            "scaleMethod": self.model.scale_method,
-            "ppgScalerStored": self.model.ppg_scaler[0] is not None,
-            "gsrScalerStored": self.model.gsr_scaler[0] is not None,
+            "modelName": self.model.model_name,
+            "featureCount": len(self.model.keep) if self.model.keep else None,
+            "classLabels": self.model.class_labels,
             "rawSamplingHz": self.model.fs_raw,
-            "ppgSamplingHz": self.model.fs_ppg,
             "gsrSamplingHz": self.model.fs_gsr,
-            "ppgSamples": self.model.ppg_win,
-            "gsrSamples": self.model.gsr_win,
+            "winSec": self.model.win_sec,
+            "rawWindowLength": self.model.raw_win_len,
             "watchPpgSamplingHz": WATCH_PPG_FS,
             "watchEdaSamplingHz": WATCH_EDA_FS,
             "queueSize": self.queue.qsize(),
@@ -559,7 +429,29 @@ class RealtimePredictionService:
         while True:
             payload = await self.queue.get()
             try:
+                dequeue_perf = time.perf_counter()
+                enqueue_perf = payload.get("_enqueuePerf", dequeue_perf)
+                queue_ms = (dequeue_perf - enqueue_perf) * 1000.0
+
                 event = await asyncio.to_thread(self.model.predict, payload)
+
+                debug = self.model.last_debug or {}
+                sent_ms = _safe_float(payload.get("sentAtMs"))
+                recv_ms = payload.get("_recvWallMs")
+                comm_ms = (recv_ms - sent_ms) if (sent_ms is not None and recv_ms is not None) else None
+                server_ms = (time.perf_counter() - enqueue_perf) * 1000.0
+                # Stash per-stage latencies on the event so main.py can log them
+                # together with the SSE send time (downlink) at the moment the
+                # event is actually pushed to the app. `_readyPerf` marks
+                # "prediction ready to send"; main.py diffs it against send time.
+                event["_lat"] = {
+                    "comm_ms": comm_ms,
+                    "queue_ms": queue_ms,
+                    "feature_ms": debug.get("featureMs"),
+                    "model_ms": debug.get("modelMs"),
+                    "server_ms": server_ms,
+                }
+                event["_readyPerf"] = time.perf_counter()
                 await self.hub.broadcast(event)
             except Exception:
                 LOGGER.exception("Prediction failed")
@@ -568,7 +460,7 @@ class RealtimePredictionService:
 
 
 def _default_model_path(backend_dir: Path) -> Path:
-    return backend_dir / "model" / "weights" / "fold3_best.pt"
+    return backend_dir / "model" / "weights" / "rf_dependent.joblib"
 
 
 def _safe_float(value: Any) -> float | None:
@@ -588,20 +480,3 @@ def _finite_max(values: Any) -> float | None:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
     return round(float(finite.max()), 6) if finite.size else None
-
-
-def _finite_mean(values: Any) -> float | None:
-    finite = np.asarray(values, dtype=float)
-    finite = finite[np.isfinite(finite)]
-    return round(float(finite.mean()), 6) if finite.size else None
-
-
-def _finite_std(values: Any) -> float | None:
-    finite = np.asarray(values, dtype=float)
-    finite = finite[np.isfinite(finite)]
-    return round(float(finite.std()), 6) if finite.size else None
-
-
-def _finite_ratio(values: Any) -> float:
-    arr = np.asarray(values)
-    return round(float(np.isfinite(arr).mean()), 6) if arr.size else 0.0

@@ -35,3 +35,6 @@ model/cache/
 *.sqlite
 *.sqlite3
 *.log
+
+# Latency logs (runtime artifact)
+app/inference_time.txt
