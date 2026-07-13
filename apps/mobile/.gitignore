@@ -1,0 +1,33 @@
+# Android / Gradle build outputs
+*.iml
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Android Studio / local machine settings
+.idea/
+.DS_Store
+Thumbs.db
+
+# Signing / secrets
+*.jks
+*.keystore
+*.p12
+
+# Measurement exports and local logs
+sensor_*.csv
+*.tsv
+*.log
+*.hprof
+
+# Local assistant/tool state
+.claude/
+.codex/
+.agents/

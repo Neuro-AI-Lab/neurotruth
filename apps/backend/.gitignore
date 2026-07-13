@@ -1,0 +1,23 @@
+# Certificates and keystores
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.keystore
+
+# Python local artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local data exports and databases
+*.csv
+*.tsv
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
