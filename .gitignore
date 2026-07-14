@@ -1,28 +1,24 @@
-# 환경변수 (절대 커밋 금지)
-.env
-*.env
-
-# 로컬 LLM 모델 파일 (용량이 매우 큼)
-llm-server/models/
+# Certificates and keystores
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.keystore
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .venv/
 venv/
 
 # Node
 node_modules/
-frontend/build/
-
-# Docker
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
+apps/web/build/
 
 # Android / Gradle build outputs
 *.iml
@@ -37,32 +33,20 @@ captures/
 *.dex
 *.class
 
-# Android Studio / local machine settings
+# Android Studio and local machine settings
 .idea/
-local.properties
 .DS_Store
 Thumbs.db
 
-# Samsung Health Sensor SDK binaries and local reference drops
-# Download the AAR manually and place it under wearos/libs/.
-wearos/libs/*.aar
-wearos/libs/*.jar
-samsung_health_sensor_sdk/
-aar_extracted/
-
-# Signing / secrets
-*.jks
-*.keystore
-*.p12
-*.env
-.env.*
-google-services.json
-
 # Measurement exports and local logs
 sensor_*.csv
+*.csv
 *.tsv
 *.log
 *.hprof
+*.db
+*.sqlite
+*.sqlite3
 
 # Local assistant/tool state
 .claude/
