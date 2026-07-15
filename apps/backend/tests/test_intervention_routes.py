@@ -389,12 +389,9 @@ def test_async_handoff_job_transitions_and_persists_snapshot(monkeypatch) -> Non
 
     asyncio.run(scenario())
 
-    route = next(
-        route
-        for route in main.app.routes
-        if getattr(route, "path", None) == "/api/intervention/handoff/jobs"
-    )
-    assert route.status_code == 202
+    assert "/api/intervention/handoff/jobs" not in {
+        getattr(route, "path", None) for route in main.app.routes
+    }
 
 
 def test_async_handoff_failure_is_sanitized(monkeypatch) -> None:

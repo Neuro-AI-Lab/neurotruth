@@ -29,6 +29,7 @@ class PhoneMonitoringStateTest {
         assertFalse(PhoneMonitoringState.registerAlertAction(prediction, AlertAction.REQUIRED))
         PhoneMonitoringState.recordUploadLatency(
             ServerWindowPayload(
+                clientWindowId = "997e082b-0471-4695-ae63-bb05657a9359",
                 sessionId = "local-1",
                 sessionStartedAtMs = 100L,
                 sequence = 1L,

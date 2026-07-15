@@ -29,7 +29,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.SocketTimeoutException
-import java.net.URL
 
 /** 차트 한 점: 시작 시각으로부터의 경과 시간(초, Float)을 x축으로 사용한다. */
 data class SensorPoint(val timestamp: Long, val value: Float, val index: Float = 0f)
@@ -120,35 +119,14 @@ object ChatReadTimeoutPolicy {
     }
 }
 
-class SingleActiveHandoffGate {
-    private var nextToken = 0L
-    private var activeToken: Long? = null
+enum class OptionalAuqChoice { COMPLETE, SKIP }
 
-    @Synchronized
-    fun tryAcquire(): Long? {
-        if (activeToken != null) return null
-        nextToken += 1L
-        activeToken = nextToken
-        return activeToken
-    }
-
-    @Synchronized
-    fun release(token: Long) {
-        if (activeToken == token) activeToken = null
-    }
-
-    @Synchronized
-    fun reset() {
-        activeToken = null
-    }
-
-    @Synchronized
-    fun isActive(): Boolean = activeToken != null
+object OptionalAuqPolicy {
+    fun shouldPostAssessment(choice: OptionalAuqChoice): Boolean = choice == OptionalAuqChoice.COMPLETE
 }
 
 private const val INTERVENTION_PREFS = "intervention_settings"
 private const val PREF_CHAT_READ_TIMEOUT_MINUTES = "chat_read_timeout_minutes"
-private const val HANDOFF_POLL_INTERVAL_MS = 1_500L
 
 class SensorViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -166,6 +144,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val PREDICTION_RECONNECT_DELAY_MS = 2_000L
     private val serverConfig = ServerConfig.load(application).also { PhoneMonitoringState.ensureConfig(it) }
     private val serverUploader = ServerUploader()
+    private val apiClient = MobileApiProvider.get(application)
+    private val windowIdStore = StableClientWindowIdStore.from(application)
     private val predictionSender = PhonePredictionSender(application)
     private val alertNotifier = CravingAlertNotifier(application)
     private var uploadSequence = 0L
@@ -173,14 +153,14 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private var autoCommunicationStarted = false
     private var autoCommunicationJob: Job? = null
     private var predictionReceiverJob: Job? = null
+    private var pendingUpload: ServerWindowPayload? = null
     private var cravingSimulationJob: Job? = null
     private var observedPredictionKey: String? = null
     private var observedAlertActionVersion = 0L
-    private var currentSlots: JSONObject? = null
     private var chatRequestJob: Job? = null
-    private var handoffPollingJob: Job? = null
     private var interventionEpoch = 0L
-    private val handoffRequestGate = SingleActiveHandoffGate()
+    private var bufferedSessionPrompt: String? = null
+    private val seenInterventionIds = mutableSetOf<String>()
     private val interventionPreferences = application.getSharedPreferences(
         INTERVENTION_PREFS,
         Context.MODE_PRIVATE
@@ -282,6 +262,12 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val _isStateCheckRequired = MutableStateFlow(false)
     val isStateCheckRequired: StateFlow<Boolean> = _isStateCheckRequired
 
+    private val _isTalkChoiceRequired = MutableStateFlow(false)
+    val isTalkChoiceRequired: StateFlow<Boolean> = _isTalkChoiceRequired
+
+    private val _isAuqChoiceRequired = MutableStateFlow(false)
+    val isAuqChoiceRequired: StateFlow<Boolean> = _isAuqChoiceRequired
+
     private val _stateCheckResponses = MutableStateFlow<Map<Int, Int>>(emptyMap())
     val stateCheckResponses: StateFlow<Map<Int, Int>> = _stateCheckResponses
 
@@ -294,7 +280,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages
 
-    private val _chatStatus = MutableStateFlow("상태 확인 뒤 텍스트 중재를 시작할 수 있습니다")
+    private val _chatStatus = MutableStateFlow("필요할 때 대화를 시작할 수 있습니다")
     val chatStatus: StateFlow<String> = _chatStatus
 
     private val _isChatSending = MutableStateFlow(false)
@@ -310,29 +296,23 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     )
     val chatReadTimeoutMinutes: StateFlow<Int> = _chatReadTimeoutMinutes
 
+    private val conversationSessionManager = ConversationSessionManager(
+        api = AuthenticatedSessionApi(apiClient),
+        store = SharedPreferencesConversationSessionStore(application),
+        timeoutMs = { ChatReadTimeoutPolicy.toMillis(_chatReadTimeoutMinutes.value).toLong() }
+    )
+
     private val _chatTimeoutSettingStatus = MutableStateFlow("")
     val chatTimeoutSettingStatus: StateFlow<String> = _chatTimeoutSettingStatus
 
-    private val _handoffReady = MutableStateFlow(false)
-    val handoffReady: StateFlow<Boolean> = _handoffReady
+    private val _conversationPhase = MutableStateFlow("safety_check")
+    val conversationPhase: StateFlow<String> = _conversationPhase
 
-    private val _handoffSummary = MutableStateFlow("인계 요약 대기 중")
-    val handoffSummary: StateFlow<String> = _handoffSummary
+    private val _sessionReportStatus = MutableStateFlow("not_started")
+    val sessionReportStatus: StateFlow<String> = _sessionReportStatus
 
-    private val _handoffReport = MutableStateFlow("")
-    val handoffReport: StateFlow<String> = _handoffReport
-
-    private val _isHandoffGenerating = MutableStateFlow(false)
-    val isHandoffGenerating: StateFlow<Boolean> = _isHandoffGenerating
-
-    private val _handoffJobStatus = MutableStateFlow("인계 작업 대기")
-    val handoffJobStatus: StateFlow<String> = _handoffJobStatus
-
-    private val _activeHandoffJobId = MutableStateFlow<String?>(null)
-    val activeHandoffJobId: StateFlow<String?> = _activeHandoffJobId
-
-    private val _missingSlots = MutableStateFlow<List<String>>(emptyList())
-    val missingSlots: StateFlow<List<String>> = _missingSlots
+    private val _sessionInactivityTimeoutSeconds = MutableStateFlow<Int?>(null)
+    val sessionInactivityTimeoutSeconds: StateFlow<Int?> = _sessionInactivityTimeoutSeconds
 
     private val _isCravingSimulationRunning = MutableStateFlow(false)
     val isCravingSimulationRunning: StateFlow<Boolean> = _isCravingSimulationRunning
@@ -515,7 +495,34 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
-        PhoneMonitoringService.start(application)
+        viewModelScope.launch {
+            MobileAuthRuntime.state.collect { state ->
+                if (!state.canUploadBiosignal) {
+                    _isUploadEnabled.value = false
+                    _uploadStatus.value = "생체신호 수집 동의가 철회되어 전송이 중지되었습니다"
+                }
+                if (!state.canReceiveAiPrediction) {
+                    _isPredictionReceiverEnabled.value = false
+                    predictionReceiverJob?.cancel()
+                    predictionReceiverJob = null
+                    _predictionStatus.value = "AI 분석 동의가 없어 예측 수신이 중지되었습니다"
+                }
+                if (state.canUploadBiosignal) {
+                    PhoneMonitoringService.start(application)
+                } else {
+                    PhoneMonitoringService.stop(application)
+                }
+                if (!state.authenticated) {
+                    chatRequestJob?.cancel()
+                    conversationSessionManager.clear()
+                    _isChatSending.value = false
+                    _isChatVisible.value = false
+                    _isTalkChoiceRequired.value = false
+                    _isAuqChoiceRequired.value = false
+                    PhoneMonitoringState.closeIntervention()
+                }
+            }
+        }
     }
 
     /** 차트 및 누적 데이터를 모두 초기화한다. */
@@ -545,6 +552,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         _isReceiving.value = false
         startTimestamp = 0L
         uploadSequence = 0L
+        pendingUpload = null
         _cravingClassPoints.value = emptyList()
         resetInterventionState()
         observedPredictionKey = null
@@ -570,6 +578,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setUploadEnabled(enabled: Boolean) {
+        if (enabled && !MobileAuthRuntime.canUpload()) {
+            _uploadStatus.value = "로그인과 생체신호 수집 동의가 필요합니다"
+            _isUploadEnabled.value = false
+            return
+        }
         if (enabled && _serverUrl.value.isBlank()) {
             _uploadStatus.value = "서버 URL이 비어 있습니다"
             _isUploadEnabled.value = false
@@ -589,6 +602,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setPredictionReceiverEnabled(enabled: Boolean) {
+        if (enabled && !MobileAuthRuntime.canReceivePredictions()) {
+            _predictionStatus.value = "로그인, 생체신호 수집 및 AI 분석 동의가 필요합니다"
+            _isPredictionReceiverEnabled.value = false
+            return
+        }
         if (enabled && _predictionUrl.value.isBlank()) {
             _predictionStatus.value = "예측 수신 URL이 비어 있습니다"
             _isPredictionReceiverEnabled.value = false
@@ -623,19 +641,87 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         _latestStateCheckResult.value = result
         _isStateCheckRequired.value = false
         PhoneMonitoringState.markStateCheckSubmitted(result.timestampMs)
-        seedChatForResult(result)
-        PhoneMonitoringState.activateIntervention()
-        _isChatVisible.value = true
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    if (OptionalAuqPolicy.shouldPostAssessment(OptionalAuqChoice.COMPLETE)) {
+                        conversationSessionManager.postAssessment(authenticatedOwnerId(), result)
+                    }
+                }
+            }.onSuccess {
+                openBufferedConversation("AUQ를 저장했습니다. 대화를 이어갈 수 있습니다")
+            }.onFailure { error ->
+                _chatStatus.value = "AUQ 저장 실패: ${safeSessionError(error)}"
+            }
+        }
+    }
+
+    fun chooseTalkNow() {
+        if (_isChatSending.value) return
+        _isTalkChoiceRequired.value = false
+        _isChatSending.value = true
+        _chatStatus.value = "대화를 준비하고 있습니다"
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    conversationSessionManager.start(
+                        ownerId = authenticatedOwnerId(),
+                        sessionType = "alert_checkin",
+                        triggerAlertId = _latestPrediction.value?.alertId
+                    )
+                }
+            }.onSuccess { session ->
+                bufferedSessionPrompt = session.assistantText
+                _conversationPhase.value = session.interactionPhase ?: "safety_check"
+                _sessionReportStatus.value = session.reportStatus
+                _sessionInactivityTimeoutSeconds.value = session.inactivityTimeoutSeconds
+                _isAuqChoiceRequired.value = true
+                _chatStatus.value = "AUQ는 선택 사항입니다"
+            }.onFailure {
+                _chatStatus.value = "세션 시작 실패: ${safeSessionError(it)}"
+                _isTalkChoiceRequired.value = true
+            }
+            _isChatSending.value = false
+        }
+    }
+
+    fun chooseTalkLater() {
+        _isTalkChoiceRequired.value = false
+        _chatStatus.value = "원할 때 홈에서 다시 대화를 시작할 수 있습니다"
+    }
+
+    fun chooseAuqForm() {
+        _isAuqChoiceRequired.value = false
+        _stateCheckResponses.value = emptyMap()
+        _isStateCheckRequired.value = true
+    }
+
+    fun skipAuqAndTalk() {
+        if (!OptionalAuqPolicy.shouldPostAssessment(OptionalAuqChoice.SKIP)) {
+            _isAuqChoiceRequired.value = false
+            openBufferedConversation("AUQ를 건너뛰었습니다. 모든 대화 기능은 그대로 사용할 수 있습니다")
+        }
     }
 
     fun openChat() {
-        if (_chatMessages.value.isEmpty()) {
-            _latestStateCheckResult.value?.let { seedChatForResult(it) }
+        if (_isChatVisible.value) return
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    conversationSessionManager.ensure(authenticatedOwnerId())
+                }
+            }.onSuccess { session ->
+                bufferedSessionPrompt = session.assistantText
+                _conversationPhase.value = session.interactionPhase ?: "safety_check"
+                _sessionReportStatus.value = session.reportStatus
+                _sessionInactivityTimeoutSeconds.value = session.inactivityTimeoutSeconds
+                if (session.assistantText != null) {
+                    _isAuqChoiceRequired.value = true
+                } else {
+                    openBufferedConversation("기존 대화를 이어갑니다")
+                }
+            }.onFailure { _chatStatus.value = "세션 시작 실패: ${safeSessionError(it)}" }
         }
-        if (_chatMessages.value.isNotEmpty()) {
-            PhoneMonitoringState.activateIntervention()
-        }
-        _isChatVisible.value = true
     }
 
     fun closeChat() {
@@ -660,41 +746,28 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         interventionEpoch += 1L
         chatRequestJob?.cancel()
         chatRequestJob = null
-        handoffPollingJob?.cancel()
-        handoffPollingJob = null
-        handoffRequestGate.reset()
         PhoneMonitoringState.closeIntervention()
         PhoneMonitoringState.resetStateCheckCooldown()
         _isStateCheckRequired.value = false
+        _isTalkChoiceRequired.value = false
+        _isAuqChoiceRequired.value = false
         _stateCheckResponses.value = emptyMap()
         _latestStateCheckResult.value = null
         allStateCheckResults.clear()
         _isChatVisible.value = false
         _chatMessages.value = emptyList()
-        _chatStatus.value = "상태 확인 뒤 텍스트 중재를 시작할 수 있습니다"
+        _chatStatus.value = "필요할 때 대화를 시작할 수 있습니다"
         _isChatSending.value = false
-        _handoffReady.value = false
-        _handoffSummary.value = "인계 요약 대기 중"
-        _handoffReport.value = ""
-        _missingSlots.value = emptyList()
-        _isHandoffGenerating.value = false
-        _handoffJobStatus.value = "인계 작업 대기"
-        _activeHandoffJobId.value = null
-        currentSlots = null
+        _conversationPhase.value = "safety_check"
+        _sessionReportStatus.value = "not_started"
+        _sessionInactivityTimeoutSeconds.value = null
+        bufferedSessionPrompt = null
+        seenInterventionIds.clear()
     }
 
     fun sendChatMessage(text: String) {
         val message = text.trim()
         if (message.isBlank() || _isChatSending.value) return
-        val chatUrl = interventionEndpoint("/api/intervention/chat")
-        if (chatUrl == null) {
-            _chatStatus.value = "채팅 실패: 서버 URL을 먼저 확인하세요"
-            return
-        }
-
-        val history = _chatMessages.value
-        val requestSession = PhoneMonitoringState.currentSession()
-        val interventionSessionId = PhoneMonitoringState.interventionSessionId()
         _chatMessages.update { list -> list + ChatMessage(ChatSender.USER, message) }
         _isChatSending.value = true
         _chatStatus.value = "응답 요청 중"
@@ -703,37 +776,35 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         chatRequestJob = viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    serverUploader.postInterventionChat(
-                        chatUrl,
-                        InterventionChatRequest(
-                            sessionId = interventionSessionId,
-                            message = message,
-                            alert = _latestPrediction.value?.alert,
-                            slots = currentSlots,
-                            conversationHistory = history.toInterventionMessages()
-                        ),
+                    conversationSessionManager.postMessage(
+                        ownerId = authenticatedOwnerId(),
+                        content = message,
                         readTimeoutMs = ChatReadTimeoutPolicy.toMillis(_chatReadTimeoutMinutes.value)
                     )
                 }
             }
 
-            if (
-                PhoneMonitoringState.currentSession().sessionId != requestSession.sessionId ||
-                requestEpoch != interventionEpoch
-            ) {
-                return@launch
-            }
+            if (requestEpoch != interventionEpoch) return@launch
 
             result.onSuccess { response ->
-                currentSlots = response.slots ?: currentSlots
-                _handoffReady.value = response.handoffReady
-                _missingSlots.value = response.missingSlots
-                _handoffSummary.value = response.summary
-                    ?: if (response.handoffReady) "인계 요약을 만들 준비가 되었습니다" else "필요 정보를 더 모으는 중입니다"
-                if (response.assistantMessage.isNotBlank()) {
-                    _chatMessages.update { list -> list + ChatMessage(ChatSender.BOT, response.assistantMessage) }
+                _conversationPhase.value = response.phase
+                _sessionReportStatus.value = response.reportStatus
+                response.inactivityTimeoutSeconds?.let { _sessionInactivityTimeoutSeconds.value = it }
+                val newInterventions = response.activeInterventions
+                    .filter { seenInterventionIds.add(it.id) }
+                    .map { it.content }
+                val assistantMessage = listOfNotNull(
+                    response.assistantText.takeIf(String::isNotBlank),
+                    newInterventions.joinToString("\n\n").takeIf(String::isNotBlank)
+                ).distinct().joinToString("\n\n")
+                if (assistantMessage.isNotBlank()) {
+                    _chatMessages.update { list -> list + ChatMessage(ChatSender.BOT, assistantMessage) }
                 }
-                _chatStatus.value = if (response.handoffReady) "응답 완료: 인계 준비 가능" else "응답 완료"
+                _chatStatus.value = when (response.phase) {
+                    "abandoned" -> "활동이 없어 세션이 종료되었습니다"
+                    "completed" -> "대화를 완료했습니다"
+                    else -> "응답 완료"
+                }
             }.onFailure { error ->
                 _chatMessages.update { list ->
                     list + ChatMessage(
@@ -747,8 +818,10 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 _chatStatus.value = if (error.isNetworkTimeout()) {
                     "채팅 시간 초과: ${_chatReadTimeoutMinutes.value}분"
+                } else if (error is ApiHttpException && error.statusCode == 409) {
+                    "다른 메시지를 처리 중입니다. 잠시 후 직접 다시 보내 주세요"
                 } else {
-                    "채팅 실패: ${error.message ?: "unknown error"}"
+                    "채팅 실패: ${safeSessionError(error)}"
                 }
             }
 
@@ -757,122 +830,28 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun requestHandoffReport() {
-        val submitUrl = interventionEndpoint("/api/intervention/handoff/jobs")
-        if (submitUrl == null) {
-            _chatStatus.value = "인계 생성 실패: 서버 URL을 먼저 확인하세요"
-            return
-        }
-        val requestSession = PhoneMonitoringState.currentSession()
-        val interventionSessionId = PhoneMonitoringState.interventionSessionId()
-        val requestEpoch = interventionEpoch
-        val requestSnapshot = HandoffRequest(
-            sessionId = interventionSessionId,
-            slots = currentSlots?.let { JSONObject(it.toString()) },
-            conversationHistory = _chatMessages.value.toList().toInterventionMessages()
-        )
-        val overallWaitMs = ChatReadTimeoutPolicy.toMillis(_chatReadTimeoutMinutes.value).toLong()
-        val gateToken = handoffRequestGate.tryAcquire() ?: return
-        _isHandoffGenerating.value = true
-        _handoffJobStatus.value = "인계 작업 제출 중"
-        _chatStatus.value = "인계 요약을 백그라운드에서 요청했습니다"
-
-        handoffPollingJob = viewModelScope.launch {
-            try {
-                val submission = runCatching {
-                    withContext(Dispatchers.IO) {
-                        serverUploader.postInterventionHandoffJob(submitUrl, requestSnapshot)
-                    }
-                }.getOrElse { error ->
-                    if (requestEpoch == interventionEpoch) {
-                        _handoffJobStatus.value = "인계 제출 실패: ${error.message ?: "unknown error"}"
-                        _chatStatus.value = _handoffJobStatus.value
-                    }
-                    return@launch
+    fun finishConversationManually() {
+        if (_isChatSending.value) return
+        _isChatSending.value = true
+        _chatStatus.value = "대화 종료 중"
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    conversationSessionManager.finish(authenticatedOwnerId())
                 }
-
-                if (!isCurrentInterventionRequest(requestSession, requestEpoch)) return@launch
-                if (submission.sessionId != interventionSessionId) {
-                    _handoffJobStatus.value = "인계 제출 실패: 세션 불일치"
-                    return@launch
-                }
-
-                _activeHandoffJobId.value = submission.jobId
-                _handoffJobStatus.value = handoffStateText(submission.status)
-                val statusUrl = interventionEndpoint("/api/intervention/handoff/jobs/${submission.jobId}")
-                if (statusUrl == null) {
-                    _handoffJobStatus.value = "인계 조회 실패: 서버 URL을 확인하세요"
-                    return@launch
-                }
-                val deadlineMs = System.currentTimeMillis() + overallWaitMs
-
-                while (isActive && isCurrentInterventionRequest(requestSession, requestEpoch)) {
-                    val statusResult = runCatching {
-                        withContext(Dispatchers.IO) {
-                            serverUploader.getInterventionHandoffJob(statusUrl)
-                        }
-                    }
-
-                    val error = statusResult.exceptionOrNull()
-                    if (error != null) {
-                        if (error is HttpStatusException && error.statusCode == 404) {
-                            _handoffJobStatus.value = "인계 작업을 찾을 수 없습니다. 서버가 재시작되었을 수 있습니다"
-                            break
-                        }
-                        if (System.currentTimeMillis() >= deadlineMs) {
-                            _handoffJobStatus.value = "인계 작업 조회 시간 초과"
-                            break
-                        }
-                        _handoffJobStatus.value = "인계 상태 조회 재시도 중"
-                        delay(HANDOFF_POLL_INTERVAL_MS)
-                        continue
-                    }
-
-                    val response = statusResult.getOrThrow()
-                    if (
-                        response.jobId != submission.jobId ||
-                        response.sessionId != interventionSessionId
-                    ) {
-                        _handoffJobStatus.value = "인계 조회 실패: 작업 식별자 불일치"
-                        break
-                    }
-
-                    when (response.status) {
-                        HandoffJobState.QUEUED, HandoffJobState.RUNNING -> {
-                            _handoffJobStatus.value = handoffStateText(response.status)
-                        }
-                        HandoffJobState.COMPLETED -> {
-                            val handoff = response.result
-                            if (handoff == null) {
-                                _handoffJobStatus.value = "인계 완료 응답에 결과가 없습니다"
-                            } else {
-                                applyHandoffResult(handoff)
-                                _handoffJobStatus.value = "인계 요약 생성 완료"
-                                _chatStatus.value = "인계 요약 생성 완료"
-                            }
-                            break
-                        }
-                        HandoffJobState.FAILED -> {
-                            _handoffJobStatus.value = "인계 생성 실패: ${response.error ?: "unknown error"}"
-                            _chatStatus.value = _handoffJobStatus.value
-                            break
-                        }
-                    }
-
-                    if (System.currentTimeMillis() >= deadlineMs) {
-                        _handoffJobStatus.value = "인계 작업 조회 시간 초과"
-                        break
-                    }
-                    delay(HANDOFF_POLL_INTERVAL_MS)
-                }
-            } finally {
-                handoffRequestGate.release(gateToken)
-                if (requestEpoch == interventionEpoch) {
-                    _isHandoffGenerating.value = false
-                    _activeHandoffJobId.value = null
-                    handoffPollingJob = null
-                }
+            }.onSuccess { finished ->
+                interventionEpoch += 1L
+                chatRequestJob?.cancel()
+                _conversationPhase.value = finished?.interactionPhase ?: "completed"
+                _sessionReportStatus.value = finished?.reportStatus ?: "not_started"
+                _sessionInactivityTimeoutSeconds.value = finished?.inactivityTimeoutSeconds
+                _chatStatus.value = "대화를 완료했습니다"
+                _isChatVisible.value = false
+                PhoneMonitoringState.closeIntervention()
+            }.onFailure { error ->
+                _chatStatus.value = "대화 종료 실패: ${safeSessionError(error)}"
             }
+            _isChatSending.value = false
         }
     }
 
@@ -955,21 +934,37 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun handlePrediction(
         prediction: CravingPrediction,
-        sourceLabel: String
+        sourceLabel: String,
+        sendToWatch: Boolean = true
     ) {
+        val canNotify = MobileAuthRuntime.state.value.canNotify
         val action = AlertActionPolicy.resolve(prediction)
-        val shouldPresent = PhoneMonitoringState.registerAlertAction(prediction, action)
+        val alertClaimed = canNotify && PhoneMonitoringState.registerAlertAction(prediction, action)
         PhoneMonitoringState.publishPrediction(prediction)
-        if (shouldPresent) handleCravingAlert(action)
-        val sentToWatch = predictionSender.sendPrediction(
+        if (NotificationPresentationPolicy.shouldPresent(canNotify, alertClaimed)) handleCravingAlert(action)
+        val sentToWatch = sendToWatch && predictionSender.sendPrediction(
             prediction = prediction,
-            suppressAlertPresentation = PhoneMonitoringState.isInterventionActive.value
+            suppressAlertPresentation = NotificationPresentationPolicy.suppressWatchPresentation(
+                canNotify = canNotify,
+                interventionActive = PhoneMonitoringState.isInterventionActive.value
+            )
         )
-        _predictionStatus.value = if (sentToWatch) {
+        _predictionStatus.value = if (!sendToWatch) {
+            "$sourceLabel 완료, 폰에서만 표시"
+        } else if (sentToWatch) {
             "$sourceLabel 수신, 워치 전달 완료"
         } else {
             "$sourceLabel 수신, 워치 미연결"
         }
+    }
+
+    /** Camera-derived predictions intentionally never enter the phone-to-watch sender. */
+    fun handleCameraPrediction(prediction: CravingPrediction) {
+        handlePrediction(
+            prediction,
+            sourceLabel = "카메라 rPPG 예측",
+            sendToWatch = RppgPredictionRoutingPolicy.relayToWatch
+        )
     }
 
     private fun recordPredictionForUi(prediction: CravingPrediction) {
@@ -982,7 +977,9 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             observedAlertActionVersion = actionVersion
             _stateCheckResponses.value = emptyMap()
             _isChatVisible.value = false
-            _isStateCheckRequired.value = true
+            _isStateCheckRequired.value = false
+            _isAuqChoiceRequired.value = false
+            _isTalkChoiceRequired.value = true
         }
     }
 
@@ -997,98 +994,37 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applyHandoffResult(response: HandoffResult) {
-        _handoffReport.value = response.reportMarkdown
-        _missingSlots.value = response.missingSlots
-        _handoffReady.value = response.missingSlots.isEmpty()
-        _handoffSummary.value = response.reportMarkdown.lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.isNotBlank() }
-            ?.take(120)
-            ?: "인계 요약이 생성되었습니다"
-    }
-
-    private fun handoffStateText(status: HandoffJobState): String =
-        when (status) {
-            HandoffJobState.QUEUED -> "인계 작업 대기 중"
-            HandoffJobState.RUNNING -> "인계 요약 생성 중"
-            HandoffJobState.COMPLETED -> "인계 요약 생성 완료"
-            HandoffJobState.FAILED -> "인계 요약 생성 실패"
-        }
-
-    private fun isCurrentInterventionRequest(
-        requestSession: PhoneSessionIdentity,
-        requestEpoch: Long
-    ): Boolean =
-        requestEpoch == interventionEpoch &&
-            PhoneMonitoringState.currentSession().sessionId == requestSession.sessionId
-
     private fun Throwable.isNetworkTimeout(): Boolean =
         this is SocketTimeoutException || cause?.isNetworkTimeout() == true
 
-    private fun seedChatForResult(result: StateCheckResult) {
+    private fun openBufferedConversation(status: String) {
         interventionEpoch += 1L
         chatRequestJob?.cancel()
         chatRequestJob = null
-        handoffPollingJob?.cancel()
-        handoffPollingJob = null
-        handoffRequestGate.reset()
         _isChatSending.value = false
-        _isHandoffGenerating.value = false
-        _activeHandoffJobId.value = null
-        _handoffJobStatus.value = "인계 작업 대기"
-        currentSlots = null
-        _handoffReady.value = false
-        _handoffSummary.value = "인계 요약 대기 중"
-        _handoffReport.value = ""
-        _missingSlots.value = emptyList()
-        _chatStatus.value = "상태 확인 완료: 텍스트 중재를 시작하세요"
-        _chatMessages.value = listOf(
-            ChatMessage(
-                sender = ChatSender.BOT,
-                text = buildString {
-                    append("방금 상태 확인은 %.2f/7점으로 기록됐습니다. ".format(result.meanScore))
-                    append(
-                        when {
-                            result.meanScore >= 5.0f -> "지금은 위험 신호가 강합니다. 바로 주변 도움을 요청하고 술과 거리를 두는 행동을 우선하세요."
-                            result.meanScore >= 3.0f -> "갈망이 올라온 상태입니다. 현재 장소, 감정, 술 접근 가능성을 같이 정리해봅시다."
-                            else -> "갈망 강도는 낮은 편입니다. 그래도 방금 신호가 올라왔으니 상황을 짧게 확인해봅시다."
-                        }
-                    )
-                }
-            )
-        )
-    }
-
-    private fun interventionEndpoint(path: String): String? =
-        listOf(_serverUrl.value, _predictionUrl.value)
-            .asSequence()
-            .filter { it.isNotBlank() }
-            .mapNotNull { sourceUrl ->
-                runCatching {
-                    val parsed = URL(sourceUrl)
-                    "${parsed.protocol}://${parsed.authority}$path"
-                }.getOrNull()
-            }
-            .firstOrNull()
-
-    private fun List<ChatMessage>.toInterventionMessages(): List<InterventionMessage> =
-        map {
-            InterventionMessage(
-                role = if (it.sender == ChatSender.USER) "user" else "assistant",
-                content = it.text
-            )
+        _chatStatus.value = status
+        val prompt = bufferedSessionPrompt
+        if (!prompt.isNullOrBlank()) {
+            _chatMessages.value = listOf(ChatMessage(ChatSender.BOT, prompt))
         }
+        bufferedSessionPrompt = null
+        _isChatVisible.value = true
+        PhoneMonitoringState.activateIntervention()
+    }
 
     /** 1초마다 최신 10초 window를 만들어 서버에 POST한다. */
     private fun startServerUploadLoop() {
         viewModelScope.launch {
             while (true) {
                 delay(SERVER_UPLOAD_INTERVAL_MS)
-                if (!_isUploadEnabled.value) continue
+                if (
+                    !_isUploadEnabled.value ||
+                    !MobileAuthRuntime.canUpload() ||
+                    PhoneMonitoringState.isCameraPauseActive.value
+                ) continue
 
                 val url = _serverUrl.value
-                val payload = buildServerPayload()
+                val payload = pendingUpload ?: buildServerPayload()
                 if (payload == null) {
                     _uploadStatus.value = "전송 대기: $lastPayloadSkipReason"
                     continue
@@ -1098,12 +1034,22 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 _uploadStatus.value = "전송 중: ${payload.samples.size} samples"
                 val result = runCatching {
                     withContext(Dispatchers.IO) {
-                        serverUploader.postWindow(url, payload)
+                        serverUploader.postWindowAuthenticated(apiClient, url, payload)
                     }
                 }.getOrElse { e ->
+                    if (e is AuthenticationRequiredException || (e is ApiHttpException && e.statusCode == 401)) {
+                        handleAuthenticationFailure()
+                    }
                     UploadResult(false, -1, e.message ?: "unknown error")
                 }
                 PhoneMonitoringState.recordUploadLatency(payload)
+
+                if (result.success) {
+                    windowIdStore.markCompleted(uploadKey(payload))
+                    pendingUpload = null
+                } else {
+                    pendingUpload = payload
+                }
 
                 _uploadStatus.value = if (result.success) {
                     "전송 완료: #${payload.sequence}, ${payload.samples.size} samples"
@@ -1128,22 +1074,33 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        serverUploader.listenPredictions(
-                            url = url,
-                            shouldContinue = {
-                                _isPredictionReceiverEnabled.value && activeJob?.isActive == true
+                        apiClient.executeAuthenticatedStream { token ->
+                            serverUploader.listenPredictions(
+                                url = url,
+                                accessToken = token,
+                                shouldContinue = {
+                                    _isPredictionReceiverEnabled.value &&
+                                        MobileAuthRuntime.canReceivePredictions() &&
+                                        activeJob?.isActive == true
+                                }
+                            ) { prediction ->
+                                if (PhoneMonitoringState.isCameraPauseActive.value) return@listenPredictions
+                                val receivedAtMs = System.currentTimeMillis()
+                                PhoneMonitoringState.recordPredictionLatency(prediction, receivedAtMs)
+                                handlePrediction(prediction, sourceLabel = "서버 예측")
                             }
-                        ) { prediction ->
-                            val receivedAtMs = System.currentTimeMillis()
-                            PhoneMonitoringState.recordPredictionLatency(prediction, receivedAtMs)
-                            handlePrediction(prediction, sourceLabel = "서버 예측")
                         }
                     }
                 }
 
                 if (!_isPredictionReceiverEnabled.value) break
 
-                val error = result.exceptionOrNull()?.message ?: "stream closed"
+                val failure = result.exceptionOrNull()
+                if (failure is AuthenticationRequiredException || (failure is ApiHttpException && failure.statusCode == 401)) {
+                    handleAuthenticationFailure()
+                    break
+                }
+                val error = failure?.message ?: "stream closed"
                 _predictionStatus.value = "SSE 재연결 대기: $error"
                 delay(PREDICTION_RECONNECT_DELAY_MS)
             }
@@ -1155,8 +1112,6 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         predictionReceiverJob?.cancel()
         cravingSimulationJob?.cancel()
         chatRequestJob?.cancel()
-        handoffPollingJob?.cancel()
-        handoffRequestGate.reset()
         super.onCleared()
     }
 
@@ -1217,6 +1172,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         if (samples.isEmpty()) return null
         uploadSequence += 1
         return ServerWindowPayload(
+            clientWindowId = windowIdStore.getOrCreate(uploadKey(session.sessionId, uploadSequence)),
             sessionId = session.sessionId,
             sessionStartedAtMs = session.startedAtMs,
             sequence = uploadSequence,
@@ -1234,6 +1190,29 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 edaSamples = EDA_SAMPLE_COUNT
             )
         )
+    }
+
+    private fun uploadKey(payload: ServerWindowPayload): String =
+        uploadKey(payload.sessionId, payload.sequence)
+
+    private fun uploadKey(sessionId: String, sequence: Long): String =
+        "view-model:$sessionId:$sequence"
+
+    private fun handleAuthenticationFailure() {
+        MobileAuthRuntime.signOut()
+        apiClient.clearSession()
+        _isUploadEnabled.value = false
+        _isPredictionReceiverEnabled.value = false
+        PhoneMonitoringService.stop(getApplication())
+    }
+
+    private fun authenticatedOwnerId(): String =
+        MobileAuthRuntime.state.value.user?.id ?: throw AuthenticationRequiredException()
+
+    private fun safeSessionError(error: Throwable): String = when (error) {
+        is ApiHttpException -> "HTTP ${error.statusCode}"
+        is AuthenticationRequiredException -> "로그인이 필요합니다"
+        else -> error.message?.take(120) ?: "unknown error"
     }
 
     /**

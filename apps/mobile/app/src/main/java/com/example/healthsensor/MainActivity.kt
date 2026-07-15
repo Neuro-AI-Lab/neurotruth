@@ -92,6 +92,9 @@ private val healthColorScheme = lightColorScheme(
 class MainActivity : ComponentActivity() {
 
     private val viewModel: SensorViewModel by viewModels()
+    private val authViewModel: AuthViewModel by viewModels()
+    private val rppgViewModel: RppgViewModel by viewModels()
+    private val dashboardViewModel: PatientDashboardViewModel by viewModels()
     private var forceStateCheckLaunchCounter by mutableStateOf(0)
     private var suppressPermissionPrompts = false
     private var notificationPermissionRequestInFlight = false
@@ -100,26 +103,120 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         configureLockScreenLaunch(intent)
         requestCriticalPermissionsIfNeeded()
-        PhoneMonitoringService.start(this)
         setContent {
             MaterialTheme(colorScheme = healthColorScheme) {
                 Surface(modifier = Modifier.fillMaxSize(), color = HealthBackground) {
-                    var showDeveloperMode by rememberSaveable { mutableStateOf(false) }
-                    LaunchedEffect(forceStateCheckLaunchCounter) {
-                        if (forceStateCheckLaunchCounter > 0) showDeveloperMode = false
-                    }
-                    if (showDeveloperMode) {
-                        HealthMonitorScreen(
-                            viewModel = viewModel,
-                            onSaveCsv = { saveToCsv() },
-                            onExitDeveloper = { showDeveloperMode = false }
+                    val authState by authViewModel.state.collectAsState()
+                    val authLoading by authViewModel.isLoading.collectAsState()
+                    val authMessage by authViewModel.message.collectAsState()
+                    when (val state = authState) {
+                        PatientAuthState.Restoring -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                        PatientAuthState.SignedOut -> PatientAuthScreen(
+                            loading = authLoading,
+                            message = authMessage,
+                            onLogin = authViewModel::login,
+                            onSignup = authViewModel::signup
                         )
-                    } else {
-                        UserHomeScreen(
-                            viewModel = viewModel,
-                            onRequestPermissions = { requestPermissionsFromUserAction() },
-                            onDeveloperUnlock = { showDeveloperMode = true }
+                        is PatientAuthState.MustChangePassword -> RequiredPasswordChangeScreen(
+                            loading = authLoading,
+                            message = authMessage,
+                            onSubmit = authViewModel::changePassword,
+                            onLogout = authViewModel::logout
                         )
+                        is PatientAuthState.Authenticated -> {
+                            var showDeveloperMode by rememberSaveable { mutableStateOf(false) }
+                            var showConsentSettings by rememberSaveable { mutableStateOf(false) }
+                            var showRppgCamera by rememberSaveable { mutableStateOf(false) }
+                            var showDashboard by rememberSaveable { mutableStateOf(false) }
+                            var showNotice by rememberSaveable { mutableStateOf(false) }
+                            val noticePolicy = remember {
+                                InterventionNoticePolicy(KeystoreNoticeVersionStore(this@MainActivity))
+                            }
+                            val mobileAuth by MobileAuthRuntime.state.collectAsState()
+                            val rppgResult by rppgViewModel.latestResult.collectAsState()
+                            val livePpg by viewModel.ppgPoints.collectAsState()
+                            LaunchedEffect(Unit) {
+                                showNotice = noticePolicy.requiresAcknowledgement()
+                            }
+                            LaunchedEffect(rppgResult?.jobId) {
+                                val result = rppgResult ?: return@LaunchedEffect
+                                if (result.status == "completed" && rppgViewModel.markResultRouted(result.jobId)) {
+                                    result.toPrediction()?.let(viewModel::handleCameraPrediction)
+                                }
+                            }
+                            LaunchedEffect(forceStateCheckLaunchCounter) {
+                                if (forceStateCheckLaunchCounter > 0) showDeveloperMode = false
+                            }
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                AuthenticatedAccountBar(
+                                    user = state.user,
+                                    onConsentSettings = {
+                                        authViewModel.clearMessage()
+                                        showConsentSettings = true
+                                    },
+                                    onLogout = authViewModel::logout
+                                )
+                                Box(modifier = Modifier.weight(1f)) {
+                                    if (showRppgCamera) {
+                                        RppgCameraScreen(
+                                            viewModel = rppgViewModel,
+                                            onClose = { showRppgCamera = false }
+                                        )
+                                    } else if (showDashboard) {
+                                        PatientDashboardScreen(
+                                            viewModel = dashboardViewModel,
+                                            livePpg = livePpg,
+                                            onClose = { showDashboard = false }
+                                        )
+                                    } else if (showDeveloperMode) {
+                                        HealthMonitorScreen(
+                                            viewModel = viewModel,
+                                            onSaveCsv = { saveToCsv() },
+                                            onExitDeveloper = { showDeveloperMode = false }
+                                        )
+                                    } else {
+                                        UserHomeScreen(
+                                            viewModel = viewModel,
+                                            rppgViewModel = rppgViewModel,
+                                            onRequestPermissions = { requestPermissionsFromUserAction() },
+                                            onDeveloperUnlock = { showDeveloperMode = true },
+                                            onOpenRppgCamera = {
+                                                if (rppgViewModel.prepareCapture()) showRppgCamera = true
+                                            },
+                                            onOpenNotice = { showNotice = true },
+                                            onOpenDashboard = {
+                                                dashboardViewModel.load()
+                                                showDashboard = true
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            if (showConsentSettings) {
+                                PatientConsentSettingsDialog(
+                                    current = mobileAuth.consent,
+                                    loading = authLoading,
+                                    message = authMessage,
+                                    onDismiss = {
+                                        authViewModel.clearMessage()
+                                        showConsentSettings = false
+                                    },
+                                    onSave = authViewModel::updateConsent
+                                )
+                            }
+                            if (showNotice) {
+                                InterventionProductNoticeDialog(
+                                    onAcknowledge = {
+                                        if (noticePolicy.acknowledge()) showNotice = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -330,8 +427,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun UserHomeScreen(
     viewModel: SensorViewModel,
+    rppgViewModel: RppgViewModel,
     onRequestPermissions: () -> Unit,
-    onDeveloperUnlock: () -> Unit
+    onDeveloperUnlock: () -> Unit,
+    onOpenRppgCamera: () -> Unit,
+    onOpenNotice: () -> Unit,
+    onOpenDashboard: () -> Unit
 ) {
     val isReceiving by viewModel.isReceiving.collectAsState()
     val isUploadEnabled by viewModel.isUploadEnabled.collectAsState()
@@ -341,24 +442,33 @@ fun UserHomeScreen(
     val latestPrediction by viewModel.latestPrediction.collectAsState()
     val isStateCheckRequired by viewModel.isStateCheckRequired.collectAsState()
     val stateCheckResponses by viewModel.stateCheckResponses.collectAsState()
-    val latestStateCheckResult by viewModel.latestStateCheckResult.collectAsState()
+    val isTalkChoiceRequired by viewModel.isTalkChoiceRequired.collectAsState()
+    val isAuqChoiceRequired by viewModel.isAuqChoiceRequired.collectAsState()
     val isChatVisible by viewModel.isChatVisible.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val chatStatus by viewModel.chatStatus.collectAsState()
     val isChatSending by viewModel.isChatSending.collectAsState()
-    val handoffReady by viewModel.handoffReady.collectAsState()
-    val handoffSummary by viewModel.handoffSummary.collectAsState()
-    val handoffReport by viewModel.handoffReport.collectAsState()
-    val missingSlots by viewModel.missingSlots.collectAsState()
-    val isHandoffGenerating by viewModel.isHandoffGenerating.collectAsState()
-    val handoffJobStatus by viewModel.handoffJobStatus.collectAsState()
+    val conversationPhase by viewModel.conversationPhase.collectAsState()
+    val sessionReportStatus by viewModel.sessionReportStatus.collectAsState()
+    val inactivityTimeoutSeconds by viewModel.sessionInactivityTimeoutSeconds.collectAsState()
     val isBackgroundServiceRunning by viewModel.isBackgroundServiceRunning.collectAsState()
     val backgroundServiceStatus by viewModel.backgroundServiceStatus.collectAsState()
     val cravingClass = latestPrediction?.cravingClass
     val cravingColor = cravingTone(cravingClass)
     val communicationOn = isUploadEnabled || isPredictionReceiverEnabled
+    val rppgStatus by rppgViewModel.serviceStatus.collectAsState()
+    val rppgResult by rppgViewModel.latestResult.collectAsState()
+    val canCaptureRppg = MobileAuthRuntime.state.collectAsState().value.canCaptureRppg
 
     when {
+        isTalkChoiceRequired -> TalkChoiceScreen(
+            onTalkNow = viewModel::chooseTalkNow,
+            onLater = viewModel::chooseTalkLater
+        )
+        isAuqChoiceRequired -> OptionalAuqChoiceScreen(
+            onComplete = viewModel::chooseAuqForm,
+            onSkip = viewModel::skipAuqAndTalk
+        )
         isStateCheckRequired -> StateCheckScreen(
             questions = viewModel.stateCheckQuestions,
             responses = stateCheckResponses,
@@ -366,18 +476,14 @@ fun UserHomeScreen(
             onSubmit = viewModel::submitStateCheckResponses
         )
         isChatVisible -> CravingChatScreen(
-            result = latestStateCheckResult,
             messages = chatMessages,
             chatStatus = chatStatus,
             isChatSending = isChatSending,
-            handoffReady = handoffReady,
-            handoffSummary = handoffSummary,
-            handoffReport = handoffReport,
-            missingSlots = missingSlots,
-            isHandoffGenerating = isHandoffGenerating,
-            handoffJobStatus = handoffJobStatus,
+            phase = conversationPhase,
+            reportStatus = sessionReportStatus,
+            inactivityTimeoutSeconds = inactivityTimeoutSeconds,
             onSend = viewModel::sendChatMessage,
-            onHandoff = viewModel::requestHandoffReport,
+            onFinish = viewModel::finishConversationManually,
             onClose = viewModel::closeChat
         )
         else -> UserDashboardScreen(
@@ -387,12 +493,17 @@ fun UserHomeScreen(
             uploadStatus = uploadStatus,
             isPredictionReceiverEnabled = isPredictionReceiverEnabled,
             isUploadEnabled = isUploadEnabled,
-            latestStateCheckResult = latestStateCheckResult,
             isBackgroundServiceRunning = isBackgroundServiceRunning,
             backgroundServiceStatus = backgroundServiceStatus,
             cravingClass = cravingClass,
             cravingColor = cravingColor,
+            rppgStatus = rppgStatus,
+            rppgResult = rppgResult,
+            canCaptureRppg = canCaptureRppg,
+            onOpenRppgCamera = onOpenRppgCamera,
             onOpenChat = viewModel::openChat,
+            onOpenNotice = onOpenNotice,
+            onOpenDashboard = onOpenDashboard,
             onRequestPermissions = onRequestPermissions,
             onDeveloperUnlock = onDeveloperUnlock
         )
@@ -407,12 +518,17 @@ private fun UserDashboardScreen(
     uploadStatus: String,
     isPredictionReceiverEnabled: Boolean,
     isUploadEnabled: Boolean,
-    latestStateCheckResult: StateCheckResult?,
     isBackgroundServiceRunning: Boolean,
     backgroundServiceStatus: String,
     cravingClass: Int?,
     cravingColor: Color,
+    rppgStatus: RppgServiceStatus?,
+    rppgResult: RppgJobResult?,
+    canCaptureRppg: Boolean,
+    onOpenRppgCamera: () -> Unit,
     onOpenChat: () -> Unit,
+    onOpenNotice: () -> Unit,
+    onOpenDashboard: () -> Unit,
     onRequestPermissions: () -> Unit,
     onDeveloperUnlock: () -> Unit
 ) {
@@ -487,10 +603,20 @@ private fun UserDashboardScreen(
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (canCaptureRppg && rppgStatus?.canStart == true) {
+                Button(
+                    onClick = onOpenRppgCamera,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("카메라로 10초 측정", fontWeight = FontWeight.Bold)
+                }
+            }
+            rppgResult?.let { RppgResultCard(it) }
             if (cravingClass == 1) {
                 CravingNoticeCard(
                     title = "주의 필요",
-                    message = "갈망 신호가 올라왔습니다. 잠시 현재 상태를 확인하세요.",
+                    message = "갈망과 관련된 변화일 가능성이 있습니다. 원하면 지금 대화할 수 있어요.",
                     color = HealthWarning
                 )
             }
@@ -526,15 +652,21 @@ private fun UserDashboardScreen(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            latestStateCheckResult?.let { result ->
-                OutlinedButton(
-                    onClick = onOpenChat,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, HealthPrimary),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = HealthPrimary)
-                ) {
-                    Text("상담 이어가기 · %.2f/7점".format(result.meanScore), fontWeight = FontWeight.Bold)
+            OutlinedButton(
+                onClick = onOpenChat,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, HealthPrimary),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = HealthPrimary)
+            ) {
+                Text("대화하기", fontWeight = FontWeight.Bold)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onOpenDashboard, modifier = Modifier.weight(1f)) {
+                    Text("내 상태 기록")
+                }
+                OutlinedButton(onClick = onOpenNotice, modifier = Modifier.weight(1f)) {
+                    Text("사용 안내")
                 }
             }
             TextButton(
@@ -595,6 +727,65 @@ private fun UserStatusTile(
             Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = HealthText)
         }
     }
+}
+
+@Composable
+private fun TalkChoiceScreen(onTalkNow: () -> Unit, onLater: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Card(colors = CardDefaults.cardColors(containerColor = HealthSurface)) {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text("잠시 상태를 확인해 볼까요?", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "센서 변화가 갈망과 관련된 신호일 가능성이 있습니다. 확정된 판단은 아니며, 원할 때 대화를 시작할 수 있습니다.",
+                    color = HealthMuted,
+                    lineHeight = 20.sp
+                )
+                Button(onClick = onTalkNow, modifier = Modifier.fillMaxWidth()) { Text("지금 대화하기") }
+                OutlinedButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("나중에") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OptionalAuqChoiceScreen(onComplete: () -> Unit, onSkip: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Card(colors = CardDefaults.cardColors(containerColor = HealthSurface)) {
+            Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("간단한 설문은 선택 사항입니다", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                Text("작성하지 않아도 대화와 중재 기능을 동일하게 이용할 수 있습니다.", color = HealthMuted)
+                Button(onClick = onComplete, modifier = Modifier.fillMaxWidth()) { Text("AUQ 작성하기") }
+                OutlinedButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) { Text("건너뛰고 대화하기") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InterventionProductNoticeDialog(onAcknowledge: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("NeuroTruth 사용 안내") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("NeuroTruth는 연구 참여 환자가 센서 기록과 대화를 통해 자신의 상태를 돌아보고, 필요한 순간에 대화형 중재를 받도록 돕는 연구용 서비스입니다.")
+                Text("동의한 범위에서 센서·예측·설문·대화 기록이 계속 저장될 수 있으며 연구 분석에 사용될 수 있습니다.")
+                Text("이 서비스는 의료 진단, 치료 또는 응급 대응을 대신하지 않습니다. 즉각적인 위험이나 응급 상황에는 119 또는 이용 가능한 긴급 지원 기관에 연락하세요.")
+            }
+        },
+        confirmButton = { Button(onClick = onAcknowledge) { Text("확인했어요") } }
+    )
 }
 
 @Composable
@@ -694,18 +885,14 @@ private fun StateCheckScreen(
 
 @Composable
 private fun CravingChatScreen(
-    result: StateCheckResult?,
     messages: List<ChatMessage>,
     chatStatus: String,
     isChatSending: Boolean,
-    handoffReady: Boolean,
-    handoffSummary: String,
-    handoffReport: String,
-    missingSlots: List<String>,
-    isHandoffGenerating: Boolean,
-    handoffJobStatus: String,
+    phase: String,
+    reportStatus: String,
+    inactivityTimeoutSeconds: Int?,
     onSend: (String) -> Unit,
-    onHandoff: () -> Unit,
+    onFinish: () -> Unit,
     onClose: () -> Unit
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
@@ -723,9 +910,15 @@ private fun CravingChatScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("상담", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = HealthText)
+                Text("대화", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = HealthText)
                 Text(
-                    result?.let { "점수 %.2f/7 · 총점 %d/56".format(it.meanScore, it.totalScore) } ?: "상태 확인 결과 대기",
+                    when (phase) {
+                        "safety_check" -> "안전 확인"
+                        "intervention_dialogue" -> "대화형 중재"
+                        "closing" -> "마무리"
+                        "completed" -> "종료됨"
+                        else -> "대화 진행 중"
+                    },
                     fontSize = 12.sp,
                     color = HealthMuted
                 )
@@ -740,39 +933,16 @@ private fun CravingChatScreen(
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (handoffReady) HealthPrimarySoft else HealthSurface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            border = BorderStroke(1.dp, if (handoffReady) HealthPrimary.copy(alpha = 0.28f) else HealthLine)
-        ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(
-                    if (handoffReady) "인계 준비" else "정보 수집",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (handoffReady) HealthPrimary else HealthMuted
-                )
-                Text(handoffSummary, fontSize = 11.sp, color = HealthMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (missingSlots.isNotEmpty()) {
-                    Text("추가 정보: ${missingSlots.joinToString(", ")}", fontSize = 10.sp, color = HealthMuted)
-                }
-                if (isHandoffGenerating || handoffJobStatus != "인계 작업 대기") {
-                    Text(
-                        handoffJobStatus,
-                        fontSize = 10.sp,
-                        color = if (handoffJobStatus.contains("실패") || handoffJobStatus.contains("시간 초과")) {
-                            HealthDanger
-                        } else {
-                            HealthPrimary
-                        }
-                    )
-                }
-            }
-        }
+        Text(
+            buildString {
+                append("관리자가 설정한 ")
+                append(inactivityTimeoutSeconds?.let(::timeoutDurationLabel) ?: "비활동 시간")
+                append(" 동안 응답이 없으면 세션이 자동 종료됩니다")
+                append(" · 보고서 상태: ${reportStatus.ifBlank { "대기" }}")
+            },
+            fontSize = 11.sp,
+            color = HealthMuted
+        )
 
         Column(
             modifier = Modifier
@@ -783,16 +953,6 @@ private fun CravingChatScreen(
         ) {
             messages.forEach { message ->
                 ChatBubble(message)
-            }
-            if (handoffReport.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(HealthSurface, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                ) {
-                    Text(handoffReport.take(700), fontSize = 12.sp, color = HealthText)
-                }
             }
         }
 
@@ -822,20 +982,20 @@ private fun CravingChatScreen(
             }
         }
 
-        OutlinedButton(
-            onClick = onHandoff,
-            enabled = messages.isNotEmpty() && !isHandoffGenerating,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, HealthPrimary),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = HealthPrimary)
+        TextButton(
+            onClick = onFinish,
+            enabled = !isChatSending,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                if (isHandoffGenerating) "인계 요약 생성 중" else "인계 요약 생성",
-                fontWeight = FontWeight.Bold
-            )
+            Text("대화 종료", color = HealthDanger, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+private fun timeoutDurationLabel(seconds: Int): String = when {
+    seconds % 3600 == 0 -> "${seconds / 3600}시간"
+    seconds % 60 == 0 -> "${seconds / 60}분"
+    else -> "${seconds}초"
 }
 
 @Composable
@@ -916,17 +1076,17 @@ private fun cravingLevelText(cravingClass: Int?): String =
 
 private fun cravingBadgeText(cravingClass: Int?): String =
     when (cravingClass) {
-        0 -> "안정"
-        1 -> "주의"
+        0 -> "낮음"
+        1 -> "변화"
         2 -> "확인"
         else -> "--"
     }
 
 private fun cravingLevelMessage(cravingClass: Int?): String =
     when (cravingClass) {
-        0 -> "현재는 안정적인 상태로 기록되고 있습니다."
-        1 -> "주의가 필요합니다. 잠시 상태를 확인하세요."
-        2 -> "지금 상태 확인이 필요합니다."
+        0 -> "현재 센서 기반 상태 지표가 낮게 기록되었습니다."
+        1 -> "평소와 다른 변화일 가능성이 있습니다. 원하면 상태를 확인해 보세요."
+        2 -> "갈망과 관련된 변화일 가능성이 있습니다. 원하면 지금 대화할 수 있어요."
         else -> "워치 측정과 서버 예측을 기다리는 중입니다."
     }
 
@@ -1062,7 +1222,7 @@ fun HealthMonitorScreen(
             url = serverUrl,
             onUrlChange = viewModel::updateServerUrl,
             textFieldLabel = "POST URL",
-            placeholder = "http://192.168.0.10:8000/sensor-window",
+            placeholder = "http://192.168.0.10:8000/api/sensor-windows",
             isEnabled = isUploadEnabled,
             onToggle = { viewModel.setUploadEnabled(!isUploadEnabled) },
             activeText = "전송 중지",
@@ -1076,7 +1236,7 @@ fun HealthMonitorScreen(
             url = predictionUrl,
             onUrlChange = viewModel::updatePredictionUrl,
             textFieldLabel = "예측 수신 URL",
-            placeholder = "http://192.168.0.10:8000/prediction-stream",
+            placeholder = "http://192.168.0.10:8000/api/predictions/stream",
             isEnabled = isPredictionReceiverEnabled,
             onToggle = { viewModel.setPredictionReceiverEnabled(!isPredictionReceiverEnabled) },
             activeText = "수신 중지",
@@ -1416,7 +1576,7 @@ fun MonitorScreen(viewModel: SensorViewModel, onSaveCsv: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("POST URL") },
-                    placeholder = { Text("http://192.168.0.10:8000/sensor-window") }
+                    placeholder = { Text("http://192.168.0.10:8000/api/sensor-windows") }
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1448,7 +1608,7 @@ fun MonitorScreen(viewModel: SensorViewModel, onSaveCsv: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("예측 수신 URL") },
-                    placeholder = { Text("http://192.168.0.10:8000/prediction-stream") }
+                    placeholder = { Text("http://192.168.0.10:8000/api/predictions/stream") }
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -26,6 +26,8 @@ class PhoneMonitoringService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val serverUploader = ServerUploader()
+    private lateinit var apiClient: AuthenticatedApiClient
+    private lateinit var windowIdStore: StableClientWindowIdStore
     private lateinit var predictionSender: PhonePredictionSender
     private lateinit var alertNotifier: CravingAlertNotifier
 
@@ -34,6 +36,7 @@ class PhoneMonitoringService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var autoCommunicationJob: Job? = null
     private var predictionJob: Job? = null
+    private var pendingUpload: ServerWindowPayload? = null
     private val allHrRaw = mutableListOf<Pair<Long, Float>>()
     private val allPpgRaw = mutableListOf<Pair<Long, Float>>()
     private val allPpgIrRaw = mutableListOf<Pair<Long, Float>>()
@@ -48,6 +51,8 @@ class PhoneMonitoringService : Service() {
         super.onCreate()
         predictionSender = PhonePredictionSender(this)
         alertNotifier = CravingAlertNotifier(this)
+        apiClient = MobileApiProvider.get(this)
+        windowIdStore = StableClientWindowIdStore.from(this)
         PhoneMonitoringState.ensureConfig(ServerConfig.load(this))
         startForeground(NOTIFICATION_ID, buildNotification("백그라운드 모니터링 중"))
         acquireWakeLock()
@@ -59,6 +64,10 @@ class PhoneMonitoringService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!MobileAuthRuntime.canUpload()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         PhoneMonitoringState.isServiceRunning.value = true
         PhoneMonitoringState.serviceStatus.value = "백그라운드 모니터링 중"
         return START_STICKY
@@ -109,14 +118,14 @@ class PhoneMonitoringService : Service() {
         PhoneMonitoringState.predictionStatus.value = "취득 시작 감지: 10초 후 자동 수신"
         autoCommunicationJob = scope.launch {
             delay(AUTO_COMMUNICATION_DELAY_MS)
-            if (PhoneMonitoringState.serverUrl.value.isNotBlank()) {
+            if (PhoneMonitoringState.serverUrl.value.isNotBlank() && MobileAuthRuntime.canUpload()) {
                 PhoneMonitoringState.isUploadEnabled.value = true
                 PhoneMonitoringState.uploadStatus.value = "자동 전송 시작: 취득 10초 경과"
             } else {
                 PhoneMonitoringState.uploadStatus.value = "자동 전송 보류: 서버 POST URL이 비어 있음"
             }
 
-            if (PhoneMonitoringState.predictionUrl.value.isNotBlank()) {
+            if (PhoneMonitoringState.predictionUrl.value.isNotBlank() && MobileAuthRuntime.canReceivePredictions()) {
                 PhoneMonitoringState.isPredictionReceiverEnabled.value = true
             } else {
                 PhoneMonitoringState.predictionStatus.value = "자동 수신 보류: 예측 수신 URL이 비어 있음"
@@ -128,7 +137,11 @@ class PhoneMonitoringService : Service() {
         scope.launch {
             while (isActive) {
                 delay(SERVER_UPLOAD_INTERVAL_MS)
-                if (!PhoneMonitoringState.isUploadEnabled.value) continue
+                if (
+                    !PhoneMonitoringState.isUploadEnabled.value ||
+                    !MobileAuthRuntime.canUpload() ||
+                    PhoneMonitoringState.isCameraPauseActive.value
+                ) continue
 
                 val url = PhoneMonitoringState.serverUrl.value
                 if (url.isBlank()) {
@@ -136,7 +149,7 @@ class PhoneMonitoringService : Service() {
                     continue
                 }
 
-                val payload = buildServerPayload()
+                val payload = pendingUpload ?: buildServerPayload()
                 if (payload == null) {
                     PhoneMonitoringState.uploadStatus.value = "전송 대기: PPG/EDA 첫 샘플 대기 중"
                     continue
@@ -146,10 +159,26 @@ class PhoneMonitoringService : Service() {
                 PhoneMonitoringState.uploadStatus.value = "백그라운드 전송 중: ${payload.samples.size} samples"
                 val result = runCatching {
                     withContext(Dispatchers.IO) {
-                        serverUploader.postWindow(url, payload)
+                        serverUploader.postWindowAuthenticated(apiClient, url, payload)
                     }
-                }.getOrElse { e -> UploadResult(false, -1, e.message ?: "unknown error") }
+                }.getOrElse { e ->
+                    if (e is AuthenticationRequiredException || (e is ApiHttpException && e.statusCode == 401)) {
+                        handleAuthenticationFailure()
+                    }
+                    UploadResult(false, -1, e.message ?: "unknown error")
+                }
                 PhoneMonitoringState.recordUploadLatency(payload)
+
+                if (result.success) {
+                    windowIdStore.markCompleted(uploadKey(payload))
+                    pendingUpload = null
+                } else {
+                    pendingUpload = payload
+                    if (result.statusCode == 401 || !MobileAuthRuntime.state.value.authenticated) {
+                        handleAuthenticationFailure()
+                        break
+                    }
+                }
 
                 PhoneMonitoringState.uploadStatus.value = if (result.success) {
                     "백그라운드 전송 완료: #${payload.sequence}, ${payload.samples.size} samples"
@@ -168,7 +197,7 @@ class PhoneMonitoringService : Service() {
             ) { enabled, url -> enabled to url }
                 .distinctUntilChanged()
                 .collect { (enabled, url) ->
-                    if (enabled && url.isNotBlank()) {
+                    if (enabled && url.isNotBlank() && MobileAuthRuntime.canReceivePredictions()) {
                         startPredictionReceiver(url)
                     } else {
                         predictionJob?.cancel()
@@ -187,21 +216,31 @@ class PhoneMonitoringService : Service() {
                 val activeJob = coroutineContext[Job]
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        serverUploader.listenPredictions(
-                            url = url,
-                            shouldContinue = {
-                                PhoneMonitoringState.isPredictionReceiverEnabled.value &&
-                                    activeJob?.isActive == true
+                        apiClient.executeAuthenticatedStream { token ->
+                            serverUploader.listenPredictions(
+                                url = url,
+                                accessToken = token,
+                                shouldContinue = {
+                                    PhoneMonitoringState.isPredictionReceiverEnabled.value &&
+                                        MobileAuthRuntime.canReceivePredictions() &&
+                                        activeJob?.isActive == true
+                                }
+                            ) { prediction ->
+                                if (PhoneMonitoringState.isCameraPauseActive.value) return@listenPredictions
+                                val receivedAtMs = System.currentTimeMillis()
+                                PhoneMonitoringState.recordPredictionLatency(prediction, receivedAtMs)
+                                processPrediction(prediction)
                             }
-                        ) { prediction ->
-                            val receivedAtMs = System.currentTimeMillis()
-                            PhoneMonitoringState.recordPredictionLatency(prediction, receivedAtMs)
-                            processPrediction(prediction)
                         }
                     }
                 }
                 if (!PhoneMonitoringState.isPredictionReceiverEnabled.value) break
-                val error = result.exceptionOrNull()?.message ?: "stream closed"
+                val failure = result.exceptionOrNull()
+                if (failure is AuthenticationRequiredException || (failure is ApiHttpException && failure.statusCode == 401)) {
+                    handleAuthenticationFailure()
+                    break
+                }
+                val error = failure?.message ?: "stream closed"
                 PhoneMonitoringState.predictionStatus.value = "백그라운드 SSE 재연결 대기: $error"
                 delay(PREDICTION_RECONNECT_DELAY_MS)
             }
@@ -209,13 +248,17 @@ class PhoneMonitoringService : Service() {
     }
 
     private fun processPrediction(prediction: CravingPrediction) {
+        val canNotify = MobileAuthRuntime.state.value.canNotify
         val action = AlertActionPolicy.resolve(prediction)
-        val shouldPresent = PhoneMonitoringState.registerAlertAction(prediction, action)
+        val alertClaimed = canNotify && PhoneMonitoringState.registerAlertAction(prediction, action)
         PhoneMonitoringState.publishPrediction(prediction)
-        if (shouldPresent) handleAlert(action)
+        if (NotificationPresentationPolicy.shouldPresent(canNotify, alertClaimed)) handleAlert(action)
         val sentToWatch = predictionSender.sendPrediction(
             prediction = prediction,
-            suppressAlertPresentation = PhoneMonitoringState.isInterventionActive.value
+            suppressAlertPresentation = NotificationPresentationPolicy.suppressWatchPresentation(
+                canNotify = canNotify,
+                interventionActive = PhoneMonitoringState.isInterventionActive.value
+            )
         )
         PhoneMonitoringState.predictionStatus.value = if (sentToWatch) {
             "백그라운드 예측 수신, 워치 전달 완료"
@@ -256,6 +299,7 @@ class PhoneMonitoringService : Service() {
         if (samples.isEmpty()) return null
         uploadSequence += 1
         return ServerWindowPayload(
+            clientWindowId = windowIdStore.getOrCreate(uploadKey(session.sessionId, uploadSequence)),
             sessionId = session.sessionId,
             sessionStartedAtMs = session.startedAtMs,
             sequence = uploadSequence,
@@ -359,6 +403,7 @@ class PhoneMonitoringService : Service() {
 
         observedSessionId = sessionId
         uploadSequence = 0L
+        pendingUpload = null
         allHrRaw.clear()
         allPpgRaw.clear()
         allPpgIrRaw.clear()
@@ -416,6 +461,20 @@ class PhoneMonitoringService : Service() {
         wakeLock = null
     }
 
+    private fun uploadKey(payload: ServerWindowPayload): String =
+        uploadKey(payload.sessionId, payload.sequence)
+
+    private fun uploadKey(sessionId: String, sequence: Long): String =
+        "service:$sessionId:$sequence"
+
+    private fun handleAuthenticationFailure() {
+        MobileAuthRuntime.signOut()
+        apiClient.clearSession()
+        PhoneMonitoringState.isUploadEnabled.value = false
+        PhoneMonitoringState.isPredictionReceiverEnabled.value = false
+        stopSelf()
+    }
+
     companion object {
         private const val CHANNEL_ID = "phone_monitoring"
         private const val NOTIFICATION_ID = 3001
@@ -429,6 +488,7 @@ class PhoneMonitoringService : Service() {
         private const val EDA_SAMPLE_INTERVAL_MS = 1_000L
         private const val EDA_SAMPLE_COUNT = 10
         fun start(context: Context) {
+            if (!MobileAuthRuntime.canUpload()) return
             val appContext = context.applicationContext
             val intent = Intent(appContext, PhoneMonitoringService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -436,6 +496,13 @@ class PhoneMonitoringService : Service() {
             } else {
                 appContext.startService(intent)
             }
+        }
+
+        fun stop(context: Context) {
+            val appContext = context.applicationContext
+            PhoneMonitoringState.isUploadEnabled.value = false
+            PhoneMonitoringState.isPredictionReceiverEnabled.value = false
+            appContext.stopService(Intent(appContext, PhoneMonitoringService::class.java))
         }
     }
 }

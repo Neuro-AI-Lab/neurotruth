@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password}
       POSTGRES_DB: ${POSTGRES_DB:-mydb}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_v25:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - neurotruth-network
@@ -32,11 +32,25 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-myuser}:${POSTGRES_PASSWORD:-changeme_strong_password}@db:5432/${POSTGRES_DB:-mydb}
+      SENSOR_STORAGE_ROOT: /var/lib/neurotruth/sensors
+      RPPG_STORAGE_ROOT: /var/lib/neurotruth/rppg
+      RPPG_TMPFS_ROOT: /dev/shm/neurotruth-rppg
+      TMPDIR: /dev/shm/neurotruth-rppg
+      NEUROTRUTH_SCHEMA_SQL: /app/schema/neurotruth_schema_v2_5.sql
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - encrypted_sensor_data:/var/lib/neurotruth/sensors
+      - encrypted_rppg_data:/var/lib/neurotruth/rppg
+      - ../backend/alembic.ini:/app/alembic.ini:ro
+      - ../backend/alembic:/app/alembic:ro
+      - ../../neurotruth_schema_v2_5.sql:/app/schema/neurotruth_schema_v2_5.sql:ro
+    tmpfs:
+      - /dev/shm/neurotruth-rppg:size=256m,mode=0700
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     networks:
       - neurotruth-network
 
@@ -58,4 +72,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_data_v25:
+  encrypted_sensor_data:
+  encrypted_rppg_data:

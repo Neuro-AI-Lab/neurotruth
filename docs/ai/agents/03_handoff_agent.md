@@ -1,27 +1,24 @@
-# Handoff Agent
+# Report Agent
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
-## Responsibility
-
-The handoff behavior produces a concise Markdown report for clinician, supporter, or research follow-up review.
-
-## Public Endpoints
+## Endpoints
 
 ```http
-POST /api/intervention/handoff
-POST /api/intervention/handoff/jobs
-GET /api/intervention/handoff/jobs/{job_id}
+POST /api/sessions/{sessionId}/reports
+GET  /api/sessions/{sessionId}/reports
 ```
 
-The Android app uses the job endpoints so report generation does not depend on one long-lived HTTP request. The synchronous endpoint remains for compatibility. Job status exposes only queued/running/completed/failed, the completed result, or a sanitized failure.
+Report creation is asynchronous and persistent. Manual finish or inactivity timeout automatically queues a consented report. `POST` is an idempotent retry for a missing/failed report. `GET` returns only `reportId`, `version`, `status`, `createdAt`, and `generatedAt`; current patient and administrator dashboards never render report bodies.
 
-## Report Rules
+## Rules
 
-- Separate user-reported facts from prediction-derived context.
-- Keep uncertainty visible.
-- Do not claim intoxication, relapse, diagnosis, or treatment success.
-- Include missing critical context when relevant.
-- Keep the report compact enough for quick review.
-- Persist the generated report under the same session as its conversation and slots.
-- Use the same generation and persistence path for synchronous and asynchronous requests.
+- Require `reportGeneration` consent.
+- New reports use conversation messages, optional AUQ, trigger prediction, alerts, delivered interventions, and evidence-linked state inferences. They never read `session_slots` or update legacy memory.
+- Both manually `completed` and timeout-`abandoned` new sessions may produce reports. Report failure remains independent from session terminal state and state inference.
+- Separate patient-reported facts, AUQ, and prediction-derived context. Preserve uncertainty and evidence references.
+- Do not claim intoxication, relapse, diagnosis, treatment success, human review, or emergency response.
+- Persist AES-256-GCM encrypted content with actual report model/prompt version. Expose only sanitized failure state.
+- No bulk report/dataset download API exists.
+
+The legacy synchronous handoff and process-local handoff-job endpoints are not current APIs. Legacy slot reports remain immutable history. Voice, rPPG, self-event capture, and craving-model experiments are deferred.

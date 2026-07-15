@@ -1,122 +1,86 @@
 # NeuroTruth Backend
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
-FastAPI backend for sensor upload, craving prediction, rule-based alerts, Postgres memory, Bedrock text intervention, slot extraction, and handoff generation.
+FastAPI backend for the authenticated intervention-support platform. Readiness fails closed when PostgreSQL, the expected Alembic revision, required security settings, or the AES-256-GCM keyring are unavailable.
 
-## Commands
+## Run and Validate
 
 ```powershell
 cd apps/backend
-python -m compileall app tests
-python -m pytest
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q app tests
+alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## Runtime Endpoints
+Use `ALLOW_INSECURE_HTTP=true` only with `APP_ENV=development|test`. Production requires HTTPS.
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | Liveness and model status |
-| `GET` | `/model/status` | Detailed prediction diagnostics |
-| `POST` | `/sensor-window` | Android sensor window upload |
-| `GET` | `/prediction-stream` | SSE craving class and alert stream |
-| `POST` | `/api/intervention/chat` | Text intervention response plus slot update |
-| `POST` | `/api/intervention/slots` | Slot extraction |
-| `POST` | `/api/intervention/handoff` | Synchronous Markdown handoff report; retained for compatibility |
-| `POST` | `/api/intervention/handoff/jobs` | Accept an asynchronous handoff job and return HTTP 202 plus `jobId` |
-| `GET` | `/api/intervention/handoff/jobs/{job_id}` | Read queued/running/completed/failed handoff job state |
-| `POST` | `/api/llm/chat` | Legacy chat compatibility wrapper |
+## Current Authenticated API
 
-## Asynchronous Handoff Jobs
+| Area | Routes |
+|---|---|
+| Auth | `POST /api/auth/patient/signup`, `/api/auth/admin/signup`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/change-password` |
+| Profile/consent | `GET/PATCH /api/me`, `POST /api/me/consents` |
+| Sensor/prediction | `POST /api/sensor-windows`, `GET /api/predictions/stream` |
+| Session | `POST /api/sessions`, `GET /api/sessions/{id}`, `POST .../messages`, `.../assessments`, `.../finish`, `POST/GET .../reports` |
+| Patient dashboard | `GET /api/me/dashboard?range=24h|7d|30d`, `GET /api/me/predictions/{predictionId}/ppg-preview` |
+| Administrator | Patients/timeline/dashboard, reason-gated reveal, temporary password, confirmed deletion, settings |
+| Camera rPPG | Patient status/job/poll/retry and administrator capture summary/reveal/delete; disabled by default |
 
-- Mobile submits an immutable handoff request snapshot and receives an opaque UUID `jobId` without waiting for Bedrock generation.
-- Completed jobs return the existing handoff response under `result` and persist the report through the same path as the synchronous endpoint.
-- Provider errors are converted to the fixed public message `Handoff generation failed`; credentials and raw provider payloads are not returned.
-- The process-local registry keeps at most 128 entries. Terminal metadata expires after one hour and a job may run for at most one hour.
-- Shutdown atomically rejects new work, marks queued/running jobs failed, and cancels/drains tracked tasks.
+The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and `/api/intervention/*` paths are not current contracts.
 
-## Alert Evaluation
+## Persistence and Migration
 
-- Alert history, cooldown, and downtrend state are isolated by session ID.
-- The in-process LRU registry retains at most 256 session evaluators.
-- Mean-based decisions wait for the configured 10-window warm-up by default.
-- A class-2 streak can still trigger early required intervention after `ALERT_HIGH_STREAK` consecutive values, defaulting to 3.
-- Warm-up events remain backward compatible with `class` while returning `alertLevel=none`, `alertAction=none`, and `triggerReason=window_warming_up`.
+- `20260715_0001` installs the 18-table authenticated baseline.
+- `20260715_0002` adds `rppg_captures`, `rppg_analysis_jobs`, and camera-prediction linkage.
+- `20260715_0003` adds `state_inferences`, new session interaction state, and multi-intervention ordering/evidence.
+- `apps/db/init.sql` installs PostgreSQL extensions only. Alembic is the only business-schema migration path.
+- The fresh schema uses `postgres_data_v25`. Back up and preserve legacy `postgres_data`; do not run the new migration against it.
+- Sensitive database payloads use AES-256-GCM with fresh nonces and table/column/patient/record AAD.
+- Raw sensor windows use canonical JSON → gzip → AES-GCM storage under `SENSOR_STORAGE_ROOT`.
+- `(patient_id, client_window_id)` makes identical sensor retries idempotent and conflicting reuse returns `409`.
 
-## Local Model
+## Intervention-First Session Contract
 
-The craving targeting model belongs to backend.
+A patient can have one active `created|in_progress` session. New sessions do not write `session_slots` and never return `slots`, `missingSlots`, or `handoffReady`. Pre-`0003` slot sessions remain read-only history.
+
+Flow:
 
 ```text
-apps/backend/model/weights/rf_dependent.joblib
+optional AUQ → safety check → deterministic first intervention
+→ free intervention dialogue → manual finish or inactivity timeout
+→ evidence-linked state inference → asynchronous report status
 ```
 
-Place or track the model bundle here before running inference, or set `MODEL_PATH`.
+Successful create/get/message/finish responses include the current `inactivityTimeoutSeconds`. Message responses return `assistantText`, `phase`, `safety`, `activeInterventions`, `stateSnapshot`, and `reportStatus`.
 
-Docker default:
+The dialogue agent uses a versioned question bank only as a weak guide. It asks at most one short question when useful and must not repeat answered/declined topics. Server validation rejects unclassified questions, diagnostic statements, medication instructions, treatment-effect claims, and causal claims; one repair is allowed before deterministic fallback.
 
-```text
-/app/model/weights/rf_dependent.joblib
-```
+Immediate safety risk prioritizes 119/109 guidance and may record whether administrator involvement was requested. It does not promise live connection, emergency dispatch, or automatic contact. `interventionsEnabled=false` suppresses ordinary intervention text and rows, while safety guidance remains.
 
-## Bedrock
+## State, Reports, and Dashboards
 
-Bedrock calls are made directly inside backend through `app/ai/bedrock_agents.py`.
-The default `openai.gpt-5.5` model calls the Bedrock Mantle Responses endpoint
-and requires `AWS_BEARER_TOKEN_BEDROCK`. Non-OpenAI model IDs continue to use
-the existing Bedrock Runtime `converse` bearer path or the boto3 client for
-IAM/profile-based authentication, providing a configuration-only rollback.
+- Deterministic state inference aggregates prediction, alert, AUQ, session, and intervention evidence IDs.
+- The LLM may summarize only supplied evidence. Failure leaves deterministic state intact and marks summary `unavailable`.
+- Reports use dialogue, AUQ, prediction, intervention, and state evidence. Public session/report APIs return status and metadata, not decrypted report body.
+- Patient dashboard PPG preview is owner-only and capped at 512 points.
+- Administrator dashboard contains no raw PPG. Sensitive message/state/intervention/report reveal requires a reason, is audited, and returns `Cache-Control: no-store`.
 
-Required runtime configuration:
+## Optional DGX Spark rPPG
 
-| Variable | Purpose |
-|---|---|
-| `AWS_BEARER_TOKEN_BEDROCK` | Bedrock API key bearer token |
-| `BEDROCK_MODEL_ID` | Defaults to `openai.gpt-5.5` |
-| `AWS_REGION` | AWS Bedrock region |
-| `AWS_DEFAULT_REGION` | Optional fallback region |
-| `BEDROCK_TIMEOUT_SECONDS` | Optional bearer-token HTTP timeout; defaults to `60` |
+`RPPG_ENABLED=false` is the default. When explicitly enabled and ready, the backend accepts 10-second camera jobs, retains encrypted videos/provider data, calls DGX FactorizePhys, validates quality, resamples rPPG to 512 points at 51.2 Hz, adds 512 zero-valued EDA points, and calls the existing RF model. Mobile never receives the DGX address. The feature is not release-ready before controlled real-phone/DGX validation.
 
-GPT-5.5 requires the bearer token and a Mantle-supported region; it was verified
-in `us-east-1`. IAM role, AWS profile, or standard AWS environment credentials
-remain available only for non-OpenAI model IDs using the Converse path.
+## Required Configuration
 
-## Agent Prompts
-
-System prompts are backend-owned and live in:
-
-```text
-apps/backend/app/ai/bedrock_agents.py
-```
-
-| Constant | Purpose |
-|---|---|
-| `CHAT_SYSTEM_PROMPT` | Korean CBT-style text intervention dialogue |
-| `SLOTS_SYSTEM_PROMPT` | Structured craving slot extraction |
-| `HANDOFF_SYSTEM_PROMPT` | Markdown handoff report generation |
-
-Do not put these prompts in Android; mobile calls backend only.
-
-## Important Files
-
-| File | Role |
-|---|---|
-| `app/main.py` | FastAPI routes, SSE, intervention orchestration |
-| `app/inference.py` | Sensor preprocessing, RandomForest inference, alert event production |
-| `app/alerts.py` | Rule-based craving alert evaluator |
-| `app/memory.py` | Postgres memory persistence |
-| `app/ai/bedrock_agents.py` | Bedrock adapter, prompts, slot helpers |
-| `model/features.py` | PPG/GSR feature extraction |
-| `model/weights/.gitkeep` | Placeholder for local model bundle directory |
+Required values include `DATABASE_URL`, `DATA_ENCRYPTION_KEYS_B64`, `DATA_ENCRYPTION_CURRENT_KEY_ID`, `JWT_SIGNING_KEY`, `ADMIN_SIGNUP_CODE`, `SENSOR_STORAGE_ROOT`, `APP_ENV`, transport policy, RF model configuration, and live Bedrock credentials/model settings. See the root `.env.example`.
 
 ## Latest Validation
 
 | Check | Result |
 |---|---|
-| `python -m compileall app tests` | PASS |
-| `python -m pytest` | PASS, 50 tests |
-| Docker health smoke | PASS with local model loaded |
-| Async handoff OpenAPI smoke | PASS: POST exposes HTTP 202, GET is present, and an unknown job returns 404 |
-| Same-session integration | PASS: 3 predictions, 3 alerts, 2 conversation turns, 1 slot record, and 1 handoff report linked in Postgres |
-| Live Bedrock bearer calls | PASS for intervention chat and handoff generation |
+| Full backend pytest | PASS, 162 tests |
+| Compileall | PASS |
+| Fresh PostgreSQL 0001→0003 | PASS |
+| Populated 0002→0003 | PASS; legacy session NULL state preserved |
+| Independent final review | No unresolved finding |

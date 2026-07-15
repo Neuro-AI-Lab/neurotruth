@@ -1,29 +1,24 @@
-# Handoff Agent
+# 보고서 에이전트
 
-최종 업데이트: 2026-07-13
+최종 업데이트: 2026-07-15
 
-## 책임
-
-Handoff 동작은 clinician, supporter, research follow-up 검토를 위한 간결한 Markdown report를 생성합니다.
-
-## 공개 Endpoint
+## Endpoint
 
 ```http
-POST /api/intervention/handoff
-POST /api/intervention/handoff/jobs
-GET /api/intervention/handoff/jobs/{job_id}
+POST /api/sessions/{sessionId}/reports
+GET  /api/sessions/{sessionId}/reports
 ```
 
-Android 앱은 report 생성이 하나의 장시간 HTTP request에 의존하지 않도록 job endpoint를 사용합니다. 기존 동기 endpoint는 호환성을 위해 유지합니다. Job status는 queued/running/completed/failed, 완료 result 또는 정제된 failure만 노출합니다.
+보고서 생성은 비동기이며 영구 저장됩니다. 수동 종료 또는 inactivity timeout은 동의한 report를 자동 queue합니다. `POST`는 누락/실패 report를 위한 idempotent retry입니다. `GET`은 `reportId`, `version`, `status`, `createdAt`, `generatedAt`만 반환하며 현재 patient/admin dashboard는 report body를 표시하지 않습니다.
 
-## Report 규칙
+## 규칙
 
-- 사용자가 직접 보고한 사실과 prediction-derived context를 분리합니다.
-- 불확실성을 드러냅니다.
-- 음주, relapse, 진단, 치료 성공을 단정하지 않습니다.
-- 필요한 경우 누락된 핵심 맥락을 포함합니다.
-- 빠르게 검토할 수 있도록 compact하게 유지합니다.
-- 생성된 report를 conversation과 slot이 속한 동일 session 아래에 저장합니다.
-- 동기/비동기 request가 같은 generation 및 persistence 경로를 사용합니다.
+- `reportGeneration` 동의를 요구합니다.
+- 신규 report는 conversation message, 선택형 AUQ, trigger prediction, alert, 전달된 intervention, evidence-linked state inference를 사용합니다. `session_slots`를 읽거나 legacy memory를 갱신하지 않습니다.
+- 수동 `completed`와 timeout `abandoned` 신규 session 모두 report를 만들 수 있습니다. Report 실패는 session terminal state와 state inference에 영향을 주지 않습니다.
+- 환자 보고 사실, AUQ, prediction 기반 context를 구분하고 불확실성과 evidence reference를 보존합니다.
+- 취함, 재발, 진단, 치료 성공, 사람의 검토 또는 긴급 대응을 주장하지 않습니다.
+- 실제 report model/prompt version과 함께 AES-256-GCM 암호화 content를 저장하고 정제된 실패 상태만 노출합니다.
+- Bulk report/dataset download API는 없습니다.
 
-영어 원본: [Handoff Agent](03_handoff_agent.md)
+기존 synchronous handoff와 process-local handoff-job endpoint는 현재 API가 아닙니다. Legacy slot report는 immutable history로 남습니다. Voice, rPPG, self-event capture, craving-model experiment는 deferred입니다.

@@ -1,163 +1,89 @@
 # NeuroTruth Mobile
 
-최종 업데이트: 2026-07-13
+최종 업데이트: 2026-07-15
 
-`apps/mobile`은 NeuroTruth의 Android phone + Wear OS 앱입니다. 워치는 Samsung Health Sensor SDK로 센서를 수집하고, 폰은 센서 대시보드와 갈망 예측/중재 UI를 제공합니다. 현재 UI와 백그라운드 동작은 기존 `watch_test` 앱 환경을 기반으로 복원했고, NeuroTruth의 alert metadata, Bedrock 텍스트 중재, handoff 기능을 연결했습니다.
+`apps/mobile`은 환자용 Android Phone 앱과 Wear OS 센서 앱입니다. Phone이 환자 인증·동의·JWT 갱신·센서 업로드·prediction SSE·중재 세션을 소유합니다. Watch는 센서를 Phone으로 전달하고 표시 가능한 prediction 상태를 받으며 backend token을 저장하거나 backend에 직접 연결하지 않습니다.
 
-## 현재 데모 흐름
-
-```text
-Galaxy Watch
-  -> HR / PPG / EDA / Accel / SkinTemp 수집
-  -> Wearable Data Layer batch 전송
-
-Android Phone
-  -> 실시간 상태/차트/개발자 화면 표시
-  -> 10초 센서 window를 1초마다 backend로 POST
-  -> prediction SSE 수신
-  -> alert state를 phone/watch에 표시
-  -> text intervention chat
-  -> 비동기 handoff job 접수/상태 조회 및 report 표시
-
-Backend
-  -> RF craving prediction
-  -> deterministic alert rule
-  -> Bedrock GPT-5.5 text intervention
-  -> slot extraction and Markdown handoff
-```
-
-## 모듈
-
-| Module | Target | 역할 |
-|---|---|---|
-| `app` | Android phone | 사용자 대시보드, 개발자 차트, 서버 업로드/SSE, 텍스트 중재, handoff |
-| `wearos` | Galaxy Watch | 센서 권한, foreground tracking, phone batch 전송, alert/class 표시 |
-
-## 주요 기능
-
-| 영역 | 현재 상태 |
-|---|---|
-| Phone user dashboard | 복원됨: 상태 카드, 예측/alert, 중재 진입, background monitoring |
-| Phone developer mode | 센서 차트, upload/SSE 상태, CSV 저장, 채팅 제한시간 설정, 상담 상태 초기화 |
-| Phone state-check | 상담 chat 활성 중에는 새 required alert가 AUQ를 다시 열지 않고 watch 진동/알림도 차단하며, chat을 닫은 뒤의 새로운 alert부터 다시 허용 |
-| Shared session | 센서, SSE, chat, handoff가 하나의 session ID를 사용하며 데이터 초기화 시 함께 갱신 |
-| Alert action policy | `alertAction` -> `alertLevel` -> metadata 없는 legacy `class` 순서로 결정 |
-| Text intervention | backend `/api/intervention/chat` 호출 |
-| Handoff | `POST /api/intervention/handoff/jobs` 접수 후 status polling; 생성 중에도 chat 가능 |
-| Chat timeout | 기본 60분, 관리자 모드에서 1~1,440분으로 저장/변경 |
-| Watch UI | 복원됨: sensor start/stop, state badge, vibration/notification behavior |
-| Watch alert display | 유지됨: `/prediction/class` payload의 class와 alert metadata 표시 |
-
-마이크/STT UI는 이번 버전에 포함하지 않습니다.
-
-## 서버 URL
-
-폰 앱은 아래 asset 파일에서 기본 backend URL을 읽습니다.
+## 현재 제품 흐름
 
 ```text
-apps/mobile/app/src/main/assets/server_config.properties
+환자 가입/로그인/동의
+  ← Watch PPG/GSR batch
+  → Bearer POST /api/sensor-windows
+  ← Bearer GET /api/predictions/stream
+  → 갈망 상승 가능성 알림: 지금 대화하기 / 나중에
+  → 선택형 AUQ: 작성하기 / 건너뛰고 대화하기
+  → 안전 확인 → 자유 중재 대화 → 수동 종료/비활동 timeout
+  ← 상태 추론·리포트 상태·대시보드
 ```
 
-현재 물리 기기 테스트용 값:
+NeuroTruth는 치료·진단·응급 대응 앱이 아니라 CBT 치료 중이거나 치료 의지가 있는 사용자의 기록과 갈망 상황 대화를 돕는 연구용 보조 시스템입니다. 첫 로그인에서 이 대상과 한계를 확인하고 홈에서 다시 볼 수 있습니다.
+
+## Phone 기능
+
+- 환자 직접 가입, 로그인, 필수/선택 동의, 비밀번호 변경
+- Android Keystore 기반 refresh token 보관과 회전
+- Watch 센서 수신, 인증된 sensor upload, prediction SSE
+- `지금 대화하기`/`나중에`, optional AUQ, slot 없는 자유 중재 대화
+- 서버의 `inactivityTimeoutSeconds`를 사용한 동적 timeout 안내
+- 앱 재시작 후 active session 복구와 수동 종료
+- 24시간·7일·30일 Low/Mid/High, AUQ, 이벤트, 최신 상태 대시보드
+- 실시간 Watch PPG와 소유 prediction의 최대 512점 PPG preview
+- 리포트 `생성 중|준비됨|실패` 상태만 표시하고 본문은 표시하지 않음
+
+신규 session UI와 API에는 `slots`, `missingSlots`, `handoffReady`가 없습니다. 기존 slot session은 서버의 읽기 전용 이력입니다.
+
+## Wear OS 기능
+
+- Samsung Health Sensor SDK 기반 PPG/EDA 수집
+- Data Layer를 통한 Phone relay
+- Phone이 전달한 Low/Mid/High와 alert metadata 표시
+- backend credential과 DGX 주소 미보관
+
+기존 sensor 수집과 Watch relay는 유지하지만 카메라 rPPG prediction은 Watch에 보내지 않습니다.
+
+## 선택적 카메라 rPPG
+
+Phone 전면 카메라에서 한 얼굴이 안정되면 10초 영상을 촬영해 인증된 NeuroTruth backend에 업로드합니다. Backend가 DGX Spark FactorizePhys와 기존 RF 모델을 호출하며 Phone은 DGX 주소를 알지 못합니다.
+
+- `RPPG_ENABLED=true`이고 backend가 ready일 때만 카메라 UI 표시
+- HTTP 202 뒤 로컬 MP4 삭제, job polling과 앱 재시작 복구
+- 결과는 Phone 전용 카드로 유지하고 Watch에는 전달하지 않음
+- 기본 OFF이며 실제 Phone/DGX 검증 전에는 release-ready가 아님
+
+## 서버 설정
+
+`app/src/main/assets/server_config.properties`:
 
 ```properties
-sensor_post_url=http://192.168.68.51:8000/sensor-window
-prediction_sse_url=http://192.168.68.51:8000/prediction-stream
+api_base_url=http://SERVER_HOST:8000
+sensor_post_url=http://SERVER_HOST:8000/api/sensor-windows
+prediction_sse_url=http://SERVER_HOST:8000/api/predictions/stream
 ```
 
-휴대폰에서 `localhost`는 노트북이 아니라 휴대폰 자신을 뜻합니다. 물리 기기 테스트에서는 노트북과 휴대폰/워치가 같은 네트워크에 있어야 하며, 노트북 LAN IP를 사용해야 합니다.
+물리 기기에서는 노트북 LAN IP를 사용합니다. HTTP는 backend가 development/test이고 `ALLOW_INSECURE_HTTP=true`인 경우에만 허용됩니다. 운영은 HTTPS가 필수입니다.
 
-IP가 바뀌면 repo root에서 확인합니다.
-
-```powershell
-Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null -and $_.NetAdapter.Status -eq 'Up' }
-```
-
-asset 파일을 바꾼 뒤에는 APK를 다시 빌드하고 설치해야 합니다.
-
-## 필요 파일
-
-| 파일 | 필요 이유 |
-|---|---|
-| `apps/mobile/local.properties` | Android SDK 경로 |
-| `apps/mobile/wearos/libs/samsung-health-sensor-api-1.4.1.aar` | Samsung Health Sensor SDK |
-| `apps/mobile/app/src/main/assets/server_config.properties` | phone backend URL |
-
-현재 private repo 운용 기준에서는 Samsung AAR/JAR, 모델 weight, `.env`를 필요하면 추적할 수 있습니다. `local.properties`는 PC별 Android SDK 절대경로이므로 repository에 포함하지 않고 각 개발 PC에서 새로 만들거나 `ANDROID_HOME`을 사용합니다. public mirror로 옮길 때는 private artifact를 별도로 검토해야 합니다.
-
-## 빌드와 테스트
+## 빌드와 설치
 
 ```powershell
 cd apps/mobile
-.\gradlew.bat assembleDebug
-.\gradlew.bat testDebugUnitTest
-.\gradlew.bat lintDebug
-```
-
-최신 검증 결과:
-
-| Check | Result |
-|---|---|
-| `assembleDebug` | PASS |
-| `testDebugUnitTest` | PASS, 22 tests, AUQ latch/timeout/single handoff gate/watch alert 차단 payload 포함 |
-| `lintDebug` | PASS after latest mobile changes |
-| Phone install | Latest debug APK install and launch PASS on `SM-S926N` |
-| Watch install | Latest debug APK install and launch PASS on `SM-L320` |
-
-APK 출력 위치:
-
-```text
-apps/mobile/app/build/outputs/apk/debug/app-debug.apk
-apps/mobile/wearos/build/outputs/apk/debug/wearos-debug.apk
-```
-
-## 설치
-
-먼저 기기 목록을 확인합니다.
-
-```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 adb devices
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <WATCH_SERIAL> install -r wearos/build/outputs/apk/debug/wearos-debug.apk
 ```
 
-`adb device`가 아니라 `adb devices`입니다. 상태가 `device`여야 설치할 수 있습니다.
-현재 PC처럼 `adb`가 PATH에 없으면 다음처럼 Android SDK 경로를 직접 사용합니다.
+필수 로컬 항목은 JDK 17, Android SDK, PC별 `local.properties` 또는 `ANDROID_HOME`, `wearos/libs/samsung-health-sensor-api-1.4.1.aar`입니다.
 
-```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices
-```
+## 최신 검증
 
-폰 설치:
-
-```powershell
-adb install -r apps/mobile/app/build/outputs/apk/debug/app-debug.apk
-```
-
-워치 설치:
-
-```powershell
-adb -s <WATCH_SERIAL> install -r apps/mobile/wearos/build/outputs/apk/debug/wearos-debug.apk
-```
-
-워치가 Wi-Fi ADB로 연결된 경우 `<WATCH_SERIAL>`은 예를 들어 `192.168.68.65:33633` 형태일 수 있습니다.
-
-## 주요 파일
-
-| File | 역할 |
+| 항목 | 결과 |
 |---|---|
-| `app/src/main/java/com/example/healthsensor/MainActivity.kt` | phone Compose UI, dashboard, developer mode, intervention UI |
-| `app/src/main/java/com/example/healthsensor/PhoneMonitoringState.kt` | shared session, alert claim, active-intervention AUQ suppression |
-| `app/src/main/java/com/example/healthsensor/SensorViewModel.kt` | sensor state, chat timeout setting, intervention reset, handoff job polling |
-| `app/src/main/java/com/example/healthsensor/ServerUploader.kt` | sensor/SSE transport, configurable chat timeout, handoff job API parsing |
-| `app/src/main/java/com/example/healthsensor/PhonePredictionSender.kt` | phone-to-watch `/prediction/class` message |
-| `wearos/src/main/java/com/example/healthsensor/MainActivity.kt` | watch UI and permission entry |
-| `wearos/src/main/java/com/example/healthsensor/SensorTrackingService.kt` | foreground sensor tracking |
-| `wearos/src/main/java/com/example/healthsensor/HealthSensorManager.kt` | Samsung Health Sensor SDK wrapper |
-| `wearos/src/main/java/com/example/healthsensor/PredictionListenerService.kt` | watch-side prediction/alert receiver |
+| Phone unit tests | PASS, 61 tests / 실패 0 |
+| Phone `assembleDebug` | PASS |
+| Phone `lintDebug` | PASS, 오류 0 |
+| Kotlin compile | PASS |
 
-## 세부 문서
+새 Phone/Watch 실기기에서 가입·알림·AUQ skip·대화·timeout·대시보드·Watch 회귀와 실제 rPPG 촬영은 수동 검증이 남아 있습니다.
 
-| 문서 | 내용 |
-|---|---|
-| [Phone App](docs/PHONE_APP.md) | 폰 UI, 서버 통신, chat/handoff, CSV |
-| [Wear OS App](docs/WEAROS_APP.md) | 워치 센서 수집, 권한, Data Layer, alert 표시 |
-| [Server API Spec](SERVER_API_SPEC.md) | Android와 backend 사이의 API 계약 |
+상세 계약은 [Phone App](docs/PHONE_APP.md)과 [Server API](SERVER_API_SPEC.md)를 참고합니다.

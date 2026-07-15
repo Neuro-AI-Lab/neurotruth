@@ -1,104 +1,84 @@
-# PRD: NeuroTruth
+# PRD: NeuroTruth Intervention Support Platform
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
-Korean mirror: [PRD: NeuroTruth Korean](PRD_neurotruth.ko.md)
+Korean mirror: [PRD_neurotruth.ko.md](PRD_neurotruth.ko.md)
 
 ## Product Summary
 
-NeuroTruth is a wearable-assisted alcohol craving intervention prototype. It detects craving risk from watch sensor windows, applies deterministic alert rules, guides a text intervention through Bedrock GPT-5.5, extracts craving slots, and produces a handoff report through an asynchronous job flow.
-
-The current demo is mobile-first: Galaxy Watch gathers sensor data, the Android phone shows the monitoring/intervention UI, backend performs prediction and Bedrock intervention, and Postgres stores session memory.
-
-## Service Ownership
-
-| Area | Path | Responsibility |
-|---|---|---|
-| Backend | `apps/backend` | Prediction, alerts, memory, Bedrock intervention, handoff |
-| Web | `apps/web` | Web deployment surface |
-| Mobile | `apps/mobile` | Phone UI, Wear OS app, sensor upload, SSE display, chat |
-| DB | `apps/db` | Postgres schema and Docker stack |
+NeuroTruth is an authenticated mobile-first supportive-intervention research prototype for people receiving CBT or willing to seek treatment. A patient self-registers on Android, grants feature-specific consent, and uses a Galaxy Watch whose sensor batches are relayed through the phone. The backend retains consented raw windows encrypted, runs deterministic prediction/alert/safety/first-intervention logic, supports autonomous dialogue through Bedrock, and persists evidence-linked state inference, report status, and audit records. It does not replace medical care, diagnosis, treatment, or emergency response. The web surface is administrator-only.
 
 ## Goals
 
-- Keep craving alerting deterministic and explainable.
-- Keep the local craving model inside backend.
-- Use Bedrock only for conversation, slot extraction, and handoff drafting.
-- Preserve mobile API compatibility.
-- Provide a usable phone and watch demo flow based on the proven `watch_test` app environment.
-- Make local physical-device testing possible over the laptop LAN Docker backend.
-- Isolate prediction history, cooldown, and downtrend state by session.
-- Keep sensor, prediction, conversation, slot, and handoff records under one session identity.
-- Keep an active intervention chat from being replaced by a later AUQ/state-check launch.
-- Allow operators to configure the chat response timeout and reset only intervention state without deleting sensor history.
+- Immediate patient self-registration with role-based authentication and rotating refresh sessions.
+- Complete, consent-aware collection of sensor, prediction, alert, AUQ, conversation, intervention, state inference, report, and audit data.
+- AES-256-GCM encryption for sensitive content and raw sensor files, with model/prompt traceability.
+- Deterministic alert, safety, and first-intervention rules; LLMs only continue allowlisted intervention dialogue and summarize supplied evidence.
+- Structured autonomous dialogue with at most one short question, an encrypted asked/refused topic ledger, and no mandatory questionnaire coverage.
+- Phone-owned backend authentication and Watch relay without Watch credentials.
+- Patient and administrator `24h|7d|30d` dashboards, reason-gated reveal, temporary password, confirmed deletion, intervention toggle, and timeout controls.
 
 ## Non-Goals
 
-- No microphone or STT in this version.
-- No diagnosis, medication guidance, or treatment directive.
-- No model retraining in this pass.
-- No direct LLM access from Android.
-- No separate local AI server or GPU service.
+- Voice/STT/TTS. Camera rPPG is a separate experimental extension, disabled by default and gated on controlled real-device validation.
+- Diagnosis, medication advice, clinical certainty, or treatment claims.
+- Immediate craving-reduction demonstrations, CBT-efficacy claims, or causal interpretation of intervention timing.
+- Craving-model retraining, class balancing, threshold experiments, and moving-average label experiments.
+- Direct LLM access from Android or Watch.
+- Live administrator chat, emergency queue/dispatch, automatic contact, or guaranteed human connection.
+- Bulk dataset/report download, legacy data backfill, or new-schema-to-legacy conversion.
 
 ## Core Flow
 
 ```text
-sensor stream -> backend prediction -> rule alert -> text chat -> slot extraction -> handoff report
+Patient signup/login/consent on Phone
+  <- Watch sensor batches
+  -> authenticated encrypted sensor ingestion
+  <- prediction SSE + deterministic alert
+  -> user approves conversation and optionally submits AUQ
+  -> safety check + deterministic first intervention
+  -> structured autonomous dialogue without slot completion
+  -> state inference + encrypted asynchronous report status
+  -> patient/admin dashboards
 ```
 
-Detailed flow:
+The Watch never connects to backend directly. The phone stores refresh credentials in Android Keystore-backed storage, rotates once after `401`, and logs out if recovery fails.
 
-```text
-Galaxy Watch sensors
-  -> Wearable Data Layer
-  -> Android phone dashboard
-  -> POST /sensor-window
-  -> backend RF prediction
-  -> deterministic alert rule
-  -> GET /prediction-stream
-  -> phone/watch recommendation or required alert state
-  -> text intervention chat
-  -> slot extraction
-  -> Markdown handoff report
-```
+## Consent and Data
 
-## Current Mobile Experience
+Terms, privacy, and sensitive-data consent are mandatory. Biosignal, AI analysis, notification, and report generation are independent optional gates; voice remains unavailable. Consent changes append immutable snapshots. Withdrawal blocks new processing but does not automatically erase historical records.
 
-| Surface | Required behavior |
-|---|---|
-| Phone user dashboard | Show current state, latest craving class, alert level, intervention entry point, and monitoring status |
-| Phone developer view | Show live charts, upload/SSE status, CSV export, chat timeout configuration, and intervention reset controls |
-| Phone alert flow | Use backend `alertAction`, then `alertLevel`, then legacy class fallback; suppress actions for `none` and `cooldown` |
-| Phone intervention chat | Run the existing 8-question state check before required intervention, suppress later AUQ launches while chat is active, and keep text turns available while an asynchronous handoff job runs |
-| Watch app | Display the latest class and alert state, use a short recommendation vibration, and use stronger required-intervention feedback with phone guidance |
+Accepted sensor windows require UUID `clientWindowId`. Identical retries are idempotent and conflicting reuse is rejected. Backend stores canonical JSON → gzip → AES-256-GCM under a backend-only volume and links each recording to prediction and alert rows.
 
-## Alert and Session Rules
+## Session and Agent Behavior
 
-- Alert history is isolated per session in a bounded 256-entry LRU evaluator registry.
-- Mean-based recommend/required decisions wait for the configured 10-window warm-up.
-- A configurable class-2 high streak, defaulting to 3, can trigger early required intervention.
-- Sensor upload includes both `sessionId` and backward-compatible `sessionStartedAtMs`.
-- The server-echoed session ID is preferred for chat, slot extraction, and handoff persistence.
-- Clearing phone data starts a new session and resets alert, state-check, chat, and handoff state.
-- Submitting or reopening chat activates an intervention latch. While active, later alerts remain recorded and watch state stays current, but neither AUQ nor repeated watch vibration/notification is presented; closing chat re-enables future distinct required alerts.
-- Chat response timeout defaults to 60 minutes and is persisted as an administrator setting in the 1–1,440 minute range.
-- Handoff generation uses HTTP 202 job submission plus status polling. The synchronous endpoint remains available for compatibility.
+A patient has at most one active UUID session. New sessions transition through `safety_check` and `intervention_dialogue`; manual finish is `completed`, while the configurable default 3,600-second inactivity timeout is `abandoned`. AUQ is optional and skipping it never blocks dialogue, state inference, finish, or consented report generation.
 
-## Verified State
+New sessions do not create `session_slots`, update legacy memory, or return `slots`, `missingSlots`, or `handoffReady`. An encrypted dialogue ledger prevents paraphrased repeated questions while allowing relevant topic order to remain flexible. Historical 13-slot sessions remain readable but immutable and are not backfilled.
 
-| Area | Result |
-|---|---|
-| Backend | Compile passed; pytest 50 passed |
-| Docker | DB healthy; backend and web running |
-| Bedrock | Live GPT-5.5 Mantle adapter call passed; the previously validated Claude Converse route remains available for rollback |
-| GPT-5.5 intervention | Known issue: latest full chat smoke returns HTTP 502 during slot extraction |
-| Persistence | Prediction, alert, conversation, slot, and handoff linked under one session |
-| Android | Phone/Wear build, unit tests, and latest lint passed after AUQ/async-handoff changes |
-| Physical devices | Latest phone/watch APK installs and launches passed; full live chat and watch-suppression observation remain |
+Deterministic rules choose the first allowlisted intervention from current evidence. The LLM may later suggest only allowlisted types, and each delivered suggestion is versioned and stored. `interventionsEnabled=false` suppresses ordinary intervention wording and rows while preserving safety guidance and state inference.
 
-## Safety Positioning
+State inference copies the latest valid model class as `low|mid|high|unknown` and records concrete evidence IDs. AUQ, dialogue, and intervention events remain separate evidence and never create a synthesized clinical score. LLM summaries cannot change the class and may fail independently.
 
-- Alert decisions are rule-based and based on recent prediction classes, not LLM judgment.
-- Bedrock responses should be supportive and CBT-style, but must avoid clinical certainty.
-- Handoff reports must separate user-reported facts from model or alert context.
-- Acute safety concerns should route the user toward immediate human or emergency support.
+## Safety
+
+Immediate-risk dialogue may show 119 and Korean suicide-prevention line 109, then ask once whether to record requested administrator involvement. Acceptance/refusal is audited and the conversation continues. The product must state that this record is not live monitoring and does not guarantee contact or response.
+
+## Administrator Experience
+
+The web console supports code-gated admin signup/login, patient summaries/timelines, `24h|7d|30d` class/AUQ/event/intervention/report-status dashboards, nonblank-reason sensitive reveal, reasoned temporary-password assignment, exact-UUID confirmed deletion, and global `interventionsEnabled`/`chatTimeoutSeconds` settings. It never exposes raw PPG or report bodies in dashboard views and has no patient UI or export endpoint.
+
+The optional camera-rPPG extension adds capture metadata summaries, reason-gated audited inline video playback, and reason plus exact-UUID deletion. It has no video download button or endpoint. A privileged viewer can technically preserve rendered bytes, so least privilege, policy, and audit remain required.
+
+## Security and Deployment
+
+The authenticated stack requires PostgreSQL 16+, Alembic head, versioned AES keyring, JWT signing key, admin signup code, encrypted sensor volume, and HTTPS. Explicit insecure HTTP is limited to development/test. Deployment creates fresh `postgres_data_v25` and `encrypted_sensor_data`; the legacy volume is backed up and preserved for rollback without migration.
+
+Camera rPPG retains every accepted success/failure face video AES-256-GCM encrypted until audited deletion. Only the backend calls the private DGX service. Co-deployment keeps DGX internal-only, uses tmpfs for uploads, and requires `DELETE_UPLOADED_VIDEO=true`; `RPPG_ENABLED=false` remains the default until the release gate passes.
+
+## Acceptance Summary
+
+- Auth/role/refresh replay, consent gates, encrypted round trips/tamper failures, sensor idempotency, and ownership are tested.
+- Slot-free new sessions, legacy read-only behavior, repetition prevention, safety continuation, optional AUQ, deterministic first intervention, state inference, and report-status isolation are tested with fake adapters.
+- Phone auth recovery, consent, authenticated upload/SSE, UUID resume, logout cleanup, and Watch relay are tested.
+- Patient/admin dashboards, PPG ownership denial, admin no-PPG output, reason audit, settings, temporary password, and deletion retry are tested.

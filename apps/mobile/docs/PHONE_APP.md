@@ -1,154 +1,71 @@
 # Phone App
 
-최종 업데이트: 2026-07-13
+최종 업데이트: 2026-07-15
 
-`app` 모듈은 Android 폰에서 실행됩니다. 워치에서 받은 센서 데이터를 표시하고, backend로 10초 window를 전송하며, prediction SSE와 alert metadata를 받아 사용자 대시보드와 워치에 반영합니다. 텍스트 중재 chat과 handoff report도 폰에서 backend endpoint를 통해 호출합니다.
+Phone 앱은 인증된 환자 client이자 Watch의 유일한 backend relay입니다. Watch가 보낸 센서 batch를 표시·업로드하고, 인증된 prediction SSE와 세션 대화를 사용자에게 제공합니다.
 
-## 역할
+## 사용자 흐름
 
-- Wear OS 앱에서 보낸 sensor batch 수신
-- 사용자용 상태 대시보드 표시
-- 개발자용 실시간 chart/debug 화면 표시
-- HR, PPG Green/IR/Red, EDA, Accel X/Y/Z, SkinTemp chart 표시
-- 10초 sensor window를 1초마다 `POST /sensor-window`로 전송
-- `GET /prediction-stream` SSE에서 class와 alert metadata 수신
-- 수신한 class/alert를 watch `/prediction/class`로 전달
-- `/api/intervention/chat`으로 text intervention 진행
-- `/api/intervention/handoff/jobs`로 비동기 Markdown handoff 작업 접수 및 status 조회
-- CSV 저장
+1. 환자가 이메일과 12자 이상 비밀번호로 직접 가입하고 필수 동의 및 선택 동의를 설정합니다.
+2. 가입 응답 또는 로그인 응답의 access/refresh token을 저장합니다. Access token은 짧게 사용하고 refresh token은 Android Keystore 기반 암호화 저장소에 보관합니다.
+3. `401`이면 refresh token을 한 번 회전하고 원래 요청을 한 번 재시도합니다. 실패하면 로컬 세션을 지우고 로그인 화면으로 이동합니다.
+4. 생체신호 동의가 있을 때만 Watch sensor window를 전송하고 prediction SSE를 유지합니다.
+5. 갈망 상승 가능성 알림에서 `지금 대화하기` 또는 `나중에`를 선택합니다. 대화를 승인하면 AUQ를 작성하거나 건너뛸 수 있습니다.
+6. AI 분석 동의가 있을 때 backend UUID session을 생성/재개하고 안전 확인 뒤 자유 중재 대화를 진행합니다.
+7. 수동 종료 또는 비활동 timeout 뒤 상태 추론과 보고서 생성 상태를 조회합니다.
+8. 로그아웃하면 monitoring/SSE를 중지하고 phone token을 제거합니다. Watch에는 backend credential이 없습니다.
 
-## 현재 UI
+## 동의
 
-| 화면/영역 | 내용 |
+| 항목 | 정책 |
 |---|---|
-| User dashboard | 현재 상태, 최신 craving class, alert label, monitoring 상태, 중재 진입 |
-| Developer mode | sensor charts, POST/SSE status, chat timeout 설정, 상담 상태 초기화, CSV export |
-| State-check flow | 상담 활성 중 새 required alert의 AUQ 재실행을 차단하고, 상담 종료 후 새 alert부터 허용 |
-| Intervention panel | user/assistant message, text input, 독립된 chat/handoff 진행 상태, handoff readiness |
-| Handoff preview | missing slot summary와 generated Markdown report 표시 |
+| `tos`, `privacy`, `sensitive` | 가입 필수 |
+| `biosignal` | sensor upload/SSE 처리 |
+| `aiAnalysis` | 대화 session과 agent 처리 |
+| `notification` | craving 알림 표시 |
+| `reportGeneration` | 완료/중도 종료 보고서 |
+| `cameraRppg` | 전면 카메라 rPPG 측정 허용 |
+| `faceVideoRetention` | 수락된 얼굴 영상 암호화 영구 보존 허용 |
+| voice | 비활성; 현재 UI/수집 없음 |
 
-마이크/STT UI는 없습니다. 이번 버전은 text-first intervention입니다.
+변경은 `POST /api/me/consents`로 append-only snapshot을 생성합니다. 철회 전 저장된 자료는 자동 삭제하지 않습니다.
 
-## 서버 설정
+## 센서와 Watch Relay
 
-기본 URL은 asset 파일에서 읽습니다.
+- 최근 10초 window마다 UUID `clientWindowId`를 생성합니다. 전송 retry는 같은 ID와 같은 payload를 사용하며 새로운 ID로 자동 중복 전송하지 않습니다.
+- 같은 ID의 다른 payload는 backend `409`입니다.
+- 원시 데이터는 backend에서 canonical JSON → gzip → AES-256-GCM으로 저장됩니다.
+- SSE의 class/alert metadata를 `/prediction/class` Wear Data Layer message로 Watch에 전달합니다.
+- Watch는 phone 연결이 없으면 backend에 우회 연결하지 않습니다.
 
-```text
-apps/mobile/app/src/main/assets/server_config.properties
-```
+## 대화 UI
 
-현재 물리 기기 테스트 값:
+Backend가 발급한 UUID session만 사용합니다. 신규 응답은 `assistantText`, `phase`, `safety`, `activeInterventions`, `stateSnapshot`, `reportStatus`, `inactivityTimeoutSeconds`를 표시합니다. 신규 session에는 slot 진행률이나 `handoffReady`가 없습니다. 기존 13-slot session은 `legacy=true` 읽기 전용 이력으로만 조회됩니다.
 
-```properties
-sensor_post_url=http://192.168.68.51:8000/sensor-window
-prediction_sse_url=http://192.168.68.51:8000/prediction-stream
-```
+첫 단계는 안전 확인이며, 규칙 엔진이 첫 일반 중재 유형을 선택합니다. 이후 대화는 필수 질문 순서나 완료율 없이 진행합니다. 한 턴에는 필요할 때 짧은 질문 하나만 사용하고 답변했거나 거부한 내용을 반복 질문하지 않습니다.
 
-앱 화면에서 URL을 수정할 수 있지만, asset 값을 바꾸면 다시 빌드/설치해야 합니다. 물리 휴대폰에서는 `localhost`를 사용하지 말고 노트북 LAN IP를 사용합니다.
+턴 수 제한은 없고 수동 종료 버튼과 server의 동적 비활동 timeout을 사용합니다. 수동 종료는 `completed`, timeout은 `abandoned`로 저장합니다. 종료 시 근거 기반 상태 추론과 비동기 보고서를 생성하되 현재 앱은 보고서 상태만 표시합니다.
 
-## 자동 통신
+안전 위험 문맥에서는 별도 배너 대신 채팅 안에 119/자살예방 상담전화 109 안내와 “관리자에게 도움 요청 사실을 기록할지” 질문을 한 번 표시합니다. 수락/거절 후 대화는 계속되며 실시간 관리자 연결이나 즉각적 연락을 보장하지 않는다는 문구를 유지합니다.
 
-폰이 첫 센서 샘플을 받으면 acquisition 시작으로 판단합니다. 약 10초 뒤 URL이 설정되어 있으면 자동으로 다음 작업을 시작합니다.
+## 화면 상태
 
-- `sensor_post_url`: 최근 10초 sensor window upload
-- `prediction_sse_url`: prediction SSE stream 연결
+- 인증: 가입, 로그인, 임시 비밀번호 변경, 로그아웃
+- 동의: 필수/선택 항목과 현재 처리 가능 상태
+- Dashboard: Watch 연결, sensor/monitoring, prediction/alert
+- Session: 선택형 AUQ, 안전 확인, 자유 중재 chat, 수동 종료, 동적 timeout
+- Dashboard: 24h/7d/30d class·AUQ·event, 상태 요약, live/과거 PPG
+- Report: `generating|ready|failed` 상태만 표시하고 본문은 미노출
+- 오류: `401` 재인증, `403` 동의 부족, `409` 충돌/active session, `502` agent 일시 실패, `503` readiness/model 실패를 구분해 표시
 
-SSE 연결이 끊기면 짧은 지연 뒤 재연결합니다.
+## 카메라 rPPG 확장
 
-## Sensor Upload
+- `biosignal`, `aiAnalysis`, `cameraRppg`, `faceVideoRetention` 동의가 모두 있을 때만 시작합니다.
+- 전면 카메라에서 한 얼굴이 1초간 안정되면 720p/30fps 무음 영상을 10초 촬영합니다. 얼굴이 1초 이상 사라지거나 앱이 background로 이동하면 취소합니다.
+- 상태는 `얼굴 찾기 → 안정화 → 촬영 → 업로드 → 분석 대기 → 결과/재촬영/실패`로 표시합니다.
+- HTTP 202 이후 로컬 MP4를 삭제하고 job/capture 및 pause 상태를 저장해 앱 재시작 후 polling을 재개합니다. 품질 미달은 갈망 없음으로 표시하지 않고 새 촬영을 요구합니다.
+- 촬영 시작부터 terminal job까지 Watch 수신은 유지하되 기존 sensor upload와 prediction SSE 반영을 pause하고 모든 종료 경로에서 이전 상태를 복원합니다.
+- 카메라 결과는 별도 Phone 카드에만 표시하며 Watch에 전달하지 않습니다. 알림 동의가 있으면 기존 cooldown에 따라 Phone alert/AUQ/chat이 실행될 수 있습니다.
+- 수락된 성공·품질 미달·기술 실패 영상은 backend에서 AES-256-GCM 암호화해 관리자 감사 삭제 전까지 영구 보존합니다.
 
-폰 앱은 1초마다 최근 10초 window를 backend로 보냅니다. PPG와 EDA는 backend 모델 입력에 맞게 fixed grid로 정렬됩니다.
-
-| Channel | Rate | Count | Timestamp |
-|---|---:|---:|---|
-| `PPG_GREEN` | 25Hz | 250 | `windowStartMs + i * 40ms` |
-| `PPG_IR` | 25Hz | 250 | `windowStartMs + i * 40ms` |
-| `PPG_RED` | 25Hz | 250 | `windowStartMs + i * 40ms` |
-| `EDA` | 1Hz | 10 | `windowStartMs + i * 1000ms` |
-
-원시 샘플이 부족한 경우 선형 보간, 가까운 값, 마지막 값 유지로 채워 POST 주기가 끊기지 않게 합니다.
-
-요약 payload:
-
-```json
-{
-  "sessionId": "phone-1750000000000",
-  "sessionStartedAtMs": 1750000000000,
-  "sequence": 42,
-  "windowStartMs": 1750000032000,
-  "windowEndMs": 1750000042000,
-  "windowMs": 10000,
-  "sync": {
-    "mode": "fixed_grid_ppg_25hz_eda_1hz_continuous",
-    "fillMode": "linear_interpolation_nearest_edge_hold"
-  },
-  "samples": [
-    {"sensor": "PPG_GREEN", "timestampMs": 1750000032000, "value": 32451.0}
-  ]
-}
-```
-
-## Prediction SSE
-
-Backend는 `event: craving` SSE로 class와 alert metadata를 보냅니다.
-
-```text
-event: craving
-data: {"class":1,"timestampMs":1750000042500,"sessionId":"phone-1750000000000","sequence":42,"alertLevel":"recommend","alertAction":"recommend_intervention","windowMean":0.8,"triggerReason":"window_mean_recommend","alertRequired":false}
-
-```
-
-폰은 `class`, `cravingClass`, `prediction`, `score`, `cravingScore` 중 하나를 class 후보로 읽습니다. 워치로 보낼 값은 최종적으로 정수 `0`, `1`, `2`여야 합니다.
-
-사용자 동작은 `alertAction` -> `alertLevel` -> alert metadata가 전혀 없는 legacy `class` 순서로 결정합니다. `none`과 `cooldown`은 표시 데이터만 갱신하고 알림, 진동, 자동 화면 이동을 만들지 않습니다. `recommend_intervention`은 현재 화면을 유지하면서 알림을 표시하고, `required_intervention`은 기존 8문항 상태 확인을 연 뒤 제출 후 텍스트 chat으로 연결합니다. Chat이 활성화된 동안 뒤이어 온 required event는 계속 기록되고 watch 상태 데이터도 전달되지만, phone은 watch payload의 `alertAction`을 `none`으로 보내 AUQ와 watch 진동/notification을 함께 차단합니다. Chat을 닫은 뒤 발생한 새로운 required event부터 원래 action과 AUQ를 다시 허용합니다. Legacy class-only stream은 `0=none`, `1=recommend`, `2=required`로 계속 동작합니다.
-
-## Text Intervention
-
-폰은 backend host를 `sensor_post_url` 또는 `prediction_sse_url`에서 추론해 intervention endpoint를 호출합니다.
-
-| Endpoint | 용도 |
-|---|---|
-| `POST /api/intervention/chat` | 사용자 메시지에 대한 assistant 응답과 slot update |
-| `POST /api/intervention/handoff/jobs` | 현재 conversation/slot snapshot 기반 비동기 handoff 작업 접수 |
-| `GET /api/intervention/handoff/jobs/{job_id}` | queued/running/completed/failed 상태와 완료 report 조회 |
-| `POST /api/intervention/handoff` | 기존 동기 handoff 계약; 호환성을 위해 유지 |
-
-`PhoneMonitoringState`가 sensor, SSE, chat, slots, handoff에서 공유하는 session ID와 상담 활성 latch를 소유합니다. Chat request에는 `sessionId`, `message`, `alert`, `slots`, `conversationHistory`가 들어가며, backend가 SSE나 응답으로 돌려준 session ID가 있으면 이를 우선 사용합니다. Chat HTTP read timeout은 기본 60분이며 관리자 모드에서 1~1,440분으로 저장할 수 있습니다. Handoff는 한 번에 하나만 접수하고 약 1.5초 간격으로 상태를 조회하며, 생성 요청 자체는 자동 재전송하지 않습니다. 데이터 전체 초기화는 새 session을 만들고, 별도 `상담 상태 초기화`는 센서 기록과 URL을 유지한 채 AUQ/chat/slot/handoff/polling 상태만 초기화합니다.
-
-## 관리자 상담 설정
-
-사용자 화면 아래의 `관리` 영역을 약 2.5초 길게 누르면 관리자 모드가 열립니다.
-
-- `채팅 응답 제한시간(분)`: 기본 60분, 허용 범위 1~1,440분. 저장값은 앱 화면 재생성 후에도 유지됩니다.
-- `상담 상태 초기화`: 진행 중 chat/handoff job polling을 중단하고 AUQ, chat, slot, handoff UI 상태를 초기화합니다. Sensor raw data와 server URL은 유지합니다.
-
-## CSV 저장
-
-CSV에는 sensor raw data와 prediction class가 포함됩니다.
-
-```csv
-sensor,timestamp_ms,value
-HR,1750000000000,72.0
-PPG_GREEN,1750000000040,32451.0
-EDA,1750000001000,0.412
-CRAVING_CLASS,1750000010000,1.0
-```
-
-저장 위치:
-
-```text
-/sdcard/Android/data/com.example.healthsensor/files/Documents/
-```
-
-## 주요 파일
-
-| File | Role |
-|---|---|
-| `MainActivity.kt` | Compose UI, dashboard, developer mode, intervention panel |
-| `PhoneMonitoringState.kt` | session identity, alert claim, active-intervention AUQ latch |
-| `SensorViewModel.kt` | sensor state, chat timeout, intervention reset, async handoff polling |
-| `SensorRepository.kt` | watch sensor Flow hub |
-| `WearDataListenerService.kt` | Wearable MessageClient sensor message receiver |
-| `ServerUploader.kt` | HTTP POST, SSE parsing, configurable chat timeout, async handoff API calls |
-| `ServerConfig.kt` | `assets/server_config.properties` loader |
-| `PhonePredictionSender.kt` | prediction class and alert metadata forwarding to watch |
+음성/STT/TTS는 현재 범위에 없습니다. 카메라 rPPG는 기본 OFF인 실험 확장이며 실제 Phone-DGX 종단 검증 전에는 release-ready가 아닙니다. Backend bulk download 기능도 제공하지 않습니다.
