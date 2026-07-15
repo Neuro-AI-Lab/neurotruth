@@ -38,6 +38,7 @@ data class ServerWindowSync(
 }
 
 data class ServerWindowPayload(
+    val clientWindowId: String,
     val sessionId: String,
     val sessionStartedAtMs: Long,
     val sequence: Long,
@@ -50,7 +51,7 @@ data class ServerWindowPayload(
 ) {
     fun toJson(): String {
         val root = JSONObject()
-        root.put("sessionId", sessionId)
+        root.put("clientWindowId", clientWindowId)
         root.put("sessionStartedAtMs", sessionStartedAtMs)
         root.put("sequence", sequence)
         root.put("sentAtMs", sentAtMs)
@@ -122,6 +123,7 @@ data class CravingPrediction(
     val uploadSentAtMs: Long? = null,
     val hasServerTimestamp: Boolean = false,
     val sessionId: String? = null,
+    val alertId: String? = null,
     val alert: AlertMetadata = AlertMetadata()
 ) {
     val label: String
@@ -133,98 +135,32 @@ data class CravingPrediction(
         }
 }
 
-data class InterventionMessage(
-    val role: String,
-    val content: String
-) {
-    fun toJson(): JSONObject =
-        JSONObject()
-            .put("role", role)
-            .put("content", content)
-}
-
-data class InterventionChatRequest(
-    val sessionId: String,
-    val message: String,
-    val alert: AlertMetadata?,
-    val slots: JSONObject?,
-    val conversationHistory: List<InterventionMessage>
-) {
-    fun toJson(): String =
-        JSONObject()
-            .put("sessionId", sessionId)
-            .put("message", message)
-            .put("conversationHistory", JSONArray().apply {
-                conversationHistory.forEach { put(it.toJson()) }
-            })
-            .apply {
-                alert?.let { put("alert", it.toJson()) }
-                slots?.let { put("slots", it) }
-            }
-            .toString()
-}
-
-data class InterventionChatResult(
-    val assistantMessage: String,
-    val slots: JSONObject?,
-    val handoffReady: Boolean,
-    val missingSlots: List<String>,
-    val summary: String?,
-    val rawBody: String
-)
-
-data class HandoffRequest(
-    val sessionId: String,
-    val slots: JSONObject?,
-    val conversationHistory: List<InterventionMessage>
-) {
-    fun toJson(): String =
-        JSONObject()
-            .put("sessionId", sessionId)
-            .put("conversationHistory", JSONArray().apply {
-                conversationHistory.forEach { put(it.toJson()) }
-            })
-            .apply {
-                slots?.let { put("slots", it) }
-            }
-            .toString()
-}
-
-data class HandoffResult(
-    val reportMarkdown: String,
-    val missingSlots: List<String>,
-    val rawBody: String
-)
-
-enum class HandoffJobState {
-    QUEUED,
-    RUNNING,
-    COMPLETED,
-    FAILED
-}
-
-data class HandoffJobSubmission(
-    val jobId: String,
-    val sessionId: String,
-    val status: HandoffJobState,
-    val rawBody: String
-)
-
-data class HandoffJobStatusResult(
-    val jobId: String,
-    val sessionId: String,
-    val status: HandoffJobState,
-    val result: HandoffResult?,
-    val error: String?,
-    val rawBody: String
-)
-
 class HttpStatusException(
     val statusCode: Int,
     message: String
 ) : IllegalStateException(message)
 
 class ServerUploader {
+    fun postWindowAuthenticated(
+        client: AuthenticatedApiClient,
+        url: String,
+        payload: ServerWindowPayload
+    ): UploadResult {
+        val response = client.executeAuthenticated(
+            ApiRequest(
+                method = "POST",
+                url = url,
+                headers = mapOf("Content-Type" to "application/json; charset=utf-8"),
+                body = payload.toJson()
+            )
+        )
+        return UploadResult(
+            success = response.statusCode in 200..299,
+            statusCode = response.statusCode,
+            message = response.body.take(200)
+        )
+    }
+
     fun postWindow(url: String, payload: ServerWindowPayload): UploadResult {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -274,40 +210,6 @@ class ServerUploader {
         }
     }
 
-    fun postInterventionChat(
-        url: String,
-        request: InterventionChatRequest,
-        readTimeoutMs: Int = DEFAULT_INTERVENTION_READ_TIMEOUT_MS
-    ): InterventionChatResult {
-        val response = postJson(url, request.toJson(), readTimeoutMs = readTimeoutMs)
-        return parseChatResult(response)
-    }
-
-    fun postInterventionHandoff(url: String, request: HandoffRequest): HandoffResult {
-        val response = postJson(url, request.toJson())
-        return parseHandoffResult(response)
-    }
-
-    fun postInterventionHandoffJob(url: String, request: HandoffRequest): HandoffJobSubmission {
-        val response = postJson(
-            url = url,
-            body = request.toJson(),
-            connectTimeoutMs = HANDOFF_JOB_NETWORK_TIMEOUT_MS,
-            readTimeoutMs = HANDOFF_JOB_NETWORK_TIMEOUT_MS
-        )
-        return parseHandoffJobSubmission(response)
-    }
-
-    fun getInterventionHandoffJob(url: String): HandoffJobStatusResult {
-        val response = requestJson(
-            url = url,
-            method = "GET",
-            connectTimeoutMs = HANDOFF_JOB_NETWORK_TIMEOUT_MS,
-            readTimeoutMs = HANDOFF_JOB_NETWORK_TIMEOUT_MS
-        )
-        return parseHandoffJobStatus(response)
-    }
-
     /**
      * 서버 예측 결과를 SSE 장기 연결로 수신한다.
      *
@@ -316,6 +218,7 @@ class ServerUploader {
      */
     fun listenPredictions(
         url: String,
+        accessToken: String? = null,
         shouldContinue: () -> Boolean = { true },
         onPrediction: (CravingPrediction) -> Unit
     ) {
@@ -325,13 +228,16 @@ class ServerUploader {
             readTimeout = 15_000
             setRequestProperty("Accept", "text/event-stream, application/json")
             setRequestProperty("Cache-Control", "no-cache")
+            accessToken?.takeIf(String::isNotBlank)?.let {
+                setRequestProperty("Authorization", "Bearer $it")
+            }
         }
 
         try {
             val code = connection.responseCode
             if (code !in 200..299) {
-                val response = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                throw IllegalStateException("HTTP $code ${response.take(200)}")
+                connection.errorStream?.close()
+                throw HttpStatusException(code, "HTTP $code")
             }
 
             val pendingDataLines = mutableListOf<String>()
@@ -401,134 +307,10 @@ class ServerUploader {
                 ?: json.optLongOrNull("requestSentAtMs"),
             hasServerTimestamp = json.has("timestampMs"),
             sessionId = json.optCleanString("sessionId"),
+            alertId = json.optCleanString("alertId"),
             alert = json.optAlertMetadata()
         )
     }
-
-    private fun postJson(
-        url: String,
-        body: String,
-        connectTimeoutMs: Int = DEFAULT_INTERVENTION_CONNECT_TIMEOUT_MS,
-        readTimeoutMs: Int = DEFAULT_INTERVENTION_READ_TIMEOUT_MS
-    ): String = requestJson(
-        url = url,
-        method = "POST",
-        body = body,
-        connectTimeoutMs = connectTimeoutMs,
-        readTimeoutMs = readTimeoutMs
-    )
-
-    private fun requestJson(
-        url: String,
-        method: String,
-        body: String? = null,
-        connectTimeoutMs: Int,
-        readTimeoutMs: Int
-    ): String {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = connectTimeoutMs
-            readTimeout = readTimeoutMs
-            doOutput = body != null
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "application/json")
-        }
-
-        return try {
-            body?.let { requestBody ->
-                connection.outputStream.use { it.write(requestBody.toByteArray(Charsets.UTF_8)) }
-            }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                throw HttpStatusException(code, "HTTP $code")
-            }
-            response
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun parseChatResult(response: String): InterventionChatResult {
-        val json = JSONObject(response)
-        val handoff = json.optJSONObject("handoff")
-        val readiness = json.optJSONObject("handoffReadiness")
-        val assistantMessage =
-            json.optCleanString("assistantResponse")
-                ?: json.optCleanString("assistantMessage")
-                ?: json.optCleanString("response")
-                ?: json.optCleanString("message")
-                ?: json.optCleanString("content")
-                ?: handoff?.optCleanString("assistantResponse")
-                ?: ""
-
-        return InterventionChatResult(
-            assistantMessage = assistantMessage,
-            slots = json.optJSONObject("slots") ?: json.optJSONObject("mergedSlots"),
-            handoffReady = json.optBoolean("handoffReady", false) ||
-                readiness?.optBoolean("ready", false) == true ||
-                handoff?.optBoolean("ready", false) == true,
-            missingSlots = json.optStringList("missingSlots")
-                .ifEmpty { readiness?.optStringList("missingSlots").orEmpty() }
-                .ifEmpty { handoff?.optStringList("missingSlots").orEmpty() },
-            summary = json.optCleanString("summary")
-                ?: readiness?.optCleanString("summary")
-                ?: handoff?.optCleanString("summary"),
-            rawBody = response
-        )
-    }
-
-    internal fun parseHandoffResult(response: String): HandoffResult {
-        val json = JSONObject(response)
-        return HandoffResult(
-            reportMarkdown = json.optCleanString("reportMarkdown")
-                ?: json.optCleanString("markdown")
-                ?: json.optCleanString("report")
-                ?: json.optCleanString("content")
-                ?: response,
-            missingSlots = json.optStringList("missingSlots"),
-            rawBody = response
-        )
-    }
-
-    internal fun parseHandoffJobSubmission(response: String): HandoffJobSubmission {
-        val json = JSONObject(response)
-        return HandoffJobSubmission(
-            jobId = json.requireCleanString("jobId"),
-            sessionId = json.requireCleanString("sessionId"),
-            status = json.requireHandoffJobState(),
-            rawBody = response
-        )
-    }
-
-    internal fun parseHandoffJobStatus(response: String): HandoffJobStatusResult {
-        val json = JSONObject(response)
-        val status = json.requireHandoffJobState()
-        val resultObject = json.optJSONObject("result")
-        val result = if (status == HandoffJobState.COMPLETED && resultObject != null) {
-            parseHandoffResult(resultObject.toString())
-        } else {
-            null
-        }
-        return HandoffJobStatusResult(
-            jobId = json.requireCleanString("jobId"),
-            sessionId = json.requireCleanString("sessionId"),
-            status = status,
-            result = result,
-            error = json.optCleanString("error"),
-            rawBody = response
-        )
-    }
-
-    private fun JSONObject.requireHandoffJobState(): HandoffJobState {
-        val value = requireCleanString("status").uppercase()
-        return runCatching { HandoffJobState.valueOf(value) }
-            .getOrElse { throw IllegalArgumentException("unknown handoff job status: $value") }
-    }
-
-    private fun JSONObject.requireCleanString(key: String): String =
-        optCleanString(key) ?: throw IllegalArgumentException("$key missing")
 
     private fun Any.toPredictionClass(): Int {
         val number = when (this) {
@@ -606,22 +388,7 @@ class ServerUploader {
         return optString(key).trim().takeIf { it.isNotBlank() }
     }
 
-    private fun JSONObject.optStringList(key: String): List<String> {
-        if (!has(key) || isNull(key)) return emptyList()
-        val value = get(key)
-        return when (value) {
-            is JSONArray -> (0 until value.length()).mapNotNull { index ->
-                value.optString(index).trim().takeIf { it.isNotBlank() }
-            }
-            is String -> value.split(",").mapNotNull { it.trim().takeIf(String::isNotBlank) }
-            else -> emptyList()
-        }
-    }
-
     companion object {
-        private const val DEFAULT_INTERVENTION_CONNECT_TIMEOUT_MS = 8_000
-        private const val DEFAULT_INTERVENTION_READ_TIMEOUT_MS = 20_000
-        private const val HANDOFF_JOB_NETWORK_TIMEOUT_MS = 5_000
         private val ALERT_METADATA_KEYS = listOf(
             "alertLevel",
             "alertAction",

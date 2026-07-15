@@ -1,10 +1,10 @@
 # NeuroTruth AI Workspace
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
 ## Purpose
 
-This folder documents backend-owned AI behavior. The implementation lives in `apps/backend/app/ai`.
+This folder documents backend-owned AI behavior. Provider adapters live in `apps/backend/app/ai`; the authenticated intervention-first orchestration and versioned question/prompt policy live in `apps/backend/app/v25/session_agents.py` and `session_service.py`.
 
 ## Provider
 
@@ -26,40 +26,33 @@ environment credentials remain available for non-OpenAI Converse models.
 
 ## Boundary
 
-- Backend deterministic code decides craving alert level.
-- Backend AI helpers generate text responses, extract slots, and draft handoff reports.
+- Backend deterministic code decides craving alert level, safety handling, the first intervention, and state class.
+- Backend AI helpers continue allowlisted intervention dialogue, summarize supplied evidence, and draft reports without changing deterministic classes.
 - Android calls backend endpoints only.
-- Backend memory persists AI turns, slots, and reports under the same session ID used by sensor predictions.
-- Mobile handoff generation is accepted as a backend job and polled separately; the LLM provider remains backend-only.
-- Dialogue prompts and orchestration avoid re-asking filled slots and perform one deterministic repair when a non-safety question repeats recent assistant history.
+- Backend persists encrypted AI turns, dialogue ledger, interventions, state inferences, and reports under the UUID session linked to sensor predictions.
+- Mobile report generation/status is asynchronous; the LLM provider remains backend-only.
+- Dialogue prompts use a versioned optional question guide, avoid re-asking asked/refused topics, and perform one validation repair before a deterministic fallback.
+- New sessions never write legacy slots or memory. Historical 13-slot sessions and reports remain read-only without backfill.
 
 ## Prompt Location
 
-System prompts are defined in:
+Current intervention-first prompt, rule, and question-bank versions are defined in:
 
 ```text
-apps/backend/app/ai/bedrock_agents.py
+apps/backend/app/v25/session_agents.py
 ```
 
 | Constant | Role |
 |---|---|
-| `CHAT_SYSTEM_PROMPT` | Dialogue agent |
-| `SLOTS_SYSTEM_PROMPT` | Slot extraction agent |
-| `HANDOFF_SYSTEM_PROMPT` | Handoff report agent |
+| `intervention-dialogue-v1` | Safety-aware intervention dialogue |
+| `state-summary-v1` | Evidence-only state summary |
+| `state-rule-v1` | Deterministic state inference version |
+| `niaaa-samhsa-who-ko-v1` | Optional Korean question guide |
+| report prompt version | Evidence-linked asynchronous report |
 
-## Required Slot Keys
+## Dialogue Topics
 
-```text
-trigger
-duration
-intensity
-recent_alcohol_use
-physiological_context
-coping_attempt
-safety_concern
-support_context
-intervention_summary
-```
+The optional topic IDs are `safety`, `current_environment`, `alcohol_access`, `trigger`, `emotion_body`, `past_coping`, `support`, and `desired_help`. They are conversation guidance, not required fields or a questionnaire. Refusal is respected and no completion percentage is calculated.
 
 ## Agent Docs
 
@@ -67,8 +60,8 @@ intervention_summary
 |---|---|
 | [Agent overview](agents/README.md) | Shared backend AI conventions |
 | [Dialogue agent](agents/01_dialogue_agent.md) | Text intervention behavior |
-| [Slot extraction agent](agents/02_slot_extraction_agent.md) | Craving slot extraction |
-| [Handoff agent](agents/03_handoff_agent.md) | Handoff report generation |
+| [Legacy slot extraction agent](agents/02_slot_extraction_agent.md) | Read-only historical slot contract |
+| [Report agent](agents/03_handoff_agent.md) | Evidence-linked report generation/status |
 
 ## Korean Docs
 
@@ -77,12 +70,11 @@ intervention_summary
 | [AI workspace Korean](README.ko.md) | Korean mirror of this overview |
 | [Agent overview Korean](agents/README.ko.md) | Korean shared backend AI conventions |
 | [Dialogue agent Korean](agents/01_dialogue_agent.ko.md) | Korean text intervention behavior |
-| [Slot extraction agent Korean](agents/02_slot_extraction_agent.ko.md) | Korean craving slot extraction |
-| [Handoff agent Korean](agents/03_handoff_agent.ko.md) | Korean handoff report generation |
+| [Legacy slot extraction agent Korean](agents/02_slot_extraction_agent.ko.md) | Korean read-only historical slot contract |
+| [Report agent Korean](agents/03_handoff_agent.ko.md) | Korean report generation/status |
 
 ## Latest Validation
 
-- Mocked Bedrock chat, JSON parsing, slot filtering, failure handling, and handoff tests passed.
-- Backend network-free suite passes 50 tests, including GPT-5.5 Mantle routing/parsing, Converse rollback, repeated-question control, and asynchronous handoff job lifecycle/error isolation.
+- Network-free validation uses fake adapters for dialogue output validation, repeated-topic control, deterministic interventions/state inference, and asynchronous report failure isolation.
 - A minimal live GPT-5.5 Mantle Responses request passed in `us-east-1`. The earlier bearer-token chat/handoff pass with `us.anthropic.claude-sonnet-4-6` is retained as historical rollback validation.
 - No bearer token or credential value is written to documentation or test output.

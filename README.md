@@ -1,127 +1,103 @@
 # NeuroTruth
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
-NeuroTruth is a wearable-assisted alcohol craving intervention prototype. It combines Galaxy Watch sensor windows, backend craving prediction, deterministic alert rules, AWS Bedrock GPT-5.5 text intervention, craving slot extraction, and Markdown handoff reporting.
+NeuroTruth is an authenticated wearable-assisted supportive intervention research prototype. It is intended for people receiving CBT or willing to seek treatment who need ongoing records and dialogue support in craving situations; it is not a treatment, diagnostic, or emergency-response app. Patients register on Android, grant feature-specific consent, upload Watch sensor windows, receive possible-craving alerts, and choose whether to begin a safety-aware intervention conversation. The FastAPI backend owns patient identity, AES-256-GCM persistence, model/prompt traceability, state inference, reports, and audit records. The React web surface is administrator-only.
 
-## Structure
+## Intervention-First Flow
 
 ```text
-neurotruth/
-+-- apps/
-|   +-- backend/   # FastAPI prediction, alerts, Postgres memory, Bedrock intervention
-|   +-- web/       # React/nginx web surface
-|   +-- mobile/    # Android phone + Wear OS project
-|   +-- db/        # Postgres schema and Docker Compose stack
-+-- docs/          # Product, AI, specs, and GitHub upload docs
+Patient signup/login on phone
+  -> watch sensor batches relayed through authenticated phone
+  -> POST /api/sensor-windows (encrypted raw retention)
+  -> GET /api/predictions/stream
+  -> user chooses Talk now or Later
+  -> optional AUQ + safety check + deterministic first intervention
+  -> structured autonomous dialogue without slot completion targets
+  -> evidence-linked state inference + async report status
+  -> patient/admin dashboards
 ```
 
-## Demo Flow
+Access tokens last 15 minutes by default. Opaque 30-day refresh tokens rotate on every refresh and are stored only as hashes in PostgreSQL. The watch never holds backend credentials or calls the backend directly.
+
+## Repository Layout
 
 ```text
-Galaxy Watch sensors
-  -> Android phone
-  -> POST /sensor-window
-  -> backend prediction
-  -> GET /prediction-stream
-  -> rule-based alert
-  -> text intervention chat
-  -> craving slot extraction
-  -> async handoff job
-  -> handoff report persistence and preview
+apps/backend  FastAPI authenticated API, RF prediction, Bedrock agents, encryption
+apps/mobile   Android phone and Wear OS relay
+apps/web      Administrator-only React console
+apps/db       PostgreSQL 16 Compose stack and extension bootstrap
+docs          Current developer/AI docs and historical dated specs
 ```
 
 ## Quick Start
 
-Create local environment:
+Create `.env` and replace every placeholder secret:
 
 ```powershell
 Copy-Item .env.example .env
-```
-
-Validate Docker config:
-
-```powershell
 docker compose -f apps/db/docker-compose.yml config --no-env-resolution
-```
-
-Run the local stack:
-
-```powershell
 docker compose -f apps/db/docker-compose.yml up -d --build
 ```
 
-Backend checks:
+The authenticated encrypted schema is a hard cut. Compose applies the fresh Alembic baseline to `postgres_data_v25` and stores encrypted raw windows in `encrypted_sensor_data`. Back up and preserve any legacy `postgres_data` volume; do not point Alembic at it and do not expect backfill or downgrade conversion.
+
+The repository-contained schema authorities are `neurotruth_schema_definition_v2_5.md` and `neurotruth_schema_v2_5.sql` at this repository root. Alembic and Compose resolve only the in-repository SQL and do not depend on files in the parent workspace.
+
+Backend and Android validation:
 
 ```powershell
 cd apps/backend
-python -m compileall app tests
 python -m pytest
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+cd ../mobile
+.\gradlew.bat assembleDebug testDebugUnitTest lintDebug
 ```
 
-Android build:
+## Required Security Configuration
 
-```powershell
-cd apps/mobile
-.\gradlew.bat assembleDebug
-```
-
-Android unit tests:
-
-```powershell
-cd apps/mobile
-.\gradlew.bat testDebugUnitTest lintDebug
-```
-
-Install debug APKs when phone and watch are visible in `adb devices`:
-
-```powershell
-adb install -r apps/mobile/app/build/outputs/apk/debug/app-debug.apk
-adb -s <WATCH_SERIAL> install -r apps/mobile/wearos/build/outputs/apk/debug/wearos-debug.apk
-```
-
-## Runtime Notes
-
-- The local craving classifier belongs to backend and is loaded from `apps/backend/model/weights/rf_dependent.joblib` unless `MODEL_PATH` overrides it.
-- Model binaries, `.env`, and Samsung SDK AAR/JAR files can be tracked when the team deliberately includes them in the private repository. Android `local.properties` is not portable and must be recreated per development machine or replaced with `ANDROID_HOME`.
-- Bedrock API key bearer tokens are read from `AWS_BEARER_TOKEN_BEDROCK`.
-- The default `openai.gpt-5.5` model uses the Bedrock Mantle Responses API and requires `AWS_BEARER_TOKEN_BEDROCK`. Non-OpenAI model IDs retain the existing Bedrock Runtime Converse bearer/IAM path for rollback.
-- Existing Android endpoint paths remain available. Mobile now uses the asynchronous handoff job endpoints while the synchronous handoff endpoint stays backward-compatible.
-- Chat response waiting defaults to 60 minutes and can be changed from 1 to 1,440 minutes in phone administrator mode.
-- While intervention chat is active, later required alerts remain recorded and watch state stays current, but the phone sends `alertAction=none` so neither AUQ nor repeated watch vibration/notification is presented.
-- The current phone asset URL is a LAN backend URL, not `localhost`: `http://192.168.68.51:8000`.
-
-## Latest Verified State
-
-| Area | Status |
+| Variable | Purpose |
 |---|---|
-| Docker stack | `db`, `backend`, and `web` run from `apps/db/docker-compose.yml` |
-| Backend health | `/health` returns `status=ok` with the local RF model loaded |
-| Backend tests | `python -m pytest` passed: 50 tests |
-| Session integration | Sensor, alert, chat, slot, and handoff records were linked under one session in Postgres |
-| Bedrock integration | GPT-5.5 availability and a minimal Mantle Responses request passed in `us-east-1`; the previous Claude Sonnet 4.6 chat/handoff pass remains historical validation |
-| Async handoff API | Job submission returns HTTP 202; status lookup, sanitized failure, TTL/capacity, shutdown, and one-hour runtime bounds are covered by tests |
-| Android build | `apps/mobile/gradlew.bat assembleDebug` passed after the AUQ/async-handoff changes |
-| Android unit tests | `apps/mobile/gradlew.bat testDebugUnitTest` passed with AUQ latch, timeout policy, and single-job gate coverage |
-| Android lint | `apps/mobile/gradlew.bat lintDebug` passed after the latest mobile changes |
-| Device install | Latest debug APKs installed and launched on Phone `SM-S926N` and Watch `SM-L320` |
+| `DATABASE_URL` | PostgreSQL 16+ connection |
+| `DATA_ENCRYPTION_KEYS_B64` | Versioned `keyId:base64(32 bytes)` AES keyring |
+| `DATA_ENCRYPTION_CURRENT_KEY_ID` | Key used for new writes |
+| `JWT_SIGNING_KEY` | Access-token signing key, at least 32 bytes |
+| `ADMIN_SIGNUP_CODE` | Initial/rotatable administrator code, at least 16 characters |
+| `SENSOR_STORAGE_ROOT` | Backend-only encrypted sensor volume |
+| `APP_ENV` | `development`, `test`, or `production` |
+| `ALLOW_INSECURE_HTTP` | Explicit local/LAN HTTP override; forbidden in production |
+| `RPPG_ENABLED` | Optional camera-rPPG feature flag; defaults to `false` |
+| `RPPG_BASE_URL` | Backend-only DGX Spark service URL; never shipped to mobile |
+| `RPPG_STORAGE_ROOT` | Backend-only AES-256-GCM face-video storage |
 
-## Key Docs
+Missing database, migration, or encryption configuration makes readiness fail. Production requires HTTPS. Do not commit real secrets, decrypted content, databases, sensor files, or tokens.
 
-| Document | Purpose |
-|---|---|
-| [GitHub upload changes](docs/GITHUB_UPLOAD_CHANGES.md) | Upload/PR summary and checklist |
-| [GitHub upload changes Korean](docs/GITHUB_UPLOAD_CHANGES.ko.md) | Korean upload summary and checklist |
-| [Pull request description](docs/PULL_REQUEST_DESCRIPTION.md) | Ready-to-use English PR body |
-| [Pull request description Korean](docs/PULL_REQUEST_DESCRIPTION.ko.md) | Korean mirror of the PR body |
-| [Development environment](docs/dev-environment.md) | Local setup and validation |
-| [Product requirements](docs/prd/PRD_neurotruth.md) | Product scope |
-| [Product requirements Korean](docs/prd/PRD_neurotruth.ko.md) | Korean PRD mirror |
-| [Implementation plan](docs/todo_plan/PLAN_neurotruth.md) | Current follow-up plan |
-| [AI workspace](docs/ai/README.md) | Backend-owned Bedrock agent boundaries |
-| [Unified backend structure spec](docs/specs/2026-07-09-neurotruth-unified-backend-app-structure-spec.md) | Authoritative consolidation spec |
-| [Session and alert stabilization spec](docs/specs/2026-07-10-neurotruth-session-alert-ui-stabilization-spec.md) | Current session, alert, phone, and watch behavior |
-| [LLM repetition-control spec](docs/specs/2026-07-13-neurotruth-llm-repetition-control-spec.md) | Completion-aware prompting and deterministic repeated-question repair |
-| [AUQ, async handoff, and timeout spec](docs/specs/2026-07-13-neurotruth-mobile-auq-async-handoff-timeout-spec.md) | Current intervention latch, handoff job, administrator timeout, and reset behavior |
-| [Bedrock GPT-5.5 migration spec](docs/specs/2026-07-13-neurotruth-bedrock-gpt-55-migration-spec.md) | Mantle Responses routing and Converse rollback behavior |
+## Current Public API
+
+- Authentication: `/api/auth/patient/signup`, `/api/auth/admin/signup`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/change-password`.
+- Patient profile/consent/dashboard: `GET/PATCH /api/me`, `POST /api/me/consents`, `GET /api/me/dashboard`.
+- Sensors: `POST /api/sensor-windows`, `GET /api/predictions/stream`.
+- Sessions: `POST /api/sessions`, then `GET`, `messages`, `assessments`, `finish`, and `reports` under `/api/sessions/{uuid}`.
+- Administrator: patients/timeline, restricted patient dashboards, reason-gated reveal, temporary password, confirmed deletion, and global settings under `/api/admin`.
+- Camera rPPG (disabled by default): patient status/upload/job polling/manual retry under `/api/rppg`; administrator summary, reason-gated inline playback, and confirmed deletion under `/api/admin/rppg`.
+
+The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and `/api/intervention/*` contracts are not current APIs.
+
+## Boundaries
+
+- New sessions do not write the legacy 13 slots or expose `handoffReady`; pre-redesign slot sessions remain read-only history without backfill.
+- Voice/STT/TTS, self-event capture, wearable-absent AUQ automation, and model retraining experiments are deferred. Camera rPPG is an experimental, disabled-by-default extension and is not release-ready until the real-phone/DGX validation gate passes.
+- Low/Mid/High predictions, AUQ, dialogue, and interventions are presented as separate evidence. The UI never claims immediate craving reduction, CBT efficacy, diagnosis, treatment success, or causal effect.
+- There is no bulk dataset-download endpoint.
+- Every accepted camera video, including quality and technical failures, is retained encrypted until audited administrator deletion. Inline playback has no download button, but a privileged viewer can technically preserve rendered bytes; least privilege, policy, and audit remain required.
+- Safety-risk dialogue may offer administrator involvement once and show the Korean 109 resource, but no live administrator chat, emergency queue, automatic contact, or connection guarantee exists.
+- `interventionsEnabled=false` suppresses normal interventions only; safety guidance remains available.
+
+See [backend operations](apps/backend/README.md), [database operations](apps/db/README.md), [mobile operations](apps/mobile/README.md), [server API](apps/mobile/SERVER_API_SPEC.md), [development environment](docs/dev-environment.md), and [agent behavior](docs/ai/agents/README.md).
+
+## GitHub Upload and Review
+
+- [Cumulative GitHub upload changes](../260715/GITHUB_UPLOAD_CHANGES.md)
+- [Ready-to-paste pull request body](../260715/PULL_REQUEST_DESCRIPTION.md)
+- [Git commit and pull request guide](../260715/GIT_COMMIT_AND_PULL_REQUEST_GUIDE.md)
+- Korean: [업로드 변경사항](../260715/GITHUB_UPLOAD_CHANGES.ko.md), [PR 본문](../260715/PULL_REQUEST_DESCRIPTION.ko.md), [커밋·PR 가이드](../260715/GIT_COMMIT_AND_PULL_REQUEST_GUIDE.ko.md)

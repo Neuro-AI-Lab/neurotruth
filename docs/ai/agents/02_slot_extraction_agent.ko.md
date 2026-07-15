@@ -1,45 +1,29 @@
-# Slot 추출 Agent
+# Legacy Slot 추출 에이전트
 
-최종 업데이트: 2026-07-13
+최종 업데이트: 2026-07-15
 
-## 책임
+이 문서는 redesign 이전 이력을 설명합니다. 신규 intervention-first session은 slot extraction, `session_slots` 생성, legacy memory 갱신, `slots`, `missingSlots`, `handoffReady` 반환을 수행하지 않습니다. 기존 slot session은 `legacy=true`로 읽을 수 있지만 모든 mutation은 `legacy_session_read_only`를 반환하며 backfill하지 않습니다.
 
-Slot extraction 동작은 중재 대화 맥락을 구조화된 갈망 slot으로 변환합니다. 이 결과는 handoff readiness와 backend memory를 지원합니다. Alert level 결정은 담당하지 않습니다.
-
-## 공개 Endpoint
-
-```http
-POST /api/intervention/slots
-```
-
-## Slot Key
+## 정확한 Slot Key
 
 ```text
-trigger
-duration
-intensity
-recent_alcohol_use
-physiological_context
-coping_attempt
-safety_concern
+episode_trigger
+current_context
+alcohol_context
+drinking_status
+habit_pattern
+emotional_context
+physical_context
+alcohol_expectancy
+coping_context
 support_context
-intervention_summary
+user_goal
+safety_context
+additional_context
 ```
 
-## 규칙
+## 과거 값 계약
 
-- 누락된 값을 지어내지 않습니다.
-- Sensor prediction만으로 음주 여부를 추론하지 않습니다.
-- 앱으로 반환하기 전에 알 수 없는 key를 제거합니다.
-- 사용자가 보고한 맥락의 불확실성을 보존합니다.
-- 사실 근거로는 user role 내용만 사용합니다. Assistant turn은 직전의
-  단일 주제 질문이 어떤 slot인지 식별할 때만 사용합니다.
-- 명시적 부정, 모름, 답변 거부는 해당 주제 하나에만 짧은 사용자 원문
-  인용을 포함한 비어 있지 않은 평면 문자열로 저장합니다.
-- 기존의 비어 있지 않은 `currentSlots`를 보존하며 null, 빈 값, 더 약한
-  추출값으로 덮어쓰지 않습니다. User role 근거가 같은 slot을 명시적으로
-  정정하거나 갱신한 경우에만 비어 있지 않은 새 값으로 교체합니다.
-- 현재 slot과 새로 수용한 값을 병합한 뒤 `missingSlots`를 계산합니다.
-- 허용된 slot key를 요청 session ID 아래에 저장합니다.
+보존된 각 slot은 `{"status":"answered|unknown|declined","data":...}`입니다. 이 암호화 값은 과거 환자 record이며 신규 dialogue agent가 다시 쓰지 않습니다.
 
-영어 원본: [Slot Extraction Agent](02_slot_extraction_agent.md)
+기존 `handoffReady` 규칙은 현재 product contract가 아닙니다. 신규 session은 대화 연속성을 위해 encrypted asked/refused topic ledger만 사용하며 replacement questionnaire나 clinical fact store로 취급하지 않습니다.

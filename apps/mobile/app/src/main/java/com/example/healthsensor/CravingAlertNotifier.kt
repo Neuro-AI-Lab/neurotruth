@@ -22,7 +22,7 @@ class CravingAlertNotifier(private val context: Context) {
         notify(
             id = NOTIFICATION_CLASS_ONE,
             title = "잠시 확인이 필요해요",
-            body = "평소보다 갈망 신호가 올라왔습니다. 지금 상태를 잠시 확인하세요.",
+            body = "평소와 다른 신호일 가능성이 있습니다. 원하면 지금 상태를 함께 확인할 수 있어요.",
             priority = NotificationCompat.PRIORITY_DEFAULT
         )
     }
@@ -36,7 +36,7 @@ class CravingAlertNotifier(private val context: Context) {
         notify(
             id = NOTIFICATION_CLASS_TWO,
             title = "지금 상태를 확인해 주세요",
-            body = "갈망 신호가 높게 감지되었습니다. 짧은 상태 확인을 진행합니다.",
+            body = "갈망과 관련된 변화일 가능성이 있습니다. 지금 대화하거나 나중에 확인할 수 있어요.",
             priority = NotificationCompat.PRIORITY_MAX,
             fullScreen = true,
             launchScreen = launchScreen

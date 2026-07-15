@@ -15,9 +15,8 @@ from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.bedrock_agents import (
@@ -36,7 +35,16 @@ from app.ai.bedrock_agents import (
     question_free_fallback,
     repeats_recent_question,
 )
-from app.inference import ModelUnavailableError, RealtimePredictionService
+from app.inference import RealtimePredictionService
+from app.v25.routes_auth import router as v25_auth_router
+from app.v25.routes_admin import router as v25_admin_router
+from app.v25.routes_sensor import router as v25_sensor_router
+from app.v25.routes_sessions import router as v25_sessions_router
+from app.v25.routes_rppg import router as v25_rppg_router
+from app.v25.routes_dashboard import router as v25_dashboard_router
+from app.v25.runtime import initialize_v25_runtime, shutdown_v25_runtime
+from app.v25.sensor_service import SensorService
+from app.v25.sensor_storage import EncryptedSensorStorage
 
 SSE_KEEPALIVE_SECONDS = float(os.getenv("SSE_KEEPALIVE_SECONDS", "10"))
 HANDOFF_READY_MIN_FILLED_SLOTS = 3
@@ -277,12 +285,59 @@ class HandoffRequest(BaseModel):
 async def lifespan(app: FastAPI):
     """Load the model at startup and stop the inference worker on shutdown."""
 
+    runtime = await initialize_v25_runtime(app)
+    # The legacy six-table memory adapter must never create its tables in the
+    # fresh V2.5 database. V2.5 repositories own persistence from this point.
+    prediction_service.memory.database_url = None
     await prediction_service.start()
+    if runtime.ready:
+        class RuntimePredictor:
+            ready = prediction_service.model.ready
+            model_name = prediction_service.model.model_name or "RandomForest"
+            model_version = os.getenv("CRAVING_MODEL_VERSION", prediction_service.model.model_path.name)
+            artifact_uri = str(prediction_service.model.model_path)
+
+            async def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
+                return await asyncio.to_thread(prediction_service.model.predict, payload)
+
+        def decide_alert(patient_id, event):
+            return prediction_service.alerts.for_session(f"patient:{patient_id}").evaluate(
+                int(event["class"]), now_ms=int(event.get("timestampMs") or time.time() * 1000)
+            ).as_dict()
+
+        app.state.v25_sensor_service = SensorService(
+            runtime.repository,
+            EncryptedSensorStorage(runtime.settings.sensor_storage_root, runtime.settings.keyring()),
+            RuntimePredictor(),
+            decide_alert,
+        )
+        from app.v25.rppg_dgx import DgxClient
+        from app.v25.rppg_media import FfprobeMediaInspector
+        from app.v25.rppg_service import RppgService
+        runtime.rppg_service = RppgService(
+            repository=runtime.rppg_repository,
+            v25_repository=runtime.repository,
+            storage=runtime.rppg_storage,
+            keyring=runtime.settings.keyring(),
+            dgx=DgxClient(
+                runtime.settings.rppg_base_url,
+                connect_timeout=runtime.settings.rppg_connect_timeout_seconds,
+                read_timeout=runtime.settings.rppg_read_timeout_seconds,
+            ),
+            inspector=FfprobeMediaInspector(runtime.settings.rppg_ffprobe_path),
+            predictor=RuntimePredictor(), alert_decider=decide_alert,
+            enabled=runtime.settings.rppg_enabled,
+            max_concurrency=runtime.settings.rppg_max_concurrency,
+            read_timeout_seconds=runtime.settings.rppg_read_timeout_seconds,
+        )
+        runtime.admin_service.configure_rppg(runtime.rppg_repository, runtime.rppg_storage)
+        await runtime.rppg_service.start()
     try:
         yield
     finally:
         await handoff_job_registry.shutdown()
         await prediction_service.stop()
+        await shutdown_v25_runtime(app)
 
 
 app = FastAPI(
@@ -293,18 +348,41 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8765",
+    ).split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(v25_auth_router)
+app.include_router(v25_admin_router)
+app.include_router(v25_sensor_router)
+app.include_router(v25_sessions_router)
+app.include_router(v25_rppg_router)
+app.include_router(v25_dashboard_router)
 
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     """Liveness check plus compact model/runtime status."""
 
-    return {"status": "ok", "model": prediction_service.status()}
+    runtime = getattr(app.state, "v25_runtime", None)
+    return {
+        "status": "ok",
+        "model": prediction_service.status(),
+        "v25": runtime.public_status() if runtime is not None else {"ready": False, "errorCode": "not_initialized"},
+    }
+
+
+@app.get("/ready")
+async def readiness() -> dict[str, Any]:
+    runtime = getattr(app.state, "v25_runtime", None)
+    status = runtime.public_status() if runtime is not None else {"ready": False, "errorCode": "not_initialized"}
+    if not status["ready"]:
+        raise HTTPException(status_code=503, detail=status)
+    return status
 
 
 @app.get("/model/status")
@@ -314,73 +392,6 @@ async def model_status() -> dict[str, Any]:
     return prediction_service.status()
 
 
-@app.post("/sensor-window")
-async def sensor_window(payload: SensorWindow) -> dict[str, bool]:
-    """Accept one sensor window and enqueue it for background inference."""
-
-    try:
-        await prediction_service.submit(payload.model_dump())
-    except ModelUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"ok": True}
-
-
-@app.get("/prediction-stream")
-async def prediction_stream(request: Request) -> StreamingResponse:
-    """SSE stream used by the app to receive `event: craving` predictions."""
-
-    async def event_generator():
-        queue = await prediction_service.hub.subscribe()
-        # Reset the latency log at the start of each connection; append a summary
-        # when it closes. Each connect overwrites the previous session's file.
-        client = request.client.host if request.client else ""
-        prediction_service.latency.start_session(client=client)
-        try:
-            yield ": connected\n\n"
-            while not await request.is_disconnected():
-                try:
-                    event = await asyncio.wait_for(
-                        queue.get(), timeout=SSE_KEEPALIVE_SECONDS
-                    )
-                    # Downlink latency: time from "prediction ready" (stamped by
-                    # the worker) to the moment we hand it to this SSE response.
-                    # Log the full per-window row here so it also captures the
-                    # send time that only this endpoint can observe. (With N
-                    # connected clients each logs its own row; normally N=1.)
-                    ready_perf = event.get("_readyPerf")
-                    send_ms = (
-                        (time.perf_counter() - ready_perf) * 1000.0
-                        if ready_perf is not None
-                        else None
-                    )
-                    prediction_service.latency.record(
-                        sequence=event.get("sequence"),
-                        send_ms=send_ms,
-                        **(event.get("_lat") or {}),
-                    )
-                    public = _public_sse_event(event)
-                    data = json.dumps(public, ensure_ascii=False, separators=(",", ":"))
-                    yield f"event: craving\ndata: {data}\n\n"
-                except asyncio.TimeoutError:
-                    # Android keeps a 15s read timeout, so send a harmless SSE
-                    # comment before that timeout can fire.
-                    yield ": ping\n\n"
-        finally:
-            await prediction_service.hub.unsubscribe(queue)
-            prediction_service.latency.end_session()
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream; charset=utf-8",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.post("/api/llm/chat")
 async def llm_chat(body: dict[str, Any]) -> Any:
     """Legacy LLM compatibility endpoint backed by internal Bedrock calls."""
 
@@ -402,7 +413,6 @@ async def llm_chat(body: dict[str, Any]) -> Any:
     return {"text": text, "model": bedrock_adapter.model_id}
 
 
-@app.post("/api/intervention/chat")
 async def intervention_chat(body: InterventionChatRequest) -> Any:
     """Run alert-aware intervention chat through backend-owned Bedrock helpers."""
 
@@ -464,7 +474,6 @@ async def intervention_chat(body: InterventionChatRequest) -> Any:
     return response
 
 
-@app.post("/api/intervention/slots")
 async def intervention_slots(body: SlotExtractionRequest) -> Any:
     """Extract craving slots through backend-owned Bedrock helpers."""
 
@@ -493,7 +502,6 @@ async def intervention_slots(body: SlotExtractionRequest) -> Any:
     return result
 
 
-@app.post("/api/intervention/handoff")
 async def intervention_handoff(body: HandoffRequest) -> Any:
     """Generate clinician handoff report through backend-owned Bedrock helpers."""
 
@@ -501,7 +509,6 @@ async def intervention_handoff(body: HandoffRequest) -> Any:
     return await _generate_and_persist_handoff(payload)
 
 
-@app.post("/api/intervention/handoff/jobs", status_code=202)
 async def submit_intervention_handoff_job(body: HandoffRequest) -> dict[str, Any]:
     """Queue a process-local handoff job and return without waiting for Bedrock."""
 
@@ -513,7 +520,6 @@ async def submit_intervention_handoff_job(body: HandoffRequest) -> dict[str, Any
     )
 
 
-@app.get("/api/intervention/handoff/jobs/{job_id}")
 async def intervention_handoff_job_status(job_id: str) -> dict[str, Any]:
     """Return public status for one queued handoff generation job."""
 
@@ -570,13 +576,6 @@ async def _generate_and_persist_handoff(payload: dict[str, Any]) -> dict[str, An
             )
         result.setdefault("sessionId", payload["sessionId"])
     return result
-
-
-@app.get("/api/users")
-async def get_users() -> list[dict[str, Any]]:
-    """Placeholder route from the original backend scaffold."""
-
-    return [{"id": 1, "name": "test user"}]
 
 
 async def _ai_chat_respond(payload: dict[str, Any]) -> dict[str, Any]:

@@ -1,84 +1,77 @@
 # PLAN: NeuroTruth
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
-## Current Structure
+## Current Product Direction
 
-- `apps/backend`: backend API, local craving model, Bedrock intervention
-- `apps/web`: web surface
-- `apps/mobile`: Android phone and Wear OS app
-- `apps/db`: Postgres schema and Docker stack
+NeuroTruth now builds an intervention-first supportive research flow on the authenticated encrypted foundation. New sessions use optional AUQ, deterministic safety and first-intervention rules, autonomous non-repeating dialogue, evidence-linked state inference, and patient/admin dashboards. They do not write the retained 13-slot workflow. The product does not claim immediate craving reduction, CBT efficacy, diagnosis, treatment success, or causality.
 
 ## Completed
 
-- Moved toward a simplified backend-owned AI architecture.
-- Kept Android public endpoint paths stable.
-- Kept local craving model ownership in backend.
-- Added DB-centered Docker Compose.
-- Added a superseding unified backend structure spec.
-- Added Bedrock bearer-token support through `AWS_BEARER_TOKEN_BEDROCK`.
-- Restored phone and Wear OS UX from the working `watch_test` environment.
-- Reconnected mobile intervention chat and handoff to backend endpoints.
-- Set physical-device test URLs to the laptop LAN backend.
-- Built Android debug APKs successfully.
-- Ran Android unit tests successfully.
-- Installed phone and watch debug APKs successfully.
-- Isolated backend alert windows, cooldowns, and downtrend state per session.
-- Added conservative alert warm-up and class-2 high-streak early-required behavior.
-- Unified phone sensor and intervention traffic under one shared session ID.
-- Applied backend alert action precedence consistently on phone and watch.
-- Fixed Wear OS standalone lint metadata and passed Android lint with zero errors.
-- Verified same-session sensor, SSE, Postgres, Bedrock chat, and handoff integration in Docker.
-- Updated active repository, backend, web, DB, mobile, PRD, AI-agent, development, and upload documentation to the verified 2026-07-10 state.
-- Added ready-to-use English/Korean pull request descriptions, a Korean upload guide, and a Korean PRD mirror.
-- Added completion-aware dialogue/slot prompts and deterministic repeated-question repair.
-- Added an active-intervention latch so later required alerts do not reopen AUQ during chat.
-- Added a persisted administrator chat response timeout setting with a 60-minute default and 1–1,440 minute range.
-- Added an intervention-only reset that preserves sensor history and server URLs.
-- Added HTTP 202 asynchronous handoff jobs with status polling, sanitized failures, capacity/TTL/shutdown handling, and a one-hour runtime bound.
-- Kept the synchronous handoff endpoint backward-compatible and chat usable while handoff generation runs.
-- Passed 50 backend tests, 22 Android unit tests, Phone/Wear builds, Android lint, Docker health, and async OpenAPI smoke.
-- Migrated the Bedrock default to `openai.gpt-5.5` through Mantle Responses while preserving the Claude Converse rollback path; GPT-5.6 was not available in the verified account/region.
-- Reinstalled and launched the latest debug APKs on phone `SM-S926N` and watch `SM-L320`.
-- Updated cumulative GitHub upload notes, PR descriptions, and active project docs for the first repository upload while preserving the existing private-repository `.gitignore` policy.
+- [x] Patient self-signup, login, rotating refresh, logout, password change, role authorization.
+- [x] Append-only mandatory/optional consent snapshots and feature gates.
+- [x] Fresh PostgreSQL authenticated baseline with `auth_sessions`, `system_settings`, model/prompt links, retained legacy slots, and one-active-session constraint.
+- [x] Versioned AES-256-GCM keyring for sensitive fields and backend-volume sensor encryption.
+- [x] Authenticated idempotent sensor upload and patient-owned prediction SSE.
+- [x] Server-issued UUID sessions, AUQ, encrypted messages, manual finish, timeout, and persistent asynchronous reports.
+- [x] Retained pre-redesign `answered|unknown|declined` slot history and repeated-topic prevention baseline.
+- [x] Deterministic intervention type, global intervention toggle, safety 119/109 wording, and no-live-connection guarantee.
+- [x] Patient Phone auth/consent/Keystore flow and Phone-only Watch relay.
+- [x] Administrator signup/login, patient timeline, reason-gated reveal, temporary password, deletion, and settings UI/API.
+- [x] Fresh `postgres_data_v25` and `encrypted_sensor_data` Compose contract with legacy-volume preservation.
+- [x] Current README, mobile/server API, PRD, developer, Wear OS, and agent-document synchronization.
 
-## Verified Checks
+## Intervention-First Redesign
+
+- [ ] Apply additive `0003` for interaction phases, encrypted dialogue state, ordered interventions, and `state_inferences` without changing `0001`, `0002`, or baseline SQL.
+- [ ] Replace new-session slot collection with optional AUQ, safety-first dialogue, deterministic first intervention, allowlisted later interventions, and manual-complete/timeout-abandoned behavior.
+- [ ] Add patient and administrator `24h|7d|30d` dashboards. Administrator views contain no raw PPG, decrypted state summary, or report body.
+- [ ] Preserve all pre-`0003` slot sessions/reports as read-only legacy history with no backfill.
+
+## Superseded Completed History
+
+The following work was valid for the 2026-07-09 through 2026-07-13 demo and remains useful implementation history, but its public contracts are not current behavior:
+
+- [x] Backend-owned RF prediction, deterministic alert warm-up/cooldown/high-streak logic, and Bedrock GPT-5.5 adapter.
+- [x] Restored Phone/Wear UX, sensor charts, Data Layer batching, prediction display, and device installation.
+- [x] Legacy shared string session IDs and unauthenticated sensor/SSE compatibility.
+- [x] Legacy nine-slot intervention endpoints, synchronous handoff compatibility, and process-local HTTP 202 handoff jobs.
+- [x] Active-intervention latch, configurable 60-minute waiting behavior, and older intervention-only reset controls.
+- [x] Earlier backend/Android/Docker smoke tests and GitHub upload documentation.
+
+These entries are not rollback promises. Historical dated specs remain unchanged; rollback restores the preserved legacy image/volume and does not translate new data.
+
+## Current Validation
 
 ```powershell
 cd apps/backend
-python -m compileall app tests
-python -m pytest
-```
+.\.venv\Scripts\python.exe -m pytest
 
-```powershell
-docker compose -f apps/db/docker-compose.yml config --no-env-resolution
+cd ../mobile
+.\gradlew.bat assembleDebug testDebugUnitTest lintDebug
+
+docker compose -f ../db/docker-compose.yml config --no-env-resolution
 git diff --check
 ```
 
-```powershell
-cd apps/mobile
-.\gradlew.bat assembleDebug
-.\gradlew.bat testDebugUnitTest
-.\gradlew.bat lintDebug
-```
+## Operator Setup
 
-## Setup Tasks
+- Maintain valid `DATABASE_URL`, AES keyring/current key, JWT signing key, admin signup code, backend sensor-volume path, and Bedrock/model configuration.
+- Back up legacy `postgres_data`; deploy only against fresh `postgres_data_v25` and `encrypted_sensor_data`.
+- Use HTTPS in production. Enable insecure HTTP only for explicit development/test LAN experiments.
+- Keep Android SDK/JDK 17 and Samsung Health Sensor SDK available; update the Phone LAN base URL when the network changes.
+- Never stage real secrets, tokens, decrypted content, database volumes, retained sensor files, machine-specific `local.properties`, or generated build output.
 
-- Keep root `.env` present and updated.
-- Confirm `rf_dependent.joblib` exists at `apps/backend/model/weights/rf_dependent.joblib` or set `MODEL_PATH`.
-- Configure `AWS_BEARER_TOKEN_BEDROCK`, `BEDROCK_MODEL_ID`, and AWS region values.
-- Keep Samsung Health Sensor SDK AAR under `apps/mobile/wearos/libs/`.
-- Create `apps/mobile/local.properties` separately on each Android development PC or set `ANDROID_HOME`; do not reuse the deleted laptop-specific absolute path on another machine or server.
-- Update `apps/mobile/app/src/main/assets/server_config.properties` if the laptop LAN IP changes.
+## Next Verification
 
-## Next Checks
+- [ ] Run fresh PostgreSQL migration/readiness smoke with Docker daemon available.
+- [ ] Run full patient signup → consent → Watch relay → encrypted upload → prediction → alert approval → optional AUQ → safety → intervention dialogue → report status → patient/admin dashboards on physical devices.
+- [ ] Verify refresh rotation/replay logout and app restart session recovery on the target Phone.
+- [ ] Verify safety acceptance/decline wording, 109 display, and absence of any live-contact guarantee.
+- [ ] Verify administrator reason audit, settings, temporary password, deletion success/retry, and intervention OFF behavior.
+- [ ] Verify HTTPS production deployment and explicit development HTTP override separately.
+- [ ] Apply additive rPPG `0002`, run fake-DGX backend tests, and verify encrypted all-video retention plus audited playback/deletion.
+- [ ] Run real Phone 10-second capture → backend → DGX FactorizePhys → 512 rPPG + zero EDA → RF → Phone result, confirming no camera result reaches Watch.
+- [ ] Before enabling, confirm DGX port is internal-only, upload temp is tmpfs, `DELETE_UPLOADED_VIDEO=true`, and no plaintext remains on DGX/backend.
 
-- Fix and revalidate the GPT-5.5 full `/api/intervention/chat` slot-extraction path; the minimal Mantle call passes, but the latest route smoke returned HTTP 502 (`Bedrock slot request failed`).
-- Run a real watch-to-phone-to-backend session for at least several minutes.
-- Confirm live PPG/EDA data produces stable `/sensor-window` payloads.
-- Confirm `/prediction-stream` alert metadata updates phone and watch UI in real time.
-- Confirm the 60-minute default chat timeout and administrator override persist on the physical phone.
-- Confirm later required alerts do not reopen AUQ while chat remains active, then confirm a future alert can reopen it after chat closes.
-- Confirm asynchronous handoff submission returns promptly, chat remains usable, and the completed report appears on the physical phone.
-- Apply the team's private-repository policy deliberately to `.env`, review its values before staging, and keep the repository private if it is included. Do not upload machine-specific `local.properties`, standalone signing keys, or generated APK/build output. Review model weights and the Samsung AAR before including binary artifacts.
-- Use `docs/PULL_REQUEST_DESCRIPTION.md` or its Korean mirror as the GitHub pull request body after reviewing secrets and binary artifacts.
+Voice/STT/TTS, self-event capture, wearable-absent AUQ automation, craving-model balancing/label experiments, live administrator intervention, emergency dispatch, and bulk download remain out of scope. Camera rPPG is a deferred, disabled-by-default extension and remains hidden until enabled, ready, and jointly validated.

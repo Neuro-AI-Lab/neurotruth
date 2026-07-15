@@ -1,40 +1,26 @@
-# 대화 Agent
+# 대화 에이전트
 
-최종 업데이트: 2026-07-13
+최종 업데이트: 2026-07-15
 
-## 책임
+## Endpoint와 책임
 
-대화 동작은 휴대폰 앱에서 text-first 갈망 중재를 지원합니다. 사용자의 현재 상태를 인정하고, 작고 실행 가능한 coping step 하나를 제안하며, follow-up question은 한 번에 하나만 묻습니다.
+`POST /api/sessions/{sessionId}/messages`는 인증된 환자 메시지 하나를 받아 암호화된 user/assistant turn과 conversation ledger를 저장하고 `assistantText`, `phase`, `safety`, `activeInterventions`, `stateSnapshot`, `reportStatus`를 반환합니다. 신규 session은 slot을 쓰거나 slot coverage field를 반환하지 않습니다.
 
-## 공개 Endpoint
+## 대화 정책
 
-```http
-POST /api/intervention/chat
-```
+- 간결하고 지지적이며 비판단적인 한국어를 사용합니다.
+- 짧은 질문은 최대 하나입니다. Topic 순서는 선택형 guide이며 questionnaire 또는 completion target이 아닙니다.
+- 이미 물었거나 답변을 거부한 topic은 환자가 명시적으로 정정하지 않는 한 우회 표현까지 다시 묻지 않습니다. 암호화 topic ledger는 앱 재시작 이후에도 유지됩니다.
+- 정정 내용을 반영하고 명시적인 부정, 불확실성, 답변 거부를 보존합니다.
+- 진단, 처방, 수치심 유발, 임상 결과 약속을 하지 않으며 prediction data로 음주를 추론하지 않습니다.
+- Deterministic rule이 첫 intervention을 선택합니다. 이후 LLM 제안은 approved intervention allowlist로 제한되며 전달된 제안마다 order와 version evidence를 저장합니다.
+- `interventionsEnabled=false`이면 safety handling과 state inference는 계속하지만 일반 intervention 문구/row는 만들지 않습니다.
+- 즉각적 갈망 감소, CBT 효과, 진단, 치료 성공, 확실성 또는 인과 효과를 주장하지 않습니다. 검증 repair는 한 번만 허용하고 실패하면 deterministic supportive fallback을 사용합니다.
 
-## 기대 동작
+선택형 한국어 question guide는 `niaaa-samhsa-who-ko-v1`로 versioning합니다. [NIAAA brief intervention](https://www.niaaa.nih.gov/health-professionals-communities/core-resource-on-alcohol/conduct-brief-intervention-build-motivation-and-plan-change), [SAMHSA TIP 35](https://library.samhsa.gov/product/tip-35-enhancing-motivation-change-substance-use-disorder-treatment/pep19-02-01-003), [WHO mhGAP alcohol guidance](https://www.who.int/teams/mental-health-and-substance-use/treatment-care/mental-health-gap-action-programme/evidence-centre/alcohol-use-disorders)를 참고한 독자적인 비임상 paraphrase이며 clinical script가 아닙니다.
 
-- 기본적으로 지지적이고 비판단적인 한국어를 사용합니다.
-- 긍정, 부정, 모름, 답변 거부를 모두 완료된 주제로 처리합니다.
-- 누적된 `currentSlots`와 `missingSlots`를 사용하며 완료된 주제를 표현만
-  바꾸어 다시 묻지 않습니다.
-- 간결한 질문은 최대 하나만 하며, 중립적인 사실 답변에 억지 공감이나
-  질문을 붙이지 않습니다.
-- Backend의 deterministic alert context를 존중하되 확실성을 과장하지 않습니다.
-- 진단, 치료 효과 단정, 수치심을 유발하는 표현을 피합니다.
-- 급성 safety risk가 드러나면 즉각적인 주변 도움 또는 긴급 도움을 권합니다.
-- 비안전 질문은 최근 assistant 질문 세 개와 비교합니다. 동일하거나 매우
-  유사하면 Bedrock repair를 한 번만 시도합니다. Repair가 실패하거나 다시
-  반복되면 backend가 반복 질문을 제거하고 질문 없는 짧은 확인 응답을
-  반환합니다. 안전, probe, 위기, 긴급 질문은 억제하지 않습니다.
+## 안전
 
-## 구현
+즉각적 위험 내용은 provider 실패로 지원이 지연되지 않도록 일반 LLM 순서를 우회합니다. 응답은 119와 자살예방 상담전화 109를 안내하고 관리자 도움 요청 사실을 기록할지 한 번 물을 수 있습니다. 이 기록이 실시간 연결이나 즉각적 연락을 보장하지 않는다고 명시합니다. 수락 또는 거절을 감사 기록에 남기고 남은 대화를 계속합니다.
 
-Backend는 `apps/backend/app/ai/bedrock_agents.py`에서 Bedrock prompt를 구성하고, user/assistant turn은 shared intervention session ID로 backend memory에 저장합니다.
-
-반복 비교는 요청 내부에서만 상태 없이 수행합니다. NFKC 및 대소문자
-정규화 후 앞부분의 확인 표현, 문장부호, 공백을 제거하고
-`difflib.SequenceMatcher` 임계값 `0.86`을 적용합니다. Public response에는
-repair metadata를 추가하지 않습니다.
-
-영어 원본: [Dialogue Agent](01_dialogue_agent.md)
+Provider 실패 시 patient message를 유지하고 새 질문이나 미승인 intervention이 없는 deterministic supportive response를 반환합니다. Voice, rPPG, self-event capture, wearable-absent AUQ automation은 이번 release의 대화 입력이 아닙니다.

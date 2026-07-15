@@ -20,6 +20,9 @@ object PhoneMonitoringState {
     val isPredictionReceiverEnabled = MutableStateFlow(false)
     val predictionStatus = MutableStateFlow("예측 수신 URL 입력 후 수신을 시작하세요")
 
+    /** Camera analysis pauses phone network application without stopping watch reception. */
+    val isCameraPauseActive = MutableStateFlow(false)
+
     val isServiceRunning = MutableStateFlow(false)
     val serviceStatus = MutableStateFlow("백그라운드 서비스 대기")
 
