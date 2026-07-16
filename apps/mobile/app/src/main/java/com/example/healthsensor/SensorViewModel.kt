@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.SocketTimeoutException
+import java.util.UUID
 
 /** 차트 한 점: 시작 시각으로부터의 경과 시간(초, Float)을 x축으로 사용한다. */
 data class SensorPoint(val timestamp: Long, val value: Float, val index: Float = 0f)
@@ -95,12 +96,29 @@ object StateCheckScoring {
 data class ChatMessage(
     val sender: ChatSender,
     val text: String,
-    val timestampMs: Long = System.currentTimeMillis()
+    val timestampMs: Long = System.currentTimeMillis(),
+    val clientMessageId: String? = null
 )
 
 enum class ChatSender {
     USER,
     BOT
+}
+
+data class PendingChatRetry(
+    val clientMessageId: String,
+    val content: String,
+    val attemptsRemaining: Int
+)
+
+object ChatRetryPolicy {
+    fun pending(
+        error: Throwable,
+        clientMessageId: String,
+        content: String
+    ): PendingChatRetry? = (error as? DialogueRequestException)
+        ?.takeIf { it.retryable && it.attemptsRemaining > 0 }
+        ?.let { PendingChatRetry(clientMessageId, content, it.attemptsRemaining) }
 }
 
 object ChatReadTimeoutPolicy {
@@ -286,6 +304,9 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val _isChatSending = MutableStateFlow(false)
     val isChatSending: StateFlow<Boolean> = _isChatSending
 
+    private val _pendingChatRetry = MutableStateFlow<PendingChatRetry?>(null)
+    val pendingChatRetry: StateFlow<PendingChatRetry?> = _pendingChatRetry
+
     private val _chatReadTimeoutMinutes = MutableStateFlow(
         ChatReadTimeoutPolicy.storedOrDefault(
             interventionPreferences.getInt(
@@ -305,7 +326,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val _chatTimeoutSettingStatus = MutableStateFlow("")
     val chatTimeoutSettingStatus: StateFlow<String> = _chatTimeoutSettingStatus
 
-    private val _conversationPhase = MutableStateFlow("safety_check")
+    private val _conversationPhase = MutableStateFlow("free_dialogue")
     val conversationPhase: StateFlow<String> = _conversationPhase
 
     private val _sessionReportStatus = MutableStateFlow("not_started")
@@ -672,7 +693,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }.onSuccess { session ->
                 bufferedSessionPrompt = session.assistantText
-                _conversationPhase.value = session.interactionPhase ?: "safety_check"
+                _conversationPhase.value = session.interactionPhase ?: "free_dialogue"
                 _sessionReportStatus.value = session.reportStatus
                 _sessionInactivityTimeoutSeconds.value = session.inactivityTimeoutSeconds
                 _isAuqChoiceRequired.value = true
@@ -712,7 +733,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }.onSuccess { session ->
                 bufferedSessionPrompt = session.assistantText
-                _conversationPhase.value = session.interactionPhase ?: "safety_check"
+                _conversationPhase.value = session.interactionPhase ?: "free_dialogue"
                 _sessionReportStatus.value = session.reportStatus
                 _sessionInactivityTimeoutSeconds.value = session.inactivityTimeoutSeconds
                 if (session.assistantText != null) {
@@ -758,9 +779,10 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         _chatMessages.value = emptyList()
         _chatStatus.value = "필요할 때 대화를 시작할 수 있습니다"
         _isChatSending.value = false
-        _conversationPhase.value = "safety_check"
+        _conversationPhase.value = "free_dialogue"
         _sessionReportStatus.value = "not_started"
         _sessionInactivityTimeoutSeconds.value = null
+        _pendingChatRetry.value = null
         bufferedSessionPrompt = null
         seenInterventionIds.clear()
     }
@@ -768,7 +790,22 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     fun sendChatMessage(text: String) {
         val message = text.trim()
         if (message.isBlank() || _isChatSending.value) return
-        _chatMessages.update { list -> list + ChatMessage(ChatSender.USER, message) }
+        val clientMessageId = UUID.randomUUID().toString()
+        _chatMessages.update {
+            list -> list + ChatMessage(ChatSender.USER, message, clientMessageId = clientMessageId)
+        }
+        _pendingChatRetry.value = null
+        dispatchChatMessage(clientMessageId, message)
+    }
+
+    fun retryChatMessage() {
+        val pending = _pendingChatRetry.value ?: return
+        if (_isChatSending.value || pending.attemptsRemaining <= 0) return
+        _pendingChatRetry.value = null
+        dispatchChatMessage(pending.clientMessageId, pending.content)
+    }
+
+    private fun dispatchChatMessage(clientMessageId: String, message: String) {
         _isChatSending.value = true
         _chatStatus.value = "응답 요청 중"
 
@@ -778,6 +815,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.IO) {
                     conversationSessionManager.postMessage(
                         ownerId = authenticatedOwnerId(),
+                        clientMessageId = clientMessageId,
                         content = message,
                         readTimeoutMs = ChatReadTimeoutPolicy.toMillis(_chatReadTimeoutMinutes.value)
                     )
@@ -787,6 +825,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             if (requestEpoch != interventionEpoch) return@launch
 
             result.onSuccess { response ->
+                _pendingChatRetry.value = null
                 _conversationPhase.value = response.phase
                 _sessionReportStatus.value = response.reportStatus
                 response.inactivityTimeoutSeconds?.let { _sessionInactivityTimeoutSeconds.value = it }
@@ -806,17 +845,15 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                     else -> "응답 완료"
                 }
             }.onFailure { error ->
-                _chatMessages.update { list ->
-                    list + ChatMessage(
-                        ChatSender.BOT,
-                        if (error.isNetworkTimeout()) {
-                            "응답 제한시간이 지났습니다. 메시지는 보존되었으며 필요하면 직접 다시 전송해 주세요."
-                        } else {
-                            "응답 요청에 실패했습니다. 서버 연결을 확인해 주세요."
-                        }
-                    )
-                }
-                _chatStatus.value = if (error.isNetworkTimeout()) {
+                val dialogueError = error as? DialogueRequestException
+                _pendingChatRetry.value = ChatRetryPolicy.pending(error, clientMessageId, message)
+                _chatStatus.value = if (dialogueError != null) {
+                    if (dialogueError.retryable) {
+                        "응답 생성에 실패했습니다. 같은 메시지를 한 번 다시 시도할 수 있습니다"
+                    } else {
+                        "응답 생성에 다시 실패했습니다. 잠시 후 새 메시지로 시도해 주세요"
+                    }
+                } else if (error.isNetworkTimeout()) {
                     "채팅 시간 초과: ${_chatReadTimeoutMinutes.value}분"
                 } else if (error is ApiHttpException && error.statusCode == 409) {
                     "다른 메시지를 처리 중입니다. 잠시 후 직접 다시 보내 주세요"
@@ -834,6 +871,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         if (_isChatSending.value) return
         _isChatSending.value = true
         _chatStatus.value = "대화 종료 중"
+        _pendingChatRetry.value = null
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {

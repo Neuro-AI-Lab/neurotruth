@@ -1,11 +1,89 @@
 package com.example.healthsensor
 
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PatientDashboardParserTest {
+    @Test
+    fun cravingDashboardParsesFixedHourlyAndDailyBarContracts() {
+        val root = JSONObject()
+            .put("timezone", "Asia/Seoul")
+            .put("generatedAt", "2026-07-16T03:00:00Z")
+            .put(
+                "currentCraving",
+                JSONObject().put("probability", 0.81).put("at", "2026-07-16T02:59:59Z")
+            )
+            .put(
+                "hourlyCraving",
+                JSONObject().put("buckets", JSONArray().apply {
+                    repeat(24) { hour ->
+                        put(
+                            JSONObject()
+                                .put("localStart", "2026-07-16T${"%02d".format(hour)}:00:00+09:00")
+                                .put("averageProbability", if (hour == 0) JSONObject.NULL else 0.5)
+                                .put("minimumProbability", if (hour == 0) JSONObject.NULL else 0.2)
+                                .put("maximumProbability", if (hour == 0) JSONObject.NULL else 0.8)
+                                .put("sampleCount", if (hour == 0) 0 else 60)
+                        )
+                    }
+                })
+            )
+            .put(
+                "dailyEvents",
+                JSONObject().put("range", "7d").put("buckets", JSONArray().apply {
+                    repeat(7) { day ->
+                        put(
+                            JSONObject()
+                                .put("localDate", "2026-07-${"%02d".format(10 + day)}")
+                                .put("hasPredictionData", day != 0)
+                                .put("recommendCount", 0)
+                                .put("requiredCount", 0)
+                                .put("totalCount", 0)
+                        )
+                    }
+                })
+            )
+            .put(
+                "auq",
+                JSONObject().put("range", "today").put("bucketUnit", "hour")
+                    .put("buckets", JSONArray().apply {
+                        repeat(24) { hour ->
+                            put(
+                                JSONObject()
+                                    .put("localStart", "2026-07-16T${"%02d".format(hour)}:00:00+09:00")
+                                    .put("averageNormalizedScore", if (hour == 2) 0.625 else JSONObject.NULL)
+                                    .put("sampleCount", if (hour == 2) 2 else 0)
+                            )
+                        }
+                    })
+            )
+
+        val parsed = PatientDashboardParser.parseCravingDashboard(root.toString())
+
+        assertEquals(24, parsed.hourlyCraving.size)
+        assertNull(parsed.hourlyCraving.first().averageProbability)
+        assertEquals(0.81f, parsed.currentCraving?.probability)
+        assertTrue(parsed.dailyEvents.first().let { !it.hasPredictionData && it.totalCount == 0 })
+        assertTrue(parsed.dailyEvents[1].let { it.hasPredictionData && it.totalCount == 0 })
+        assertEquals(0.625f, parsed.auq[2].averageNormalizedScore)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun cravingDashboardRejectsMissingWallClockHour() {
+        PatientDashboardParser.parseCravingDashboard(
+            """{
+              "timezone":"Asia/Seoul","generatedAt":"2026-07-16T03:00:00Z","currentCraving":null,
+              "hourlyCraving":{"buckets":[]},
+              "dailyEvents":{"range":"7d","buckets":[]},
+              "auq":{"range":"today","bucketUnit":"hour","buckets":[]}
+            }"""
+        )
+    }
+
     @Test
     fun emptyDashboardIsValidForEverySupportedRange() {
         DashboardRange.values().forEach { range ->

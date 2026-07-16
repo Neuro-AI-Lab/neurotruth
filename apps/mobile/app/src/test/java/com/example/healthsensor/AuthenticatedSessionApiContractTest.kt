@@ -9,6 +9,7 @@ import org.junit.Test
 
 class AuthenticatedSessionApiContractTest {
     private val sessionId = "1b38d6d4-b27f-4d61-bf7d-4579ca4a4bdf"
+    private val clientMessageId = "6b38d6d4-b27f-4d61-bf7d-4579ca4a4bdf"
 
     @Test
     fun usesSlotFreeSessionAndStatusOnlyReportContracts() {
@@ -17,7 +18,7 @@ class AuthenticatedSessionApiContractTest {
             requests += request
             when {
                 request.url.endsWith("/api/auth/login") -> ApiResponse(200, authResponse())
-                request.url.endsWith("/api/sessions") -> ApiResponse(200, sessionJson("in_progress", "safety_check"))
+                request.url.endsWith("/api/sessions") -> ApiResponse(200, sessionJson("in_progress", "free_dialogue"))
                 request.url.endsWith("/messages") -> ApiResponse(200, messageJson())
                 request.url.endsWith("/finish") -> ApiResponse(200, sessionJson("completed", "completed"))
                 request.method == "GET" && request.url.endsWith("/reports") -> ApiResponse(
@@ -32,7 +33,7 @@ class AuthenticatedSessionApiContractTest {
         val api = AuthenticatedSessionApi(client)
 
         val created = api.create("alert_checkin", "33333333-3333-4333-8333-333333333333")
-        val message = api.postMessage(sessionId, "지금 불안해요", 3_600_000)
+        val message = api.postMessage(sessionId, clientMessageId, "지금 불안해요", 3_600_000)
         val finished = api.finish(sessionId)
         val report = api.getReport(sessionId)
 
@@ -41,11 +42,12 @@ class AuthenticatedSessionApiContractTest {
         assertEquals("alert_checkin", createBody.getString("sessionType"))
         assertEquals("33333333-3333-4333-8333-333333333333", createBody.getString("triggerAlertId"))
         val messageBody = JSONObject(requests.single { it.url.endsWith("/messages") }.body!!)
-        assertEquals(setOf("content"), messageBody.keys().asSequence().toSet())
+        assertEquals(setOf("clientMessageId", "content"), messageBody.keys().asSequence().toSet())
+        assertEquals(clientMessageId, messageBody.getString("clientMessageId"))
 
-        assertEquals("safety_check", created.interactionPhase)
+        assertEquals("free_dialogue", created.interactionPhase)
         assertEquals(4_200, created.inactivityTimeoutSeconds)
-        assertEquals("intervention_dialogue", message.phase)
+        assertEquals("free_dialogue", message.phase)
         assertEquals(4_200, message.inactivityTimeoutSeconds)
         assertEquals("호흡을 천천히 해보세요", message.activeInterventions.single().content)
         assertEquals("completed", finished.status)
@@ -53,6 +55,36 @@ class AuthenticatedSessionApiContractTest {
         assertEquals(1, report.version)
         assertNull(report.generatedAtMs?.takeIf { it <= 0L })
         assertFalse(requests.any { it.body?.contains("missingSlots") == true || it.body?.contains("handoffReady") == true })
+    }
+
+    @Test
+    fun structuredProviderFailureExposesSingleRetryMetadata() {
+        val transport = ApiTransport { request ->
+            when {
+                request.url.endsWith("/api/auth/login") -> ApiResponse(200, authResponse())
+                request.url.endsWith("/messages") -> ApiResponse(
+                    502,
+                    """{"detail":{"code":"dialogue_provider_error","clientMessageId":"$clientMessageId","userMessageId":"77777777-7777-4777-8777-777777777777","retryable":true,"attemptsRemaining":1}}"""
+                )
+                else -> error("unexpected request: $request")
+            }
+        }
+        val client = AuthenticatedApiClient(ApiEndpoints("https://example.test"), InMemoryAuthSessionStore(), transport)
+        client.login(LoginRequest("patient@example.com", "password1234"))
+
+        val error = runCatching {
+            AuthenticatedSessionApi(client).postMessage(
+                sessionId,
+                clientMessageId,
+                "같은 메시지",
+                3_600_000
+            )
+        }.exceptionOrNull() as DialogueRequestException
+
+        assertEquals("dialogue_provider_error", error.code)
+        assertEquals(clientMessageId, error.clientMessageId)
+        assertTrue(error.retryable)
+        assertEquals(1, error.attemptsRemaining)
     }
 
     @Test
@@ -71,7 +103,9 @@ class AuthenticatedSessionApiContractTest {
       "legacy":false,"inactivityTimeoutSeconds":4200,"startedAt":"2026-07-15T01:02:03Z","updatedAt":"2026-07-15T01:02:04Z"
     }"""
 
-    private fun messageJson(phase: String = "intervention_dialogue") = """{
+    private fun messageJson(phase: String = "free_dialogue") = """{
+      "userMessageId":"77777777-7777-4777-8777-777777777777",
+      "assistantMessageId":"88888888-8888-4888-8888-888888888888",
       "assistantText":"함께 해볼까요?","phase":"$phase","reportStatus":"pending","inactivityTimeoutSeconds":4200,
       "safety":{"status":"clear","riskCodes":[],"supportResources":[]},
       "activeInterventions":[{"id":"44444444-4444-4444-8444-444444444444","type":"breathing","status":"delivered","presentationOrder":1,"content":"호흡을 천천히 해보세요","createdAt":"2026-07-15T01:02:05Z"}],

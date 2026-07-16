@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
+from difflib import SequenceMatcher
 from typing import Any
 
 from app.ai.bedrock_agents import BedrockClaudeAdapter, parse_json_object
 
 
 QUESTION_BANK_VERSION = "niaaa-samhsa-who-ko-v1"
-DIALOGUE_PROMPT_VERSION = "intervention-dialogue-v1"
+DIALOGUE_PROMPT_VERSION = "free-dialogue-v2"
 STATE_PROMPT_VERSION = "state-summary-v1"
 STATE_RULE_VERSION = "state-rule-v1"
 
@@ -65,17 +67,53 @@ def validate_generated_text(text: str) -> bool:
 
 def initial_dialogue_state() -> dict[str, Any]:
     return {
-        "version": 1,
-        "questionBankVersion": QUESTION_BANK_VERSION,
-        "askedTopicIds": ["safety"],
-        "declinedTopicIds": [],
-        "safety": {
-            "status": "awaiting_response",
-            "riskCodes": [],
-            "adminInvolvement": "not_offered",
-        },
-        "firstInterventionSelected": False,
+        "version": 2,
+        "askedQuestions": [],
+        "refusedQuestions": [],
+        "latestQuestion": None,
     }
+
+
+def _question_text(text: str) -> str | None:
+    if question_count(text) != 1:
+        return None
+    candidates = [
+        item.strip()
+        for item in re.split(r"(?<=[?.!])\s+|\n+", text)
+        if item.strip() and question_count(item.strip())
+    ]
+    return candidates[-1] if candidates else text.strip()
+
+
+def _normalized_question(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", normalized).lower()
+
+
+def _repeats_question(question: str, state: dict[str, Any]) -> bool:
+    normalized = _normalized_question(question)
+    if not normalized:
+        return False
+    ledger = [
+        *(state.get("askedQuestions") or ()),
+        *(state.get("refusedQuestions") or ()),
+    ]
+    latest = state.get("latestQuestion")
+    if latest:
+        ledger.append(latest)
+    for prior in ledger[-50:]:
+        prior_normalized = _normalized_question(str(prior))
+        if not prior_normalized:
+            continue
+        if normalized == prior_normalized:
+            return True
+        if min(len(normalized), len(prior_normalized)) >= 8 and (
+            normalized in prior_normalized or prior_normalized in normalized
+        ):
+            return True
+        if SequenceMatcher(None, normalized, prior_normalized).ratio() >= 0.82:
+            return True
+    return False
 
 
 def validate_agent_output(payload: Any, state: dict[str, Any]) -> dict[str, Any] | None:
@@ -85,20 +123,10 @@ def validate_agent_output(payload: Any, state: dict[str, Any]) -> dict[str, Any]
     questions = question_count(text)
     if not text or len(text) > 2000 or questions > 1 or not validate_generated_text(text):
         return None
-    topic = payload.get("questionTopicId")
-    if topic is not None:
-        if topic not in QUESTION_TOPICS or questions != 1:
-            return None
-        if topic in set(state.get("askedTopicIds") or ()) | set(state.get("declinedTopicIds") or ()):
-            return None
-        if topic == "safety" and (state.get("safety") or {}).get("status") == "clear":
-            return None
-    elif questions:
+    question = _question_text(text)
+    if question and _repeats_question(question, state):
         return None
-    intervention = payload.get("interventionType")
-    if intervention is not None and intervention not in APPROVED_INTERVENTIONS:
-        return None
-    return {"assistantText": text, "questionTopicId": topic, "interventionType": intervention}
+    return {"assistantText": text, "questionText": question}
 
 
 class BedrockSessionAgent:
@@ -114,25 +142,27 @@ class BedrockSessionAgent:
             "role": "user",
             "content": json.dumps({
                 **context,
-                "allowedQuestionTopics": QUESTION_TOPICS,
-                "allowedInterventions": sorted(APPROVED_INTERVENTIONS),
                 "questionBank": {
                     "version": QUESTION_BANK_VERSION,
                     "sources": QUESTION_BANK_SOURCES,
-                    "note": "These are original Korean paraphrases and optional guidance, not a questionnaire.",
+                    "note": (
+                        "These are original Korean paraphrases and optional guidance only. "
+                        "Do not follow a fixed order or try to cover every topic."
+                    ),
                 },
                 "requiredOutput": {
                     "assistantText": "one concise Korean response with at most one question",
-                    "questionTopicId": "allowed topic or null",
-                    "interventionType": "allowed type or null",
                 },
-            }, ensure_ascii=False),
+            }, ensure_ascii=False, default=str),
         }]
         system = (
-            "You are the NeuroTruth research-use supportive dialogue agent. Return one JSON object only. "
-            "Be nonjudgmental. Never diagnose, prescribe, promise contact, claim certainty, immediate craving reduction, "
-            "treatment success, or causal treatment effect. Respect asked/refused topic IDs. "
-            "Never ask about safety again when dialogueState.safety.status is clear."
+            "You are the NeuroTruth research/demo supportive free-dialogue agent. Return one JSON object only. "
+            "Respond naturally in concise, nonjudgmental Korean and ask at most one question. "
+            "Respect the prior and refused question-text ledger and do not repeat or paraphrase those questions. "
+            "Do not select a structured intervention type. Never diagnose, prescribe, promise professional contact, "
+            "claim certainty, immediate craving reduction, treatment success, or causal treatment effect. "
+            "If you judge the supplied conversation to describe immediate danger, include appropriate 119 guidance and "
+            "include 109 for suicide/self-harm context, while making clear that this system cannot guarantee emergency response."
         )
         draft = parse_json_object(await self.adapter.complete(
             system=system, messages=messages, max_tokens=700, temperature=0.3,

@@ -130,6 +130,12 @@ class V25Repository(ABC):
     async def owned_session(self, patient_id: UUID, session_id: UUID) -> dict[str, Any] | None: raise NotImplementedError
     async def session_messages(self, session_id: UUID) -> list[dict[str, Any]]: raise NotImplementedError
     async def append_message(self, **values: Any) -> UUID: raise NotImplementedError
+    async def message_by_client_id(self, session_id: UUID, client_message_id: UUID) -> dict[str, Any] | None:
+        raise NotImplementedError
+    async def assistant_reply_for_user(self, session_id: UUID, user_message_id: UUID) -> dict[str, Any] | None:
+        raise NotImplementedError
+    async def update_message_generation_metadata(self, message_id: UUID, metadata: dict[str, Any]) -> None:
+        raise NotImplementedError
     async def session_slots(self, session_id: UUID) -> list[dict[str, Any]]: raise NotImplementedError
     async def upsert_session_slot(self, **values: Any) -> None: raise NotImplementedError
     async def start_session(self, session_id: UUID) -> None: raise NotImplementedError
@@ -155,6 +161,10 @@ class V25Repository(ABC):
         self, patient_id: UUID, since: datetime, until: datetime,
         bucket_seconds: int, max_points: int,
     ) -> list[dict[str, Any]]: raise NotImplementedError
+    async def craving_dashboard_rows(
+        self, patient_id: UUID, timezone_name: str, day_start: datetime, day_end: datetime,
+        event_start: datetime, auq_start: datetime, auq_bucket_unit: str,
+    ) -> dict[str, Any]: raise NotImplementedError
     async def prediction_sensor(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any] | None: raise NotImplementedError
     async def ensure_rule_model_version(self, *, component: str, rule_version: str) -> UUID: raise NotImplementedError
     @asynccontextmanager
@@ -171,13 +181,9 @@ class SqlAlchemyV25Repository(V25Repository):
     @asynccontextmanager
     async def message_turn(self, session_id: UUID):
         key = f"message:{session_id}"
-        async with self.engine.connect() as conn:
-            acquired = bool(await conn.scalar(text("SELECT pg_try_advisory_lock(hashtext(:key))"), {"key": key}))
-            try:
-                yield acquired
-            finally:
-                if acquired:
-                    await conn.execute(text("SELECT pg_advisory_unlock(hashtext(:key))"), {"key": key})
+        async with self.engine.begin() as conn:
+            await conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
+            yield True
 
     async def close(self) -> None:
         await self.engine.dispose()
@@ -669,7 +675,7 @@ class SqlAlchemyV25Repository(V25Repository):
                   (id,patient_id,trigger_alert_id,session_type,status,started_at,
                    interaction_phase,dialogue_state_encrypted,dialogue_state_key_version)
                 VALUES (:id,:patient,:alert,:type,'in_progress',:now,
-                        'safety_check',:dialogue_state,:dialogue_key) RETURNING *
+                        'free_dialogue',:dialogue_state,:dialogue_key) RETURNING *
             """), {"id": values["session_id"], "patient": values["patient_id"],
                     "alert": values.get("trigger_alert_id"), "type": values["session_type"],
                     "now": values["now"], "dialogue_state": values["dialogue_state_encrypted"],
@@ -687,7 +693,7 @@ class SqlAlchemyV25Repository(V25Repository):
     async def session_messages(self, session_id: UUID) -> list[dict[str, Any]]:
         async with self.engine.connect() as conn:
             rows = (await conn.execute(text("""
-                SELECT id,sequence_no,role,content_encrypted,created_at FROM messages
+                SELECT id,sequence_no,role,content_encrypted,generation_metadata,created_at FROM messages
                 WHERE session_id=:id ORDER BY sequence_no
             """), {"id": session_id})).mappings().all()
         return [dict(row) for row in rows]
@@ -702,13 +708,61 @@ class SqlAlchemyV25Repository(V25Repository):
                 INSERT INTO messages
                   (id,session_id,sequence_no,role,content_encrypted,encryption_key_version,
                    modality,source_agent,model_version_id,generation_metadata)
-                VALUES (:id,:session,:sequence,:role,:content,:key,'text',:agent,:model,'{}'::jsonb)
+                VALUES (:id,:session,:sequence,:role,:content,:key,'text',:agent,:model,
+                        CAST(:generation_metadata AS jsonb))
             """), {"id": values["message_id"], "session": values["session_id"], "sequence": sequence,
                     "role": values["role"], "content": values["content_encrypted"], "key": values["key_version"],
-                    "agent": values.get("source_agent"), "model": values.get("model_version_id")})
+                    "agent": values.get("source_agent"), "model": values.get("model_version_id"),
+                    "generation_metadata": json.dumps(values.get("generation_metadata") or {}, separators=(",", ":"))})
             await conn.execute(text("UPDATE sessions SET updated_at=now() WHERE id=:session"),
                                {"session": values["session_id"]})
         return values["message_id"]
+
+    async def message_by_client_id(
+        self, session_id: UUID, client_message_id: UUID,
+    ) -> dict[str, Any] | None:
+        async with self.engine.connect() as conn:
+            row = (await conn.execute(text("""
+                SELECT id,sequence_no,role,content_encrypted,generation_metadata,created_at
+                FROM messages
+                WHERE session_id=:session AND role='user'
+                  AND generation_metadata->>'clientMessageId'=:client_message_id
+                LIMIT 1
+            """), {
+                "session": session_id,
+                "client_message_id": str(client_message_id),
+            })).mappings().one_or_none()
+        return dict(row) if row else None
+
+    async def assistant_reply_for_user(
+        self, session_id: UUID, user_message_id: UUID,
+    ) -> dict[str, Any] | None:
+        async with self.engine.connect() as conn:
+            row = (await conn.execute(text("""
+                SELECT id,sequence_no,role,content_encrypted,generation_metadata,created_at
+                FROM messages
+                WHERE session_id=:session AND role='assistant'
+                  AND generation_metadata->>'replyToUserMessageId'=:user_message_id
+                LIMIT 1
+            """), {
+                "session": session_id,
+                "user_message_id": str(user_message_id),
+            })).mappings().one_or_none()
+        return dict(row) if row else None
+
+    async def update_message_generation_metadata(
+        self, message_id: UUID, metadata: dict[str, Any],
+    ) -> None:
+        async with self.engine.begin() as conn:
+            result = await conn.execute(text("""
+                UPDATE messages SET generation_metadata=CAST(:metadata AS jsonb)
+                WHERE id=:id AND role='user'
+            """), {
+                "id": message_id,
+                "metadata": json.dumps(metadata, separators=(",", ":")),
+            })
+        if result.rowcount != 1:
+            raise RepositoryConflictError("Message metadata update failed")
 
     async def update_dialogue_session(self, **values: Any) -> None:
         async with self.engine.begin() as conn:
@@ -1073,6 +1127,117 @@ class SqlAlchemyV25Repository(V25Repository):
                 "max_points": int(max_points),
             })).mappings().all()
         return [dict(row) for row in rows]
+
+    async def craving_dashboard_rows(
+        self,
+        patient_id: UUID,
+        timezone_name: str,
+        day_start: datetime,
+        day_end: datetime,
+        event_start: datetime,
+        auq_start: datetime,
+        auq_bucket_unit: str,
+    ) -> dict[str, Any]:
+        params = {
+            "patient": patient_id,
+            "timezone": timezone_name,
+            "day_start": day_start,
+            "day_end": day_end,
+            "event_start": event_start,
+            "auq_start": auq_start,
+        }
+        prediction_filter = """
+            p.patient_id=:patient
+            AND p.quality_gate_passed
+            AND p.continuous_value IS NOT NULL
+            AND m.component='craving_model'
+            AND m.is_active
+            AND m.inference_task='binary_classification'
+        """
+        auq_bucket_sql = (
+            "extract(hour FROM timezone(:timezone,a.completed_at))::int"
+            if auq_bucket_unit == "hour"
+            else "timezone(:timezone,a.completed_at)::date"
+        )
+        async with self.engine.connect() as conn:
+            current = (await conn.execute(text(f"""
+                SELECT p.continuous_value AS probability,p.predicted_at
+                FROM craving_predictions p
+                JOIN model_versions m ON m.id=p.model_version_id
+                WHERE {prediction_filter}
+                ORDER BY p.predicted_at DESC,p.id DESC LIMIT 1
+            """), params)).mappings().one_or_none()
+            hourly = (await conn.execute(text(f"""
+                SELECT extract(hour FROM timezone(:timezone,p.predicted_at))::int AS local_hour,
+                       avg(p.continuous_value) AS average_probability,
+                       min(p.continuous_value) AS minimum_probability,
+                       max(p.continuous_value) AS maximum_probability,
+                       count(*) AS sample_count
+                FROM craving_predictions p
+                JOIN model_versions m ON m.id=p.model_version_id
+                WHERE {prediction_filter}
+                  AND p.predicted_at>=:day_start AND p.predicted_at<:day_end
+                GROUP BY local_hour ORDER BY local_hour
+            """), params)).mappings().all()
+            prediction_days = (await conn.execute(text(f"""
+                SELECT timezone(:timezone,p.predicted_at)::date AS local_date,
+                       count(*) AS prediction_count
+                FROM craving_predictions p
+                JOIN model_versions m ON m.id=p.model_version_id
+                WHERE {prediction_filter}
+                  AND p.predicted_at>=:event_start AND p.predicted_at<:day_end
+                GROUP BY local_date ORDER BY local_date
+            """), params)).mappings().all()
+            alert_days = (await conn.execute(text(f"""
+                SELECT timezone(:timezone,a.triggered_at)::date AS local_date,
+                       count(*) FILTER (
+                         WHERE COALESCE(
+                           a.trigger_reason->>'alertLevel',
+                           CASE
+                             WHEN a.rule_code LIKE 'recommend%%' THEN 'recommend'
+                             WHEN a.rule_code LIKE 'required%%' THEN 'required'
+                           END
+                         )='recommend'
+                       ) AS recommend_count,
+                       count(*) FILTER (
+                         WHERE COALESCE(
+                           a.trigger_reason->>'alertLevel',
+                           CASE
+                             WHEN a.rule_code LIKE 'recommend%%' THEN 'recommend'
+                             WHEN a.rule_code LIKE 'required%%' THEN 'required'
+                           END
+                         )='required'
+                       ) AS required_count
+                FROM craving_alerts a
+                JOIN craving_predictions p
+                  ON p.id=a.trigger_prediction_id AND p.patient_id=a.patient_id
+                JOIN model_versions m ON m.id=p.model_version_id
+                WHERE {prediction_filter}
+                  AND a.triggered_at>=:event_start AND a.triggered_at<:day_end
+                GROUP BY local_date ORDER BY local_date
+            """), params)).mappings().all()
+            auq = (await conn.execute(text(f"""
+                SELECT {auq_bucket_sql} AS bucket_key,
+                       avg(
+                         LEAST(1.0,GREATEST(0.0,
+                           (a.raw_score-a.scale_min)/NULLIF(a.scale_max-a.scale_min,0)
+                         ))
+                       ) AS average_normalized_score,
+                       count(*) AS sample_count
+                FROM craving_assessments a
+                JOIN sessions s ON s.id=a.session_id
+                WHERE s.patient_id=:patient
+                  AND a.instrument_code='AUQ'
+                  AND a.completed_at>=:auq_start AND a.completed_at<:day_end
+                GROUP BY bucket_key ORDER BY bucket_key
+            """), params)).mappings().all()
+        return {
+            "current": dict(current) if current else None,
+            "hourly": [dict(row) for row in hourly],
+            "prediction_days": [dict(row) for row in prediction_days],
+            "alert_days": [dict(row) for row in alert_days],
+            "auq": [dict(row) for row in auq],
+        }
 
     async def prediction_sensor(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any] | None:
         async with self.engine.connect() as conn:

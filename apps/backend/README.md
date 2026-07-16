@@ -23,8 +23,8 @@ Use `ALLOW_INSECURE_HTTP=true` only with `APP_ENV=development|test`. Production 
 | Auth | `POST /api/auth/patient/signup`, `/api/auth/admin/signup`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/change-password` |
 | Profile/consent | `GET/PATCH /api/me`, `POST /api/me/consents` |
 | Sensor/prediction | `POST /api/sensor-windows`, `GET /api/predictions/stream` (binary class plus class-1 probability) |
-| Session | `POST /api/sessions`, `GET /api/sessions/{id}`, `POST .../messages`, `.../assessments`, `.../finish`, `POST/GET .../reports` |
-| Patient dashboard | `GET /api/me/dashboard?range=24h|7d|30d`, `GET /api/me/craving-probability-series?range=10m|24h|7d|30d`, `GET /api/me/predictions/{predictionId}/ppg-preview` |
+| Session | `POST /api/sessions`, `GET /api/sessions/{id}`, retry-safe `POST .../messages`, `.../assessments`, `.../finish`, `POST/GET .../reports` |
+| Patient dashboard | `GET /api/me/dashboard?range=24h|7d|30d`, `GET /api/me/craving-dashboard?timezone={iana}&eventRange=7d|30d&auqRange=today|7d|30d`, `GET /api/me/craving-probability-series?range=10m|24h|7d|30d`, `GET /api/me/predictions/{predictionId}/ppg-preview` |
 | Administrator | Patients/timeline/dashboard, reason-gated reveal, temporary password, confirmed deletion, settings |
 | Camera rPPG | Patient status/job/poll/retry and administrator capture summary/reveal/delete; disabled by default |
 
@@ -35,35 +35,36 @@ The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and
 - `20260715_0001` installs the 18-table authenticated baseline.
 - `20260715_0002` adds `rppg_captures`, `rppg_analysis_jobs`, and camera-prediction linkage.
 - `20260715_0003` adds `state_inferences`, new session interaction state, and multi-intervention ordering/evidence.
+- `20260716_0004` adds the `free_dialogue` phase and retry-idempotency index for client message IDs.
 - `apps/db/init.sql` installs PostgreSQL extensions only. Alembic is the only business-schema migration path.
 - The fresh schema uses `postgres_data_v25`. Back up and preserve legacy `postgres_data`; do not run the new migration against it.
 - Sensitive database payloads use AES-256-GCM with fresh nonces and table/column/patient/record AAD.
 - Raw sensor windows use canonical JSON → gzip → AES-GCM storage under `SENSOR_STORAGE_ROOT`.
 - `(patient_id, client_window_id)` makes identical sensor retries idempotent and conflicting reuse returns `409`.
 
-## Intervention-First Session Contract
+## Free-Dialogue Session Contract
 
-A patient can have one active `created|in_progress` session. New sessions do not write `session_slots` and never return `slots`, `missingSlots`, or `handoffReady`. Pre-`0003` slot sessions remain read-only history.
+A patient can have one active `created|in_progress` session. New sessions start in `free_dialogue`, do not write `session_slots` or new `interventions`, and never return `slots`, `missingSlots`, or `handoffReady`. Existing structured sessions remain readable and pre-`0003` slot sessions remain read-only history.
 
 Flow:
 
 ```text
-optional AUQ → safety check → deterministic first intervention
-→ free intervention dialogue → manual finish or inactivity timeout
-→ evidence-linked state inference → asynchronous report status
+optional AUQ → neutral free dialogue → manual finish or inactivity timeout
+→ final evidence-linked state inference → asynchronous report status
 ```
 
-Successful create/get/message/finish responses include the current `inactivityTimeoutSeconds`. Message responses return `assistantText`, `phase`, `safety`, `activeInterventions`, `stateSnapshot`, and `reportStatus`.
+Successful create/get/message/finish responses include the current `inactivityTimeoutSeconds`. New mobile messages include a `clientMessageId`; provider failure can be retried once with the same ID without duplicating the user message. Successful message responses add `userMessageId`, `assistantMessageId`, and `phase="free_dialogue"`.
 
-The dialogue agent uses a versioned question bank only as a weak guide. It asks at most one short question when useful and must not repeat answered/declined topics. Server validation rejects unclassified questions, diagnostic statements, medication instructions, treatment-effect claims, and causal claims; one repair is allowed before deterministic fallback.
+The dialogue agent receives the newest 20 messages and an encrypted question/refusal ledger. It asks at most one short question, rejects normalized prior-question similarity, and must not make diagnostic, prescription, treatment-effect, certainty, or causal claims. Invalid output receives one repair; provider or validation failure is returned to the mobile retry UI rather than hidden behind a fallback response.
 
-Immediate safety risk prioritizes 119/109 guidance and may record whether administrator involvement was requested. It does not promise live connection, emergency dispatch, or automatic contact. `interventionsEnabled=false` suppresses ordinary intervention text and rows, while safety guidance remains.
+Safety interpretation for new free-dialogue sessions is LLM-only and intended for research/demo use. The prompt requests 119/109 guidance for immediate-risk context, but the system does not guarantee detection, live connection, emergency dispatch, or automatic contact.
 
 ## State, Reports, and Dashboards
 
 - Deterministic state inference aggregates prediction, alert, AUQ, session, and intervention evidence IDs.
 - The LLM may summarize only supplied evidence. Failure leaves deterministic state intact and marks summary `unavailable`.
 - Reports use dialogue, AUQ, prediction, intervention, and state evidence. Public session/report APIs return status and metadata, not decrypted report body.
+- The mobile craving dashboard returns today's 24 local-hour probability bars, 7/30-day alert-event counts, and today/7/30-day AUQ bars. Missing data remains distinct from a valid zero-event bucket.
 - Patient dashboard PPG preview is owner-only and capped at 512 points.
 - Administrator dashboard contains no raw PPG. Sensitive message/state/intervention/report reveal requires a reason, is audited, and returns `Cache-Control: no-store`.
 
@@ -105,8 +106,9 @@ Required values include `DATABASE_URL`, `DATA_ENCRYPTION_KEYS_B64`, `DATA_ENCRYP
 
 | Check | Result |
 |---|---|
-| Full backend pytest | PASS, 176 tests; 1 model-parity test skips until PyTorch is installed locally |
+| Full backend pytest | PASS, 150 tests; 1 model-parity test skips until PyTorch is installed locally |
 | Compileall | PASS |
-| Fresh PostgreSQL 0001→0003 | PASS |
-| Populated 0002→0003 | PASS; legacy session NULL state preserved |
+| Alembic head | `20260716_0004` |
+| Fresh PostgreSQL 0001→0004 | Pending local Docker verification |
+| Populated 0003→0004 | Pending local Docker verification; migration is additive |
 | Independent final review | No unresolved finding |

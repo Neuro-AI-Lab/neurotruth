@@ -79,7 +79,7 @@ class ConversationSessionManagerTest {
         assertNull(store.reportSession)
     }
 
-    private fun session(id: String, status: String = "in_progress", phase: String = "safety_check") =
+    private fun session(id: String, status: String = "in_progress", phase: String = "free_dialogue") =
         ConversationSession(
             id = id,
             status = status,
@@ -130,8 +130,18 @@ private class FakeSessionApi(private val id: String) : SessionApi {
         return getResponse ?: active(sessionId)
     }
 
-    override fun postMessage(sessionId: String, content: String, readTimeoutMs: Int) =
-        SessionMessageResponse("ok", "intervention_dialogue", SessionSafety("clear", emptyList(), emptyList()), emptyList(), null, "not_started", 3600)
+    override fun postMessage(sessionId: String, clientMessageId: String?, content: String, readTimeoutMs: Int) =
+        SessionMessageResponse(
+            "77777777-7777-4777-8777-777777777777",
+            "88888888-8888-4888-8888-888888888888",
+            "ok",
+            "free_dialogue",
+            SessionSafety("clear", emptyList(), emptyList()),
+            emptyList(),
+            null,
+            "not_started",
+            3600
+        )
 
     override fun postAssessment(sessionId: String, result: StateCheckResult) { assessmentCalls += 1 }
     override fun finish(sessionId: String) = active(sessionId).copy(status = "completed", interactionPhase = "completed", reportStatus = "pending", endedAtMs = 300L)
@@ -139,7 +149,7 @@ private class FakeSessionApi(private val id: String) : SessionApi {
     override fun getReport(sessionId: String) = SessionReportResponse("22222222-2222-4222-8222-222222222222", 1, "ready", 100L, 200L)
 
     private fun active(value: String) = ConversationSession(
-        value, "in_progress", "safety_check", "안녕하세요", null, emptyList(), null,
+        value, "in_progress", "free_dialogue", "안녕하세요", null, emptyList(), null,
         "not_started", 3600, false, 100L, 200L
     )
 }

@@ -16,7 +16,7 @@ from .auth_service import AuthService
 from .repository import SqlAlchemyV25Repository
 
 
-REQUIRED_REVISION = "20260715_0003"
+REQUIRED_REVISION = "20260716_0004"
 
 
 @dataclass

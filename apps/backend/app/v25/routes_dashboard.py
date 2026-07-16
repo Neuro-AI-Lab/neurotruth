@@ -5,7 +5,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from .dashboard_service import DashboardRangeError, DashboardUnavailable, PpgPreviewNotFound
+from .dashboard_service import (
+    DashboardRangeError,
+    DashboardTimezoneError,
+    DashboardUnavailable,
+    PpgPreviewNotFound,
+)
 from .dependencies import get_runtime, patient_user
 from .models import UserRecord
 from .runtime import V25Runtime
@@ -40,6 +45,35 @@ async def craving_probability_series(
         raise HTTPException(
             status_code=422,
             detail={"code": "invalid_probability_range", "message": "Unsupported probability range"},
+        ) from exc
+    except DashboardUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dashboard_unavailable", "message": "Dashboard data is unavailable"},
+        ) from exc
+
+
+@router.get("/craving-dashboard")
+async def craving_dashboard(
+    runtime: Annotated[V25Runtime, Depends(get_runtime)],
+    user: Annotated[UserRecord, Depends(patient_user)],
+    timezone: str,
+    eventRange: Literal["7d", "30d"] = "7d",
+    auqRange: Literal["today", "7d", "30d"] = "today",
+) -> dict[str, Any]:
+    try:
+        return await runtime.dashboard_service.craving_dashboard(
+            user.id, timezone, eventRange, auqRange,
+        )
+    except DashboardTimezoneError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_timezone", "message": "Invalid IANA timezone"},
+        ) from exc
+    except DashboardRangeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_dashboard_range", "message": "Unsupported dashboard range"},
         ) from exc
     except DashboardUnavailable as exc:
         raise HTTPException(

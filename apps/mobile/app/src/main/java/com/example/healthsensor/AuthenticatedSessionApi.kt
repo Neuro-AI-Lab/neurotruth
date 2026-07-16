@@ -55,6 +55,8 @@ data class ConversationSession(
 }
 
 data class SessionMessageResponse(
+    val userMessageId: String,
+    val assistantMessageId: String,
     val assistantText: String,
     val phase: String,
     val safety: SessionSafety,
@@ -65,6 +67,14 @@ data class SessionMessageResponse(
 ) {
     val terminal: Boolean get() = phase in setOf("completed", "abandoned")
 }
+
+class DialogueRequestException(
+    val code: String,
+    val clientMessageId: String?,
+    val userMessageId: String?,
+    val retryable: Boolean,
+    val attemptsRemaining: Int
+) : IllegalStateException(code)
 
 data class SessionReportResponse(
     val reportId: String?,
@@ -80,7 +90,12 @@ data class SessionReportResponse(
 interface SessionApi {
     fun create(sessionType: String, triggerAlertId: String? = null): ConversationSession
     fun get(sessionId: String): ConversationSession
-    fun postMessage(sessionId: String, content: String, readTimeoutMs: Int): SessionMessageResponse
+    fun postMessage(
+        sessionId: String,
+        clientMessageId: String?,
+        content: String,
+        readTimeoutMs: Int
+    ): SessionMessageResponse
     fun postAssessment(sessionId: String, result: StateCheckResult)
     fun finish(sessionId: String): ConversationSession
     fun requestReport(sessionId: String): SessionReportResponse
@@ -107,20 +122,27 @@ class AuthenticatedSessionApi(private val client: AuthenticatedApiClient) : Sess
 
     override fun postMessage(
         sessionId: String,
+        clientMessageId: String?,
         content: String,
         readTimeoutMs: Int
-    ): SessionMessageResponse = successful(
-        client.executeAuthenticated(
+    ): SessionMessageResponse {
+        val body = JSONObject().put("content", content)
+        if (clientMessageId != null) {
+            body.put("clientMessageId", UUID.fromString(clientMessageId).toString())
+        }
+        val response = client.executeAuthenticated(
             ApiRequest(
                 "POST",
                 client.endpoints.messages(sessionId),
                 JSON_HEADERS,
-                JSONObject().put("content", content).toString(),
+                body.toString(),
                 connectTimeoutMs = 8_000,
                 readTimeoutMs = readTimeoutMs
             )
         )
-    ).let { SessionResponseParser.parseMessage(it.body) }
+        if (response.statusCode == 502) throw SessionResponseParser.parseDialogueError(response.body)
+        return successful(response).let { SessionResponseParser.parseMessage(it.body) }
+    }
 
     override fun postAssessment(sessionId: String, result: StateCheckResult) {
         successful(
@@ -218,14 +240,28 @@ object SessionResponseParser {
     fun parseMessage(body: String): SessionMessageResponse {
         val root = JSONObject(body)
         return SessionMessageResponse(
+            userMessageId = root.uuid("userMessageId"),
+            assistantMessageId = root.uuid("assistantMessageId"),
             assistantText = root.cleanString("assistantText").orEmpty(),
-            phase = (root.cleanString("phase") ?: "intervention_dialogue").lowercase(),
+            phase = (root.cleanString("phase") ?: "free_dialogue").lowercase(),
             safety = root.optJSONObject("safety")?.toSafety()
                 ?: SessionSafety("clear", emptyList(), emptyList()),
             activeInterventions = root.optJSONArray("activeInterventions").toInterventions(),
             stateSnapshot = root.optJSONObject("stateSnapshot")?.toStateSnapshot(),
             reportStatus = (root.cleanString("reportStatus") ?: "not_started").lowercase(),
             inactivityTimeoutSeconds = root.intValue("inactivityTimeoutSeconds")?.takeIf { it > 0 }
+        )
+    }
+
+    fun parseDialogueError(body: String): DialogueRequestException {
+        val root = body.takeIf(String::isNotBlank)?.let(::JSONObject) ?: JSONObject()
+        val detail = root.optJSONObject("detail") ?: root
+        return DialogueRequestException(
+            code = detail.cleanString("code") ?: "dialogue_provider_error",
+            clientMessageId = detail.cleanString("clientMessageId")?.let { UUID.fromString(it).toString() },
+            userMessageId = detail.cleanString("userMessageId")?.let { UUID.fromString(it).toString() },
+            retryable = detail.optBoolean("retryable", false),
+            attemptsRemaining = (detail.intValue("attemptsRemaining") ?: 0).coerceAtLeast(0)
         )
     }
 
@@ -301,6 +337,10 @@ object SessionResponseParser {
 
     private fun JSONObject.cleanString(key: String): String? =
         if (!has(key) || isNull(key)) null else optString(key).trim().takeIf(String::isNotBlank)
+
+    private fun JSONObject.uuid(key: String): String =
+        cleanString(key)?.let { UUID.fromString(it).toString() }
+            ?: throw IllegalArgumentException("$key missing")
 
     private fun JSONObject.longValue(key: String): Long? {
         if (!has(key) || isNull(key)) return null
@@ -427,9 +467,14 @@ class ConversationSessionManager(
     suspend fun ensure(ownerId: String, nowMs: Long = System.currentTimeMillis()): ConversationSession =
         start(ownerId, "manual_checkin", null, nowMs)
 
-    suspend fun postMessage(ownerId: String, content: String, readTimeoutMs: Int): SessionMessageResponse {
+    suspend fun postMessage(
+        ownerId: String,
+        clientMessageId: String?,
+        content: String,
+        readTimeoutMs: Int
+    ): SessionMessageResponse {
         val session = ensure(ownerId)
-        val response = api.postMessage(session.id, content, readTimeoutMs)
+        val response = api.postMessage(session.id, clientMessageId, content, readTimeoutMs)
         val status = if (response.phase in setOf("completed", "abandoned")) response.phase else "in_progress"
         val updated = session.copy(
             status = status,

@@ -3,6 +3,7 @@ package com.example.healthsensor
 import android.app.Application
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,11 +24,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -40,6 +47,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -62,6 +71,53 @@ enum class ProbabilityRange(
     DAYS_7("7d", "7일", 7 * 24 * 60 * 60 * 1_000L, 600, 1_008),
     DAYS_30("30d", "30일", 30L * 24 * 60 * 60 * 1_000L, 1_800, 1_440)
 }
+
+enum class EventRange(val wire: String, val label: String, val days: Int) {
+    DAYS_7("7d", "7일", 7),
+    DAYS_30("30d", "30일", 30)
+}
+
+enum class AuqRange(val wire: String, val label: String, val bucketCount: Int) {
+    TODAY("today", "오늘", 24),
+    DAYS_7("7d", "7일", 7),
+    DAYS_30("30d", "30일", 30)
+}
+
+data class CurrentCraving(val probability: Float, val atMs: Long)
+
+data class HourlyCravingBucket(
+    val localStart: String,
+    val averageProbability: Float?,
+    val minimumProbability: Float?,
+    val maximumProbability: Float?,
+    val sampleCount: Int
+)
+
+data class DailyEventBucket(
+    val localDate: String,
+    val hasPredictionData: Boolean,
+    val recommendCount: Int,
+    val requiredCount: Int,
+    val totalCount: Int
+)
+
+data class AuqBucket(
+    val localLabel: String,
+    val averageNormalizedScore: Float?,
+    val sampleCount: Int
+)
+
+data class CravingBarDashboard(
+    val timezone: String,
+    val generatedAtMs: Long,
+    val currentCraving: CurrentCraving?,
+    val hourlyCraving: List<HourlyCravingBucket>,
+    val eventRange: EventRange,
+    val dailyEvents: List<DailyEventBucket>,
+    val auqRange: AuqRange,
+    val auqBucketUnit: String,
+    val auq: List<AuqBucket>
+)
 
 data class DashboardPrediction(
     val id: String,
@@ -145,6 +201,21 @@ class PatientDashboardApi(private val client: AuthenticatedApiClient) {
         )
         if (response.statusCode !in 200..299) throw ApiHttpException(response.statusCode)
         return PatientDashboardParser.parseProbabilitySeries(response.body)
+    }
+
+    fun getCravingDashboard(
+        timezone: String,
+        eventRange: EventRange,
+        auqRange: AuqRange
+    ): CravingBarDashboard {
+        val response = client.executeAuthenticated(
+            ApiRequest(
+                "GET",
+                client.endpoints.cravingDashboard(timezone, eventRange.wire, auqRange.wire)
+            )
+        )
+        if (response.statusCode !in 200..299) throw ApiHttpException(response.statusCode)
+        return PatientDashboardParser.parseCravingDashboard(response.body)
     }
 }
 
@@ -231,6 +302,88 @@ object PatientDashboardParser {
             toMs = root.instant("to"),
             bucketSeconds = bucketSeconds,
             points = points
+        )
+    }
+
+    fun parseCravingDashboard(body: String): CravingBarDashboard {
+        val root = JSONObject(body)
+        val timezone = root.optString("timezone").trim().also { require(it.isNotBlank()) }
+        val current = root.optJSONObject("currentCraving")?.let { item ->
+            if (item.isNull("probability") || item.isNull("at")) null else CurrentCraving(
+                probability = (item.floatOrNull("probability") ?: error("current probability missing"))
+                    .requireProbability(),
+                atMs = item.instant("at")
+            )
+        }
+        val hourly = root.optJSONObject("hourlyCraving")
+            ?.optJSONArray("buckets")
+            .objects()
+            .map { item ->
+                val sampleCount = item.optInt("sampleCount", 0).also { require(it >= 0) }
+                HourlyCravingBucket(
+                    localStart = item.getString("localStart").also { OffsetDateTime.parse(it) },
+                    averageProbability = item.floatOrNull("averageProbability")?.requireProbability(),
+                    minimumProbability = item.floatOrNull("minimumProbability")?.requireProbability(),
+                    maximumProbability = item.floatOrNull("maximumProbability")?.requireProbability(),
+                    sampleCount = sampleCount
+                ).also { bucket ->
+                    require(
+                        sampleCount == 0 ||
+                            listOf(
+                                bucket.averageProbability,
+                                bucket.minimumProbability,
+                                bucket.maximumProbability
+                            ).all { it != null }
+                    )
+                }
+            }
+        require(hourly.size == 24) { "hourly craving must contain 24 wall-clock buckets" }
+
+        val dailyEvents = root.getJSONObject("dailyEvents")
+        val eventRange = EventRange.values().singleOrNull {
+            it.wire == dailyEvents.optString("range")
+        } ?: throw IllegalArgumentException("invalid event range")
+        val eventBuckets = dailyEvents.optJSONArray("buckets").objects().map { item ->
+            DailyEventBucket(
+                localDate = item.getString("localDate").also { LocalDate.parse(it) },
+                hasPredictionData = item.getBoolean("hasPredictionData"),
+                recommendCount = item.optInt("recommendCount", 0).also { require(it >= 0) },
+                requiredCount = item.optInt("requiredCount", 0).also { require(it >= 0) },
+                totalCount = item.optInt("totalCount", 0).also { require(it >= 0) }
+            ).also { require(it.totalCount == it.recommendCount + it.requiredCount) }
+        }
+        require(eventBuckets.size == eventRange.days) { "event bucket count mismatch" }
+
+        val auqObject = root.getJSONObject("auq")
+        val auqRange = AuqRange.values().singleOrNull {
+            it.wire == auqObject.optString("range")
+        } ?: throw IllegalArgumentException("invalid AUQ range")
+        val bucketUnit = auqObject.getString("bucketUnit")
+        require(bucketUnit == if (auqRange == AuqRange.TODAY) "hour" else "day")
+        val auqBuckets = auqObject.optJSONArray("buckets").objects().map { item ->
+            val label = if (auqRange == AuqRange.TODAY) {
+                item.getString("localStart").also { OffsetDateTime.parse(it) }
+            } else {
+                item.getString("localDate").also { LocalDate.parse(it) }
+            }
+            AuqBucket(
+                localLabel = label,
+                averageNormalizedScore = item.floatOrNull("averageNormalizedScore")?.requireProbability(),
+                sampleCount = item.optInt("sampleCount", 0).also { require(it >= 0) }
+            ).also { require(it.sampleCount == 0 || it.averageNormalizedScore != null) }
+        }
+        require(auqBuckets.size == auqRange.bucketCount) { "AUQ bucket count mismatch" }
+
+        return CravingBarDashboard(
+            timezone = timezone,
+            generatedAtMs = root.instant("generatedAt"),
+            currentCraving = current,
+            hourlyCraving = hourly,
+            eventRange = eventRange,
+            dailyEvents = eventBuckets,
+            auqRange = auqRange,
+            auqBucketUnit = bucketUnit,
+            auq = auqBuckets
         )
     }
 
@@ -325,6 +478,16 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
     val probabilityStatus: StateFlow<String> = _probabilityStatus
     private val _probabilityLoading = MutableStateFlow(false)
     val probabilityLoading: StateFlow<Boolean> = _probabilityLoading
+    private val _eventRange = MutableStateFlow(EventRange.DAYS_7)
+    val eventRange: StateFlow<EventRange> = _eventRange
+    private val _auqRange = MutableStateFlow(AuqRange.TODAY)
+    val auqRange: StateFlow<AuqRange> = _auqRange
+    private val _barDashboard = MutableStateFlow<CravingBarDashboard?>(null)
+    val barDashboard: StateFlow<CravingBarDashboard?> = _barDashboard
+    private val _barDashboardStatus = MutableStateFlow("시간별 갈망 기록을 불러오는 중입니다")
+    val barDashboardStatus: StateFlow<String> = _barDashboardStatus
+    private val _barDashboardLoading = MutableStateFlow(false)
+    val barDashboardLoading: StateFlow<Boolean> = _barDashboardLoading
 
     init {
         viewModelScope.launch {
@@ -333,6 +496,10 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
                 _probabilitySeries.value?.let { current ->
                     _probabilitySeries.value = CravingProbabilitySeriesState.appendLive(current, prediction)
                 }
+                val probability = prediction.cravingProbability?.probabilityOrNull() ?: return@collect
+                _barDashboard.value = _barDashboard.value?.copy(
+                    currentCraving = CurrentCraving(probability, prediction.timestampMs)
+                )
             }
         }
     }
@@ -343,7 +510,7 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
         _loading.value = true
         _status.value = "기록을 불러오는 중입니다"
         _preview.value = null
-        loadProbability(_probabilityRange.value)
+        loadCravingDashboard()
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { api.get(range) } }
                 .onSuccess {
@@ -352,6 +519,49 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
                 }
                 .onFailure { _status.value = "기록을 불러오지 못했습니다" }
             _loading.value = false
+        }
+    }
+
+    fun selectEventRange(range: EventRange) {
+        if (_eventRange.value == range) return
+        _eventRange.value = range
+        loadCravingDashboard()
+    }
+
+    fun selectAuqRange(range: AuqRange) {
+        if (_auqRange.value == range) return
+        _auqRange.value = range
+        loadCravingDashboard()
+    }
+
+    fun loadCravingDashboard() {
+        if (!MobileAuthRuntime.state.value.authenticated) return
+        val requestedEventRange = _eventRange.value
+        val requestedAuqRange = _auqRange.value
+        _barDashboardLoading.value = true
+        _barDashboardStatus.value = "시간별 갈망 기록을 불러오는 중입니다"
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    api.getCravingDashboard(
+                        timezone = ZoneId.systemDefault().id,
+                        eventRange = requestedEventRange,
+                        auqRange = requestedAuqRange
+                    )
+                }
+            }.onSuccess {
+                if (_eventRange.value == requestedEventRange && _auqRange.value == requestedAuqRange) {
+                    _barDashboard.value = it
+                    _barDashboardStatus.value = "기기 현지시간 기준"
+                }
+            }.onFailure {
+                if (_eventRange.value == requestedEventRange && _auqRange.value == requestedAuqRange) {
+                    _barDashboardStatus.value = "갈망 요약을 불러오지 못했습니다"
+                }
+            }
+            if (_eventRange.value == requestedEventRange && _auqRange.value == requestedAuqRange) {
+                _barDashboardLoading.value = false
+            }
         }
     }
 
@@ -401,10 +611,11 @@ fun PatientDashboardScreen(
     val preview by viewModel.preview.collectAsState()
     val status by viewModel.status.collectAsState()
     val loading by viewModel.loading.collectAsState()
-    val probabilityRange by viewModel.probabilityRange.collectAsState()
-    val probabilitySeries by viewModel.probabilitySeries.collectAsState()
-    val probabilityStatus by viewModel.probabilityStatus.collectAsState()
-    val probabilityLoading by viewModel.probabilityLoading.collectAsState()
+    val eventRange by viewModel.eventRange.collectAsState()
+    val auqRange by viewModel.auqRange.collectAsState()
+    val barDashboard by viewModel.barDashboard.collectAsState()
+    val barDashboardStatus by viewModel.barDashboardStatus.collectAsState()
+    val barDashboardLoading by viewModel.barDashboardLoading.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFFF7F8FA)).verticalScroll(rememberScrollState())
@@ -430,7 +641,7 @@ fun PatientDashboardScreen(
         }
 
         DashboardCard("갈망 가능성(모델)") {
-            val latest = probabilitySeries?.points?.lastOrNull()?.probability
+            val latest = barDashboard?.currentCraving?.probability
             Text(
                 text = latest?.let { String.format(java.util.Locale.KOREA, "%.1f%%", it * 100f) } ?: "--.-%",
                 style = MaterialTheme.typography.headlineMedium,
@@ -440,23 +651,9 @@ fun PatientDashboardScreen(
                 "연구용 모델 출력이며 진단이나 임상적 갈망 강도를 의미하지 않습니다.",
                 style = MaterialTheme.typography.bodySmall
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                ProbabilityRange.values().forEach { candidate ->
-                    if (candidate == probabilityRange) {
-                        Button(onClick = { viewModel.loadProbability(candidate) }) { Text(candidate.label) }
-                    } else {
-                        OutlinedButton(onClick = { viewModel.loadProbability(candidate) }) { Text(candidate.label) }
-                    }
-                }
-            }
-            Text(probabilityStatus, style = MaterialTheme.typography.bodySmall)
-            if (probabilityLoading && probabilitySeries == null) Text("불러오는 중…")
-            probabilitySeries?.let { series ->
-                if (series.points.isNotEmpty()) ProbabilityLineChart(series)
-            }
+            Text(barDashboardStatus, style = MaterialTheme.typography.bodySmall)
+            if (barDashboardLoading && barDashboard == null) Text("불러오는 중…")
+            barDashboard?.let { HourlyCravingBarChart(it.hourlyCraving) }
 
             val predictions = data?.predictions.orEmpty()
             predictions.lastOrNull { it.ppgPreviewAvailable }?.let { prediction ->
@@ -469,15 +666,35 @@ fun PatientDashboardScreen(
         }
 
         DashboardCard("AUQ 기록") {
-            val assessments = data?.assessments.orEmpty()
-            if (assessments.isEmpty()) Text("이 기간에는 AUQ 기록이 없습니다")
-            else AuqChart(assessments)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                AuqRange.values().forEach { candidate ->
+                    if (candidate == auqRange) {
+                        Button(onClick = { viewModel.selectAuqRange(candidate) }) { Text(candidate.label) }
+                    } else {
+                        OutlinedButton(onClick = { viewModel.selectAuqRange(candidate) }) { Text(candidate.label) }
+                    }
+                }
+            }
+            barDashboard?.let { AuqBarChart(it.auq, it.auqRange) }
         }
 
-        DashboardCard("이벤트") {
-            val events = data?.events.orEmpty()
-            if (events.none { it.type == "session_started" }) Text("이 기간에는 대화 세션 기록이 없습니다")
-            events.takeLast(12).forEach { event -> Text("${localTime(event.atMs)} · ${event.label}") }
+        DashboardCard("갈망 이벤트") {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                EventRange.values().forEach { candidate ->
+                    if (candidate == eventRange) {
+                        Button(onClick = { viewModel.selectEventRange(candidate) }) { Text(candidate.label) }
+                    } else {
+                        OutlinedButton(onClick = { viewModel.selectEventRange(candidate) }) { Text(candidate.label) }
+                    }
+                }
+            }
+            barDashboard?.let { DailyEventBarChart(it.dailyEvents) }
         }
 
         StateSummaryCard("최근 실시간 상태", data?.latestState)
@@ -500,6 +717,192 @@ private fun DashboardCard(title: String, content: @Composable () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun HourlyCravingBarChart(buckets: List<HourlyCravingBucket>) {
+    var selected by remember(buckets) { mutableIntStateOf(0) }
+    SelectableNormalizedBars(
+        values = buckets.map { it.averageProbability },
+        selected = selected,
+        onSelect = { selected = it },
+        accessibilityLabel = "오늘 시간별 갈망 가능성 막대 그래프"
+    )
+    FixedHourLabels()
+    val bucket = buckets.getOrNull(selected) ?: return
+    if (bucket.sampleCount == 0) {
+        Text("${"%02d".format(selected)}:00–${"%02d".format(selected)}:59 · 데이터 없음")
+    } else {
+        Text(
+            "${"%02d".format(selected)}:00–${"%02d".format(selected)}:59 · " +
+                "평균 ${percent(bucket.averageProbability)} · " +
+                "최소 ${percent(bucket.minimumProbability)} · 최대 ${percent(bucket.maximumProbability)} · " +
+                "${bucket.sampleCount}개"
+        )
+    }
+}
+
+@Composable
+private fun DailyEventBarChart(buckets: List<DailyEventBucket>) {
+    var selected by remember(buckets) { mutableIntStateOf(buckets.lastIndex.coerceAtLeast(0)) }
+    val maxCount = buckets.maxOfOrNull { it.totalCount }?.coerceAtLeast(1) ?: 1
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(130.dp)
+            .semantics { contentDescription = "일별 갈망 이벤트 막대 그래프" }
+            .pointerInput(buckets) {
+                detectTapGestures { point ->
+                    selected = barIndex(point.x, size.width.toFloat(), buckets.size)
+                }
+            }
+    ) {
+        if (buckets.isEmpty()) return@Canvas
+        val slot = size.width / buckets.size
+        val gap = minOf(slot * 0.25f, 5.dp.toPx())
+        buckets.forEachIndexed { index, bucket ->
+            val left = index * slot + gap / 2f
+            val width = (slot - gap).coerceAtLeast(1f)
+            if (!bucket.hasPredictionData) {
+                drawRect(Color(0xFFD5D9DE), Offset(left, size.height * 0.82f), androidx.compose.ui.geometry.Size(width, size.height * 0.18f))
+            } else if (bucket.totalCount == 0) {
+                drawRect(Color(0xFF246B60), Offset(left, size.height - 2.dp.toPx()), androidx.compose.ui.geometry.Size(width, 2.dp.toPx()))
+            } else {
+                val recommendHeight = size.height * bucket.recommendCount / maxCount.toFloat()
+                val requiredHeight = size.height * bucket.requiredCount / maxCount.toFloat()
+                drawRect(
+                    Color(0xFF246B60),
+                    Offset(left, size.height - recommendHeight),
+                    androidx.compose.ui.geometry.Size(width, recommendHeight)
+                )
+                drawRect(
+                    Color(0xFFC83F4E),
+                    Offset(left, size.height - recommendHeight - requiredHeight),
+                    androidx.compose.ui.geometry.Size(width, requiredHeight)
+                )
+            }
+            if (index == selected) {
+                drawRect(
+                    Color(0xFF172026),
+                    Offset(left, 0f),
+                    androidx.compose.ui.geometry.Size(width, size.height),
+                    style = Stroke(1.dp.toPx())
+                )
+            }
+        }
+    }
+    DailyAxisLabels(buckets.map(DailyEventBucket::localDate))
+    val bucket = buckets.getOrNull(selected) ?: return
+    Text(
+        if (!bucket.hasPredictionData) {
+            "${bucket.localDate} · 예측 데이터 없음"
+        } else {
+            "${bucket.localDate} · 권장 ${bucket.recommendCount}건 · 필수 ${bucket.requiredCount}건 · 총 ${bucket.totalCount}건"
+        }
+    )
+}
+
+@Composable
+private fun AuqBarChart(buckets: List<AuqBucket>, range: AuqRange) {
+    var selected by remember(buckets) { mutableIntStateOf(buckets.lastIndex.coerceAtLeast(0)) }
+    SelectableNormalizedBars(
+        values = buckets.map { it.averageNormalizedScore },
+        selected = selected,
+        onSelect = { selected = it },
+        accessibilityLabel = "AUQ 평균 막대 그래프"
+    )
+    if (range == AuqRange.TODAY) FixedHourLabels()
+    else DailyAxisLabels(buckets.map(AuqBucket::localLabel))
+    val bucket = buckets.getOrNull(selected) ?: return
+    val period = if (range == AuqRange.TODAY) {
+        "${"%02d".format(selected)}:00–${"%02d".format(selected)}:59"
+    } else {
+        bucket.localLabel
+    }
+    Text(
+        if (bucket.sampleCount == 0) {
+            "$period · 데이터 없음"
+        } else {
+            "$period · 평균 ${percent(bucket.averageNormalizedScore)} · 응답 ${bucket.sampleCount}회"
+        }
+    )
+}
+
+@Composable
+private fun SelectableNormalizedBars(
+    values: List<Float?>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    accessibilityLabel: String
+) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(130.dp)
+            .semantics { contentDescription = accessibilityLabel }
+            .pointerInput(values) {
+                detectTapGestures { point ->
+                    onSelect(barIndex(point.x, size.width.toFloat(), values.size))
+                }
+            }
+    ) {
+        if (values.isEmpty()) return@Canvas
+        val slot = size.width / values.size
+        val gap = minOf(slot * 0.25f, 5.dp.toPx())
+        values.forEachIndexed { index, value ->
+            val left = index * slot + gap / 2f
+            val width = (slot - gap).coerceAtLeast(1f)
+            val normalized = value?.coerceIn(0f, 1f)
+            if (normalized == null) {
+                drawRect(
+                    Color(0xFFD5D9DE),
+                    Offset(left, size.height * 0.82f),
+                    androidx.compose.ui.geometry.Size(width, size.height * 0.18f)
+                )
+            } else {
+                val height = (size.height * normalized).coerceAtLeast(2.dp.toPx())
+                drawRect(
+                    Color(0xFF246B60),
+                    Offset(left, size.height - height),
+                    androidx.compose.ui.geometry.Size(width, height)
+                )
+            }
+            if (index == selected) {
+                drawRect(
+                    Color(0xFF172026),
+                    Offset(left, 0f),
+                    androidx.compose.ui.geometry.Size(width, size.height),
+                    style = Stroke(1.dp.toPx())
+                )
+            }
+        }
+    }
+    Text("세로축 0–100% · 회색은 데이터 없음", style = MaterialTheme.typography.labelSmall)
+}
+
+@Composable
+private fun FixedHourLabels() {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        listOf("00시", "06시", "12시", "18시", "23시").forEach { Text(it, style = MaterialTheme.typography.labelSmall) }
+    }
+}
+
+@Composable
+private fun DailyAxisLabels(labels: List<String>) {
+    if (labels.isEmpty()) return
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(labels.first(), style = MaterialTheme.typography.labelSmall)
+        if (labels.size > 2) Text(labels[labels.size / 2], style = MaterialTheme.typography.labelSmall)
+        if (labels.size > 1) Text(labels.last(), style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+private fun barIndex(x: Float, width: Float, count: Int): Int {
+    if (count <= 1 || width <= 0f) return 0
+    return ((x / width) * count).toInt().coerceIn(0, count - 1)
+}
+
+private fun percent(value: Float?): String =
+    value?.let { String.format(java.util.Locale.KOREA, "%.1f%%", it * 100f) } ?: "--.-%"
 
 @Composable
 private fun ProbabilityLineChart(series: CravingProbabilitySeries) {
