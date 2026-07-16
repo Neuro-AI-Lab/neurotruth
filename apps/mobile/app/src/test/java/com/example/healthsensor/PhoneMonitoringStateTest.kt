@@ -28,20 +28,12 @@ class PhoneMonitoringStateTest {
         assertTrue(PhoneMonitoringState.registerAlertAction(prediction, AlertAction.REQUIRED))
         assertFalse(PhoneMonitoringState.registerAlertAction(prediction, AlertAction.REQUIRED))
         PhoneMonitoringState.recordUploadLatency(
-            ServerWindowPayload(
-                clientWindowId = "997e082b-0471-4695-ae63-bb05657a9359",
-                sessionId = "local-1",
-                sessionStartedAtMs = 100L,
-                sequence = 1L,
-                sentAtMs = 103L,
-                windowStartMs = 90L,
-                windowEndMs = 100L,
-                windowMs = 10L,
-                samples = emptyList()
-            ),
+            sessionId = "local-1",
+            attemptStartedAtMs = 103L,
             completedAtMs = 110L
         )
         assertTrue(PhoneMonitoringState.uploadLatencySnapshot().isNotEmpty())
+        assertEquals(7f, PhoneMonitoringState.uploadLatencySnapshot().single().second)
         assertEquals("server-1", PhoneMonitoringState.interventionSessionId())
 
         val previous = PhoneMonitoringState.currentSession()

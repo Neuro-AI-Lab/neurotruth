@@ -126,14 +126,17 @@ object PhoneMonitoringState {
     }
 
     @Synchronized
-    fun recordUploadLatency(payload: ServerWindowPayload, completedAtMs: Long = System.currentTimeMillis()) {
-        if (payload.sessionId != activeSession.sessionId) return
-        rememberUpload(payload)
-        val latencyMs = completedAtMs - payload.sentAtMs
+    fun recordUploadLatency(
+        sessionId: String,
+        attemptStartedAtMs: Long,
+        completedAtMs: Long = System.currentTimeMillis()
+    ) {
+        if (sessionId != activeSession.sessionId) return
+        val latencyMs = completedAtMs - attemptStartedAtMs
         val value = latencyMs.coerceAtLeast(0L).toFloat()
         allUploadLatencyRaw.add(completedAtMs to value)
         uploadLatencyPoints.value = appendLatencyPoint(uploadLatencyPoints.value, completedAtMs, value)
-        uploadLatencyStatus.value = "?? POST ??: ${latencyMs.coerceAtLeast(0L)} ms"
+        uploadLatencyStatus.value = "최근 POST 왕복: ${latencyMs.coerceAtLeast(0L)} ms"
     }
 
     @Synchronized
