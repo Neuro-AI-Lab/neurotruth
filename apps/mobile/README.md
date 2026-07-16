@@ -56,9 +56,9 @@ Phone 전면 카메라에서 한 얼굴이 안정되면 10초 영상을 촬영�
 `app/src/main/assets/server_config.properties`:
 
 ```properties
-api_base_url=http://SERVER_HOST:8000
-sensor_post_url=http://SERVER_HOST:8000/api/sensor-windows
-prediction_sse_url=http://SERVER_HOST:8000/api/predictions/stream
+api_base_url=http://SERVER_HOST:25991
+sensor_post_url=http://SERVER_HOST:25991/api/sensor-windows
+prediction_sse_url=http://SERVER_HOST:25991/api/predictions/stream
 ```
 
 물리 기기에서는 노트북 LAN IP를 사용합니다. HTTP는 backend가 development/test이고 `ALLOW_INSECURE_HTTP=true`인 경우에만 허용됩니다. 운영은 HTTPS가 필수입니다.

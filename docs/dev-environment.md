@@ -53,7 +53,7 @@ cd apps/backend
 .\.venv\Scripts\Activate.ps1
 alembic upgrade head
 python -m pytest
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 25991
 ```
 
 Readiness fails when the DB, baseline revision, or encryption keyring is unavailable.
@@ -77,9 +77,9 @@ For co-deployment, change `RPPG_BASE_URL` to `http://rppg:8000`, keep the DGX po
 Set the backend base URL in `apps/mobile/app/src/main/assets/server_config.properties`:
 
 ```properties
-api_base_url=http://SERVER_HOST:8000
-sensor_post_url=http://SERVER_HOST:8000/api/sensor-windows
-prediction_sse_url=http://SERVER_HOST:8000/api/predictions/stream
+api_base_url=http://SERVER_HOST:25991
+sensor_post_url=http://SERVER_HOST:25991/api/sensor-windows
+prediction_sse_url=http://SERVER_HOST:25991/api/predictions/stream
 ```
 
 Use the laptop LAN address on physical devices; phone `localhost` means the phone itself. HTTP requires the backend development override above.
