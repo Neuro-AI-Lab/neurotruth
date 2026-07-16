@@ -63,7 +63,7 @@ services:
     container_name: neurotruth-web
     restart: unless-stopped
     ports:
-      - "36543:36543"
+      - "${WEB_HOST_PORT:-3000}:3000"
     depends_on:
       - backend
     networks:
