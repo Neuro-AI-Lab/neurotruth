@@ -28,6 +28,26 @@ async def dashboard(
         raise HTTPException(status_code=503, detail={"code": "dashboard_unavailable", "message": "Dashboard data is unavailable"}) from exc
 
 
+@router.get("/craving-probability-series")
+async def craving_probability_series(
+    runtime: Annotated[V25Runtime, Depends(get_runtime)],
+    user: Annotated[UserRecord, Depends(patient_user)],
+    range: str = "10m",
+) -> dict[str, Any]:
+    try:
+        return await runtime.dashboard_service.craving_probability_series(user.id, range)
+    except DashboardRangeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_probability_range", "message": "Unsupported probability range"},
+        ) from exc
+    except DashboardUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dashboard_unavailable", "message": "Dashboard data is unavailable"},
+        ) from exc
+
+
 @router.get("/predictions/{prediction_id}/ppg-preview")
 async def ppg_preview(
     prediction_id: UUID,

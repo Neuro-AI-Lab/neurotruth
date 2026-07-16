@@ -13,6 +13,12 @@ from .sensor_storage import EncryptedSensorStorage
 
 
 RANGES = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+PROBABILITY_RANGES = {
+    "10m": (timedelta(minutes=10), 1, 600),
+    "24h": (timedelta(hours=24), 60, 1440),
+    "7d": (timedelta(days=7), 600, 1008),
+    "30d": (timedelta(days=30), 1800, 1440),
+}
 
 
 class DashboardRangeError(ValueError): pass
@@ -51,6 +57,7 @@ class DashboardService:
             "at": row["predicted_at"].isoformat(),
             "class": class_from_schema(row.get("predicted_class_code"), row.get("predicted_class_index"), row.get("output_schema"), bool(row.get("quality_gate_passed", True))),
             "probability": float(row["predicted_class_probability"]) if row.get("predicted_class_probability") is not None else None,
+            "cravingProbability": float(row["continuous_value"]) if row.get("continuous_value") is not None else None,
             **({} if admin else {"ppgPreviewAvailable": bool(row.get("ppg_preview_available", row.get("sensor_recording_id") is not None))}),
         } for row in rows["predictions"]]
         assessments = [{
@@ -83,6 +90,39 @@ class DashboardService:
             "reports": [{"sessionId": str(row["session_id"]), "reportId": str(row["id"]),
                          "status": row["status"], "updatedAt": row["updated_at"].isoformat()}
                         for row in rows["reports"]],
+        }
+
+    async def craving_probability_series(self, patient_id: UUID, range_code: str) -> dict[str, Any]:
+        selected = PROBABILITY_RANGES.get(range_code)
+        if selected is None:
+            raise DashboardRangeError("Unsupported probability range")
+        duration, bucket_seconds, max_points = selected
+        end = datetime.now(timezone.utc)
+        start = end - duration
+        rows = await self.repository.craving_probability_rows(
+            patient_id, start, end, bucket_seconds, max_points
+        )
+        points = []
+        for row in rows:
+            bucket_at = row["bucket_at"]
+            if not start <= bucket_at <= end:
+                continue
+            value = float(row["average_probability"])
+            if not math.isfinite(value):
+                continue
+            points.append({
+                "at": bucket_at.isoformat(),
+                "averageCravingProbability": round(min(1.0, max(0.0, value)), 6),
+                "sampleCount": int(row["sample_count"]),
+            })
+        points.sort(key=lambda item: item["at"])
+        points = points[-max_points:]
+        return {
+            "range": range_code,
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "bucketSeconds": bucket_seconds,
+            "points": points,
         }
 
     async def ppg_preview(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any]:

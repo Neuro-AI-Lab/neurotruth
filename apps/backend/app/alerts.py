@@ -14,8 +14,7 @@ MAX_ALERT_SESSIONS = 256
 @dataclass(frozen=True)
 class AlertConfig:
     window_size: int = 10
-    recommend_min: float = 0.6
-    required_min: float = 1.5
+    recommend_count: int = 6
     high_streak: int = 3
     cooldown_seconds: float = 30.0
     downtrend_delta: float = 0.6
@@ -24,8 +23,7 @@ class AlertConfig:
     def from_env(cls) -> "AlertConfig":
         return cls(
             window_size=_env_int("ALERT_WINDOW_SIZE", cls.window_size),
-            recommend_min=_env_float("ALERT_RECOMMEND_MIN", cls.recommend_min),
-            required_min=_env_float("ALERT_REQUIRED_MIN", cls.required_min),
+            recommend_count=_env_int("ALERT_RECOMMEND_COUNT", cls.recommend_count),
             high_streak=_env_int("ALERT_HIGH_STREAK", cls.high_streak),
             cooldown_seconds=_env_float("ALERT_COOLDOWN_SECONDS", cls.cooldown_seconds),
             downtrend_delta=_env_float("ALERT_DOWNTREND_DELTA", cls.downtrend_delta),
@@ -40,11 +38,16 @@ class AlertDecision:
     triggerReason: str
     alertRequired: bool
 
+    @property
+    def classOneRatio(self) -> float:
+        return self.windowMean
+
     def as_dict(self) -> dict[str, object]:
         return {
             "alertLevel": self.alertLevel,
             "alertAction": self.alertAction,
             "windowMean": self.windowMean,
+            "classOneRatio": self.classOneRatio,
             "triggerReason": self.triggerReason,
             "alertRequired": self.alertRequired,
         }
@@ -59,7 +62,9 @@ class AlertEvaluator:
         self._last_action_ms_by_level: dict[str, int] = {}
 
     def evaluate(self, craving_class: int, now_ms: int) -> AlertDecision:
-        craving_class = max(0, min(2, int(craving_class)))
+        craving_class = int(craving_class)
+        if craving_class not in (0, 1):
+            raise ValueError("Binary craving class must be 0 or 1")
         self._classes.append(craving_class)
         values = list(self._classes)
         window_mean = round(sum(values) / len(values), 3) if values else 0.0
@@ -79,13 +84,13 @@ class AlertEvaluator:
             level = "required"
             reason = "high_streak"
         else:
-            level, reason = self._level_from_mean(window_mean)
-            if high_streak and level != "required":
+            level, reason = self._level_from_count(values)
+            if high_streak:
                 level = "required"
                 reason = "high_streak"
 
-        if not warming_up and level != "none" and self._is_downtrend(values):
-            level = "recommend" if level == "required" else "none"
+        if not warming_up and level == "recommend" and self._is_downtrend(values):
+            level = "none"
             reason = "downtrend_suppressed"
 
         action = self._action_for(level)
@@ -103,19 +108,17 @@ class AlertEvaluator:
             alertRequired=(level == "required" and action == "required_intervention"),
         )
 
-    def _level_from_mean(self, window_mean: float) -> tuple[str, str]:
-        if window_mean >= self.config.required_min:
-            return "required", "window_mean_required"
-        if window_mean >= self.config.recommend_min:
-            return "recommend", "window_mean_recommend"
-        return "none", "window_mean_none"
+    def _level_from_count(self, values: list[int]) -> tuple[str, str]:
+        if sum(values) >= self.config.recommend_count:
+            return "recommend", "class_one_count_recommend"
+        return "none", "class_one_count_none"
 
     def _has_high_streak(self, values: list[int]) -> bool:
         if self.config.high_streak <= 0:
             return False
         streak = 0
         for value in reversed(values):
-            if value >= 2:
+            if value == 1:
                 streak += 1
                 if streak >= self.config.high_streak:
                     return True

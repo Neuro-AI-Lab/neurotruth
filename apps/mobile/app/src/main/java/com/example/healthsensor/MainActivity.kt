@@ -255,9 +255,9 @@ class MainActivity : ComponentActivity() {
                 AlertActionPolicy.resolve(it) == AlertAction.REQUIRED
             } ?: run {
                 val prediction = CravingPrediction(
-                    cravingClass = 2,
+                    cravingClass = 1,
                     timestampMs = System.currentTimeMillis(),
-                    rawBody = """{"class":2,"source":"lock_screen_launch"}"""
+                    rawBody = """{"class":1,"source":"lock_screen_launch"}"""
                 )
                 PhoneMonitoringState.registerAlertAction(prediction, AlertAction.REQUIRED)
                 PhoneMonitoringState.publishPrediction(prediction)

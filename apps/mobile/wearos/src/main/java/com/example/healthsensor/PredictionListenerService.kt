@@ -26,14 +26,12 @@ class PredictionListenerService : WearableListenerService() {
 
         runCatching {
             val json = JSONObject(String(event.data, Charsets.UTF_8))
-            val cravingClass = json.getInt("class")
-            require(cravingClass in 0..2) { "class must be 0, 1, or 2" }
+            val cravingClass = BinaryPredictionContract.requireClass(json.getInt("class"))
 
             SensorState.cravingClass.value = cravingClass
             SensorState.cravingText.value = when (cravingClass) {
-                0 -> "안정"
-                1 -> "주의"
-                else -> "확인 필요"
+                0 -> "낮음"
+                else -> "높음"
             }
             val hasAlertMetadata = json.optBoolean(
                 "hasAlertMetadata",
@@ -177,6 +175,7 @@ class PredictionListenerService : WearableListenerService() {
             "alertLevel",
             "alertAction",
             "windowMean",
+            "classOneRatio",
             "triggerReason",
             "alertRequired"
         )

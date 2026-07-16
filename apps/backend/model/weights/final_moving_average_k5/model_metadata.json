@@ -1,0 +1,130 @@
+{
+  "model": "Conv1DNet",
+  "seed": 42,
+  "device_used": "cuda:0",
+  "cuda_device_name": "NVIDIA TITAN RTX",
+  "final_epochs": 1,
+  "epoch_selection": {
+    "method": "median of validation-loss best epochs across completed LOSO folds",
+    "n_loso_folds": 47,
+    "median_best_epoch": 1,
+    "mean_best_epoch": 2.1914893617021276
+  },
+  "n_cache_subjects": 48,
+  "n_trainable_subjects": 47,
+  "trainable_subjects": [
+    "1_1_002",
+    "1_1_003",
+    "1_1_004",
+    "1_1_005",
+    "1_1_006",
+    "1_1_007",
+    "1_1_008",
+    "1_1_010",
+    "1_1_011",
+    "1_1_012",
+    "1_1_013",
+    "1_1_015",
+    "1_1_016",
+    "1_1_017",
+    "1_1_018",
+    "1_1_019",
+    "1_1_020",
+    "1_1_021",
+    "1_1_022",
+    "1_1_023",
+    "1_1_024",
+    "1_1_025",
+    "1_1_027",
+    "1_1_028",
+    "1_1_029",
+    "1_1_030",
+    "1_1_031",
+    "1_1_032",
+    "1_1_033",
+    "1_1_034",
+    "1_1_035",
+    "1_1_036",
+    "1_1_037",
+    "1_1_038",
+    "1_1_039",
+    "1_1_040",
+    "1_2_001",
+    "1_2_002",
+    "1_2_005",
+    "1_2_006",
+    "1_2_007",
+    "1_2_008",
+    "1_2_009",
+    "1_2_010",
+    "1_2_011",
+    "1_2_012",
+    "1_2_013"
+  ],
+  "subject_with_no_retained_trial": "1_1_014",
+  "n_training_trials": 840,
+  "training_trial_class_counts": {
+    "low": 424,
+    "high": 416
+  },
+  "n_training_windows_after_tail_removal": 31590,
+  "training_window_class_counts": {
+    "low": 14393,
+    "high": 17197
+  },
+  "class_weights": {
+    "low": 1.0974084624470228,
+    "high": 0.9184741524684538
+  },
+  "label": {
+    "score": "serial moving-average Q_mean",
+    "kernel_size": 5,
+    "edge_mode": "replicate",
+    "sequence_order": "low -> mid -> high; trial_idx ascending within phase",
+    "low": "score <= 0.2",
+    "high": "score >= 4.0"
+  },
+  "preprocessing": {
+    "channels": [
+      "PPG",
+      "GSR"
+    ],
+    "fs": 51.2,
+    "window_seconds": 10.0,
+    "window_length": 512,
+    "stride_seconds": 1.0,
+    "normalization": "minmax",
+    "trial_aggregation": "mean_probability"
+  },
+  "architecture": {
+    "class": "Conv1DNet",
+    "in_ch": 2,
+    "out_dim": 2,
+    "widths": [
+      128,
+      128,
+      128,
+      128,
+      128
+    ],
+    "n_pool": 3,
+    "dropout": 0.3
+  },
+  "source_loso_result": "/home/neuroai-researcher/Seung/craving_score/relabeling/followup_experiments/results/moving_average_k3_k5_balanced_thresholds_seed_42/kernel_5/match_low_fixed_high_4/low_0p2__high_4",
+  "weights_sha_note": "model_weights.pt contains only a CPU state_dict",
+  "environment": {
+    "python": "3.12.3",
+    "torch": "2.12.0+cu130",
+    "numpy": "2.4.6",
+    "pandas": "2.3.3",
+    "scikit_learn": "1.9.0"
+  },
+  "training_history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.5605969698152122,
+      "train_accuracy": 0.7056030389363722,
+      "learning_rate": 5e-05
+    }
+  ]
+}

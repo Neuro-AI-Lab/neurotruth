@@ -74,7 +74,7 @@ data class RppgJobResult(
 ) {
     val terminal: Boolean get() = status in setOf("completed", "retry_required", "failed")
 
-    fun toPrediction(): CravingPrediction? = classIndex?.takeIf { it in 0..2 }?.let { value ->
+    fun toPrediction(): CravingPrediction? = classIndex?.takeIf { it in 0..1 }?.let { value ->
         CravingPrediction(
             cravingClass = value,
             timestampMs = capturedAtMs,

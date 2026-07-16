@@ -8,7 +8,7 @@ Records per-window latency to `inference_time.txt` next to this file:
                 (⚠️ 폰/서버 시계가 동기화돼 있지 않으면 오차가 큽니다)
 - queue_ms    : 서버 큐 대기시간 (수신 → 워커가 꺼낼 때까지)
 - feature_ms  : PPG/GSR 피처 추출 시간
-- model_ms    : RandomForest 추론 시간
+- model_ms    : Conv1DNet 추론 시간
 - server_ms   : 서버 총 처리시간 (큐 진입 → 예측 완료)
 - send_ms     : 다운링크 시간 = 예측 완료 → SSE로 앱에 전송하는 순간
                 (`app/main.py`의 prediction-stream 제너레이터에서 측정)

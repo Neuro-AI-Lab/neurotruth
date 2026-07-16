@@ -28,7 +28,7 @@ class RppgContractsTest {
               "captureId":"22222222-2222-2222-2222-222222222222",
               "status":"completed",
               "capturedAtMs":123456,
-              "classIndex":2,
+              "classIndex":1,
               "confidence":0.91,
               "heartRateBpm":72.4,
               "qualityScore":0.88,
@@ -38,7 +38,7 @@ class RppgContractsTest {
         )
 
         assertTrue(result.terminal)
-        assertEquals(2, result.classIndex)
+        assertEquals(1, result.classIndex)
         assertEquals(72.4f, result.heartRateBpm!!, 0.001f)
         assertEquals("camera_rppg", org.json.JSONObject(result.toPrediction()!!.rawBody).getString("source"))
         assertEquals(AlertAction.NONE, AlertActionPolicy.resolve(result.toPrediction()!!))
@@ -116,7 +116,7 @@ class RppgContractsTest {
                   "captureId":"22222222-2222-2222-2222-222222222222",
                   "status":"completed",
                   "capturedAtMs":123456,
-                  "classIndex":2,
+                  "classIndex":1,
                   "alertAction":"$backendAction"
                 }""".trimIndent()
             )

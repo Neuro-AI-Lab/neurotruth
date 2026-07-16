@@ -1,6 +1,6 @@
 # Wear OS App
 
-최종 업데이트: 2026-07-15
+최종 업데이트: 2026-07-16
 
 `wearos` 모듈은 Galaxy Watch에서 Samsung Health Sensor SDK 데이터를 수집해 Wearable Data Layer로 인증된 Phone 앱에 전달합니다. Watch는 backend credential을 저장하지 않고 backend API/SSE에 직접 연결하지 않습니다. Phone이 수신한 표시용 prediction/alert state만 `/prediction/class` Data Layer message로 다시 전달합니다.
 
@@ -9,8 +9,8 @@
 - HR, PPG Green/IR/Red, EDA, Accel X/Y/Z, SkinTemp 수집
 - Foreground health service, sensor permission, wake lock 관리
 - 약 200ms 주기의 sensor batch를 paired Phone으로 전송
-- Phone이 전달한 craving class와 alert state 표시
-- Alert 정책에 따른 vibration/notification
+- Phone이 전달한 binary craving class(`0=낮음`, `1=높음`)와 alert state 표시
+- 서버가 결정한 `alertAction`/`alertLevel`에 따른 vibration/notification
 - 환자 가입·로그인·동의·token·UUID session·backend upload/SSE는 모두 Phone 책임
 
 Watch가 단독으로 환자를 인증하거나 raw data를 backend에 우회 전송하는 fallback은 없습니다. Phone 로그아웃 또는 생체신호 동의 철회 시 Phone이 backend monitoring을 중지합니다.
@@ -49,7 +49,9 @@ Phone → Watch prediction path:
 /prediction/class
 ```
 
-Payload may contain `class`, `timestampMs`, backend UUID `sessionId`, `confidence`, `alertLevel`, `alertAction`, `windowMean`, and `triggerReason`. Watch uses `alertAction`, then `alertLevel`, then class-only display fallback. `none`/`cooldown` do not vibrate; recommendation and required states use distinct feedback. This message contains no access/refresh token or decrypted patient content.
+Payload may contain `predictionSchema`, binary `class`, `classCode`, `timestampMs`, backend UUID `sessionId`, `confidence`, `cravingProbability`, `classProbabilities`, `alertLevel`, `alertAction`, `windowMean`, `classOneRatio`, and `triggerReason`. Watch accepts only class `0` or `1`; class `2` is rejected as an incompatible legacy prediction. Watch uses `alertAction` first and `alertLevel` only when the action is absent. A class value alone is display-only and never creates a local alert. `none`/`cooldown` do not vibrate; recommendation and required states use distinct feedback. This message contains no access/refresh token or decrypted patient content.
+
+Class-1 probability history and its graph are Phone-only. Watch shows no probability percentage or graph and preserves its existing sensor collection and Phone relay behavior.
 
 ## Build and Install
 

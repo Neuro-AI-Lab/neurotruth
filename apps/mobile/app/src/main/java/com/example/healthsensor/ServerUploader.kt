@@ -84,6 +84,7 @@ data class AlertMetadata(
     val alertLevel: String = "none",
     val alertAction: String? = null,
     val windowMean: Float? = null,
+    val classOneRatio: Float? = null,
     val triggerReason: String? = null,
     val alertRequired: Boolean = false,
     val isPresent: Boolean = false
@@ -109,6 +110,7 @@ data class AlertMetadata(
             .apply {
                 alertAction?.let { put("alertAction", it) }
                 windowMean?.let { put("windowMean", it.toDouble()) }
+                classOneRatio?.let { put("classOneRatio", it.toDouble()) }
                 triggerReason?.let { put("triggerReason", it) }
             }
 }
@@ -119,6 +121,11 @@ data class CravingPrediction(
     val rawBody: String,
     val score: Float? = null,
     val confidence: Float? = null,
+    val predictionSchema: String = BINARY_PREDICTION_SCHEMA,
+    val classCode: String? = null,
+    val cravingProbability: Float? = null,
+    val classProbabilities: Map<String, Float> = emptyMap(),
+    val predictionId: String? = null,
     val sequence: Long? = null,
     val uploadSentAtMs: Long? = null,
     val hasServerTimestamp: Boolean = false,
@@ -129,10 +136,13 @@ data class CravingPrediction(
     val label: String
         get() = when (cravingClass) {
             0 -> "0 낮음"
-            1 -> "1 중간"
-            2 -> "2 높음"
+            1 -> "1 높음"
             else -> "$cravingClass 알 수 없음"
         }
+
+    companion object {
+        const val BINARY_PREDICTION_SCHEMA = "binary-craving-v1"
+    }
 }
 
 class HttpStatusException(
@@ -278,12 +288,12 @@ class ServerUploader {
         onPrediction(parsePrediction(body))
     }
 
-    /**
-     * 서버마다 class key 이름이 조금 다를 수 있어 허용 key를 넓게 둔다.
-     * 워치에 보고할 최종 값은 반드시 정수 0/1/2여야 한다.
-     */
-    private fun parsePrediction(response: String): CravingPrediction {
+    /** Binary prediction events are fail-closed so legacy class 2 cannot reach the UI. */
+    internal fun parsePrediction(response: String): CravingPrediction {
         val json = JSONObject(response)
+        require(json.optString("predictionSchema") == CravingPrediction.BINARY_PREDICTION_SCHEMA) {
+            "unsupported prediction schema"
+        }
         val value = when {
             json.has("class") -> json.get("class")
             json.has("cravingClass") -> json.get("cravingClass")
@@ -293,14 +303,31 @@ class ServerUploader {
             else -> throw IllegalArgumentException("prediction class key missing")
         }
         val cravingClass = value.toPredictionClass()
-        require(cravingClass in 0..2) { "prediction class must be 0, 1, or 2" }
+        require(cravingClass in 0..1) { "prediction class must be 0 or 1" }
+
+        val probabilities = json.optJSONObject("classProbabilities")
+            ?: throw IllegalArgumentException("classProbabilities missing")
+        val lowProbability = probabilities.requiredProbability("low")
+        val highProbability = probabilities.requiredProbability("high")
+        require(kotlin.math.abs(lowProbability + highProbability - 1f) <= 0.001f) {
+            "class probabilities must sum to one"
+        }
+        val cravingProbability = json.requiredProbability("cravingProbability")
+        require(kotlin.math.abs(cravingProbability - highProbability) <= 0.000001f) {
+            "cravingProbability must equal class 1 probability"
+        }
 
         return CravingPrediction(
             cravingClass = cravingClass,
             timestampMs = json.optLong("timestampMs", System.currentTimeMillis()),
             rawBody = response,
             score = json.optScore(),
-            confidence = json.optFloatOrNull("confidence"),
+            confidence = json.requiredProbability("confidence"),
+            predictionSchema = CravingPrediction.BINARY_PREDICTION_SCHEMA,
+            classCode = json.optCleanString("classCode"),
+            cravingProbability = cravingProbability,
+            classProbabilities = mapOf("low" to lowProbability, "high" to highProbability),
+            predictionId = json.optCleanString("predictionId"),
             sequence = json.optLongOrNull("sequence"),
             uploadSentAtMs = json.optLongOrNull("sentAtMs")
                 ?: json.optLongOrNull("uploadSentAtMs")
@@ -347,6 +374,7 @@ class ServerUploader {
             ?: "none"
         val action = optCleanString("alertAction") ?: alertObject?.optCleanString("alertAction")
         val windowMean = optFloatOrNull("windowMean") ?: alertObject?.optFloatOrNull("windowMean")
+        val classOneRatio = optFloatOrNull("classOneRatio") ?: alertObject?.optFloatOrNull("classOneRatio")
         val triggerReason = optCleanString("triggerReason") ?: alertObject?.optCleanString("triggerReason")
         val required = when {
             has("alertRequired") -> optBoolean("alertRequired", false)
@@ -357,6 +385,7 @@ class ServerUploader {
             alertLevel = level,
             alertAction = action,
             windowMean = windowMean,
+            classOneRatio = classOneRatio,
             triggerReason = triggerReason,
             alertRequired = required,
             isPresent = isPresent
@@ -371,6 +400,12 @@ class ServerUploader {
             is String -> value.toFloatOrNull()
             else -> null
         }
+    }
+
+    private fun JSONObject.requiredProbability(key: String): Float {
+        val value = optFloatOrNull(key) ?: throw IllegalArgumentException("$key missing")
+        require(value.isFinite() && value in 0f..1f) { "$key must be between zero and one" }
+        return value
     }
 
     private fun JSONObject.optLongOrNull(key: String): Long? {
@@ -393,6 +428,7 @@ class ServerUploader {
             "alertLevel",
             "alertAction",
             "windowMean",
+            "classOneRatio",
             "triggerReason",
             "alertRequired"
         )

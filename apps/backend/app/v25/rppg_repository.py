@@ -176,16 +176,20 @@ class SqlAlchemyRppgRepository:
                 INSERT INTO craving_predictions
                   (id,patient_id,rppg_analysis_job_id,window_started_at,window_ended_at,
                    input_modalities,model_version_id,predicted_class_index,predicted_class_code,
-                   predicted_class_probability,class_probabilities,signal_quality,motion_context,
+                   predicted_class_probability,class_probabilities,continuous_value,
+                   continuous_scale_min,continuous_scale_max,signal_quality,motion_context,
                    quality_gate_passed,output_metadata,predicted_at)
                 VALUES (:id,:patient,:job,:started,:ended,ARRAY['ppg','eda_zero'],:model,:class_index,
-                   :class_code,:confidence,CAST(:probabilities AS jsonb),CAST(:quality AS jsonb),
+                   :class_code,:confidence,CAST(:probabilities AS jsonb),:continuous_value,0.0,1.0,
+                   CAST(:quality AS jsonb),
                    '{}'::jsonb,true,CAST(:metadata AS jsonb),now())
             """), {"id": prediction_id, "patient": patient_id, "job": job_id,
                     "started": captured_at, "ended": ended_at, "model": model_version_id,
-                    "class_index": int(prediction["class"]), "class_code": f"class_{int(prediction['class'])}",
+                    "class_index": int(prediction["class"]),
+                    "class_code": str(prediction.get("classCode") or ("high" if int(prediction["class"]) == 1 else "low")),
                     "confidence": prediction.get("confidence"),
                     "probabilities": json.dumps(prediction.get("classProbabilities") or {}),
+                    "continuous_value": prediction.get("cravingProbability"),
                     "quality": json.dumps({"score": values.get("quality_score"), "passed": True}),
                     "metadata": json.dumps(prediction, separators=(",", ":"))})
             if alert_id is not None:

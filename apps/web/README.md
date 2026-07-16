@@ -35,7 +35,7 @@ Docker deployment is launched from the repository root:
 docker compose -f apps/db/docker-compose.yml up -d --build
 ```
 
-In the local Docker stack, the web service is exposed on port `3000`.
+In the local Docker stack, nginx still listens on container port `3000`, while Docker exposes it on host port `45511` by default (`WEB_HOST_PORT` can override this).
 
 ## Files
 
@@ -53,7 +53,7 @@ In the local Docker stack, the web service is exposed on port `3000`.
 |---|---|
 | Docker compose config | PASS |
 | Docker web container | PASS in local stack |
-| Web root | PASS, HTTP 200 at `http://localhost:3000` |
+| Web root | PASS, HTTP 200 at `http://localhost:45511` |
 | Backend proxy indicator | PASS, page reports `connected` |
 | Browser console | PASS, no warning or error entries during smoke verification |
 | Production build after intervention dashboard | PASS, `npm.cmd run build` on 2026-07-15 |

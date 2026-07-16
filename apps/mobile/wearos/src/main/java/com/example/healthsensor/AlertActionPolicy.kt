@@ -19,16 +19,15 @@ object AlertActionPolicy {
         hasAlertMetadata: Boolean,
         cravingClass: Int
     ): AlertAction {
+        BinaryPredictionContract.requireClass(cravingClass)
         parseAction(alertAction)?.let { return it }
         if (hasAlertMetadata) {
             return parseLevel(alertLevel) ?: AlertAction.NONE
         }
 
-        return when (cravingClass) {
-            1 -> AlertAction.RECOMMEND
-            2 -> AlertAction.REQUIRED
-            else -> AlertAction.NONE
-        }
+        // Binary class is display-only on the Watch. User-facing actions must
+        // come from backend alert metadata, never from class 1 by itself.
+        return AlertAction.NONE
     }
 
     private fun parseAction(value: String?): AlertAction? =
@@ -50,4 +49,11 @@ object AlertActionPolicy {
 
     private fun String?.normalized(): String? =
         this?.trim()?.takeIf { it.isNotEmpty() }?.lowercase(Locale.US)
+}
+
+object BinaryPredictionContract {
+    fun requireClass(value: Int): Int {
+        require(value in 0..1) { "binary prediction class must be 0 or 1" }
+        return value
+    }
 }

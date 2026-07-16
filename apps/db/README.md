@@ -69,7 +69,7 @@ From the repository root on the DGX:
 docker compose -f apps/db/docker-compose.yml up -d --build
 docker compose -f apps/db/docker-compose.yml ps
 curl -fsS http://127.0.0.1:25991/health
-curl -I http://127.0.0.1:3000/
+curl -I http://127.0.0.1:45511/
 ```
 
 For the configured external mobile build, use

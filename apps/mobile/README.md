@@ -1,6 +1,6 @@
 # NeuroTruth Mobile
 
-최종 업데이트: 2026-07-15
+최종 업데이트: 2026-07-16
 
 `apps/mobile`은 환자용 Android Phone 앱과 Wear OS 센서 앱입니다. Phone이 환자 인증·동의·JWT 갱신·센서 업로드·prediction SSE·중재 세션을 소유합니다. Watch는 센서를 Phone으로 전달하고 표시 가능한 prediction 상태를 받으며 backend token을 저장하거나 backend에 직접 연결하지 않습니다.
 
@@ -27,7 +27,8 @@ NeuroTruth는 치료·진단·응급 대응 앱이 아니라 CBT 치료 중이�
 - `지금 대화하기`/`나중에`, optional AUQ, slot 없는 자유 중재 대화
 - 서버의 `inactivityTimeoutSeconds`를 사용한 동적 timeout 안내
 - 앱 재시작 후 active session 복구와 수동 종료
-- 24시간·7일·30일 Low/Mid/High, AUQ, 이벤트, 최신 상태 대시보드
+- 2-class(`낮음/높음`) prediction과 class-1 softmax 기반 `갈망 가능성(모델)` 대시보드
+- 실시간 10분(1초), 24시간(1분), 7일(10분), 30일(30분) 확률 그래프
 - 실시간 Watch PPG와 소유 prediction의 최대 512점 PPG preview
 - 리포트 `생성 중|준비됨|실패` 상태만 표시하고 본문은 표시하지 않음
 
@@ -37,14 +38,14 @@ NeuroTruth는 치료·진단·응급 대응 앱이 아니라 CBT 치료 중이�
 
 - Samsung Health Sensor SDK 기반 PPG/EDA 수집
 - Data Layer를 통한 Phone relay
-- Phone이 전달한 Low/Mid/High와 alert metadata 표시
+- Phone이 전달한 binary class(`0=낮음`, `1=높음`)와 서버 alert metadata 표시
 - backend credential과 DGX 주소 미보관
 
-기존 sensor 수집과 Watch relay는 유지하지만 카메라 rPPG prediction은 Watch에 보내지 않습니다.
+Watch는 class `2`를 호환되지 않는 legacy prediction으로 거부합니다. Class 값 자체로 알림을 만들지 않고 서버 `alertAction`을 우선하며, action이 없을 때만 `alertLevel`을 사용합니다. 확률 그래프는 Phone에만 있으며 Watch에는 추가하지 않습니다. 기존 sensor 수집과 Watch relay는 유지하지만 카메라 rPPG prediction은 Watch에 보내지 않습니다.
 
 ## 선택적 카메라 rPPG
 
-Phone 전면 카메라에서 한 얼굴이 안정되면 10초 영상을 촬영해 인증된 NeuroTruth backend에 업로드합니다. Backend가 DGX Spark FactorizePhys와 기존 RF 모델을 호출하며 Phone은 DGX 주소를 알지 못합니다.
+Phone 전면 카메라에서 한 얼굴이 안정되면 10초 영상을 촬영해 인증된 NeuroTruth backend에 업로드합니다. Backend가 DGX Spark FactorizePhys와 binary PyTorch craving model을 호출하며 Phone은 DGX 주소를 알지 못합니다.
 
 - `RPPG_ENABLED=true`이고 backend가 ready일 때만 카메라 UI 표시
 - HTTP 202 뒤 로컬 MP4 삭제, job polling과 앱 재시작 복구
@@ -85,5 +86,7 @@ adb -s <WATCH_SERIAL> install -r wearos/build/outputs/apk/debug/wearos-debug.apk
 | Kotlin compile | PASS |
 
 새 Phone/Watch 실기기에서 가입·알림·AUQ skip·대화·timeout·대시보드·Watch 회귀와 실제 rPPG 촬영은 수동 검증이 남아 있습니다.
+
+`갈망 가능성(모델)`은 연구용 model output이며 진단, 임상적 갈망 강도 또는 치료 효과가 아닙니다. 현재 final weights는 사용 가능한 학습 데이터를 모두 사용했으며 해당 최종 가중치에 대한 독립 test 평가가 없습니다.
 
 상세 계약은 [Phone App](docs/PHONE_APP.md)과 [Server API](SERVER_API_SPEC.md)를 참고합니다.

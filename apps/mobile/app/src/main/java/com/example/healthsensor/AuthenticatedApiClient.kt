@@ -68,6 +68,7 @@ class ApiEndpoints(baseUrl: String) {
     val rppgStatus = "$base/api/rppg/status"
     val rppgJobs = "$base/api/rppg/jobs"
     val patientDashboard = "$base/api/me/dashboard"
+    val cravingProbabilitySeries = "$base/api/me/craving-probability-series"
 
     fun session(sessionId: String): String = "$sessions/${requireUuid(sessionId)}"
     fun messages(sessionId: String): String = "${session(sessionId)}/messages"
@@ -77,6 +78,7 @@ class ApiEndpoints(baseUrl: String) {
     fun rppgJob(jobId: String): String = "$rppgJobs/${requireUuid(jobId)}"
     fun retryRppgJob(jobId: String): String = "${rppgJob(jobId)}/retry"
     fun dashboard(range: String): String = "$patientDashboard?range=$range"
+    fun cravingProbabilitySeries(range: String): String = "$cravingProbabilitySeries?range=$range"
     fun ppgPreview(predictionId: String): String =
         "$base/api/me/predictions/${requireUuid(predictionId)}/ppg-preview"
 

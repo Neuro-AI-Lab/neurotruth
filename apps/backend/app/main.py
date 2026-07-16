@@ -295,17 +295,30 @@ class RuntimePredictorAdapter:
 
     @property
     def model_name(self) -> str:
-        return self.service.model.model_name or "RandomForest"
+        return self.service.model.model_name
 
     @property
     def model_version(self) -> str:
-        return os.getenv(
-            "CRAVING_MODEL_VERSION", self.service.model.model_path.name
-        )
+        return os.getenv("CRAVING_MODEL_VERSION", self.service.model.model_version)
 
     @property
     def artifact_uri(self) -> str:
-        return str(self.service.model.model_path)
+        return self.service.model.safe_artifact_uri
+
+    @property
+    def inference_task(self) -> str:
+        return "binary_classification"
+
+    @property
+    def output_schema(self) -> dict[str, Any]:
+        return {
+            "predictionSchema": "binary-craving-v1",
+            "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
+        }
+
+    @property
+    def registration_config(self) -> dict[str, Any]:
+        return self.service.model.registration_config
 
     async def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await asyncio.to_thread(self.service.model.predict, payload)

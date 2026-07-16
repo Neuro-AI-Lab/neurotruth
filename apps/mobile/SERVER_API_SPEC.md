@@ -1,6 +1,6 @@
 # NeuroTruth Phone–Backend API
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 All data routes require `Authorization: Bearer <accessToken>`. JSON uses camelCase. The server derives patient ownership from the JWT; clients must not send a patient ID. The backend issues UUID session IDs.
 
@@ -68,7 +68,7 @@ The phone uploads only to NeuroTruth; it never calls DGX directly. Every accepte
 }
 ```
 
-The same patient and `clientWindowId` is idempotent only for identical content. Success returns prediction fields plus `recordingId`, `predictionId`, and nullable `alertId`. Biosignal consent is required. Backend storage is canonical JSON → gzip → AES-256-GCM in a backend-only volume.
+The same patient and `clientWindowId` is idempotent only for identical content. Success returns the binary prediction fields below plus `recordingId`, `predictionId`, and nullable `alertId`. Biosignal consent is required. Backend storage is canonical JSON → gzip → AES-256-GCM in a backend-only volume.
 
 ## Prediction SSE
 
@@ -78,12 +78,30 @@ The same patient and `clientWindowId` is idempotent only for identical content. 
 : connected
 
 event: craving
-data: {"class":2,"confidence":0.87,"alertLevel":"required","alertAction":"required_intervention"}
+data: {"predictionSchema":"binary-craving-v1","class":1,"classCode":"high","confidence":0.812345,"cravingProbability":0.812345,"classProbabilities":{"low":0.187655,"high":0.812345},"timestampMs":1784160000000,"alertLevel":"recommend","alertAction":"recommend_intervention","windowMean":0.7,"classOneRatio":0.7}
 
 : ping
 ```
 
-Reconnect after network loss with the current/rotated access token. The phone relays display-safe prediction metadata to the Watch; the Watch does not open this stream.
+`class` accepts only `0=low` or `1=high`. `confidence` is the probability of the predicted class; `cravingProbability` is always softmax `p(class 1)`. Reconnect after network loss with the current/rotated access token. The phone relays display-safe prediction metadata to the Watch; the Watch does not open this stream. Watch treats class as display-only and follows server `alertAction`/`alertLevel` for vibration and notification.
+
+## Patient craving-probability series
+
+`GET /api/me/craving-probability-series?range=10m|24h|7d|30d` returns the authenticated patient's class-1 probability history. The fixed buckets are `1s`, `60s`, `600s`, and `1800s`; empty buckets are omitted rather than interpolated.
+
+```json
+{
+  "range": "24h",
+  "from": "2026-07-15T00:00:00Z",
+  "to": "2026-07-16T00:00:00Z",
+  "bucketSeconds": 60,
+  "points": [
+    {"at":"2026-07-15T00:01:00Z","averageCravingProbability":0.7132,"sampleCount":57}
+  ]
+}
+```
+
+This series is displayed only on the Phone. It is a research model output, not a diagnosis, calibrated clinical severity, or treatment-effect measure.
 
 ## Sessions
 

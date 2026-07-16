@@ -132,14 +132,8 @@ fun WatchScreen(
 ) {
     val cravingColor = when (cravingClass) {
         0 -> Color(0xFF10B981)
-        1 -> Color(0xFFFFB020)
-        2 -> Color(0xFFFF4D5E)
+        1 -> Color(0xFFFF4D5E)
         else -> Color(0xFF7E8A95)
-    }
-    val cravingAdvice = when (cravingClass) {
-        1 -> "주의 필요"
-        2 -> "폰에서 상태 확인"
-        else -> null
     }
     val alertColor = when (alertLevel) {
         "recommend" -> Color(0xFFFFB020)
@@ -192,24 +186,6 @@ fun WatchScreen(
                     }
                 }
 
-                cravingAdvice?.let {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.84f)
-                            .background(cravingColor.copy(alpha = 0.16f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = it,
-                            fontSize = 10.sp,
-                            color = cravingColor,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.84f)
@@ -252,9 +228,8 @@ fun WatchScreen(
 
 private fun watchStateBadge(cravingClass: Int?): String =
     when (cravingClass) {
-        0 -> "안정"
-        1 -> "주의"
-        2 -> "확인"
+        0 -> "낮음"
+        1 -> "높음"
         else -> "대기"
     }
 

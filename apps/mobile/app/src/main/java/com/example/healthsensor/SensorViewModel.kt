@@ -860,7 +860,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         cravingSimulationJob = viewModelScope.launch(Dispatchers.IO) {
             _isCravingSimulationRunning.value = true
             try {
-                listOf(0, 1, 2).forEachIndexed { index, cravingClass ->
+                listOf(0, 1).forEachIndexed { index, cravingClass ->
                     val prediction = CravingPrediction(
                         cravingClass = cravingClass,
                         timestampMs = System.currentTimeMillis(),
@@ -873,7 +873,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                     _simulationStatus.value = "모델 미사용 테스트 단계 $cravingClass 입력"
                     if (index < 2) delay(10_000L)
                 }
-                _simulationStatus.value = "테스트 완료: 로컬 0-1-2 입력"
+                _simulationStatus.value = "테스트 완료: 로컬 0-1 입력"
             } finally {
                 _isCravingSimulationRunning.value = false
             }

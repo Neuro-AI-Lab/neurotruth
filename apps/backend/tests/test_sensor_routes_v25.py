@@ -26,7 +26,7 @@ from app.v25.sensor_storage import EncryptedSensorStorage, canonical_sensor_json
 
 class FakePredictor:
     ready = True
-    model_name = "RandomForest"
+    model_name = "Conv1DNet"
     model_version = "fixture-v1"
     artifact_uri = None
 
@@ -37,7 +37,12 @@ class FakePredictor:
     async def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.calls += 1
         self.payloads.append(payload)
-        return {"class": 2, "confidence": 0.91, "timestampMs": payload["windowEndMs"], "sequence": payload["sequence"]}
+        return {
+            "predictionSchema": "binary-craving-v1", "class": 1, "classCode": "high",
+            "confidence": 0.91, "cravingProbability": 0.91,
+            "classProbabilities": {"low": 0.09, "high": 0.91},
+            "timestampMs": payload["windowEndMs"], "sequence": payload["sequence"],
+        }
 
 
 class FakeRepository:
@@ -53,7 +58,7 @@ class FakeRepository:
         return self.results.get((patient_id, client_window_id))
 
     async def ensure_craving_model_version(self, **values: Any) -> UUID:
-        assert values["model_name"] == "RandomForest"
+        assert values["model_name"] == "Conv1DNet"
         return UUID("00000000-0000-0000-0000-000000000001")
 
     async def persist_sensor_recording(self, **values: Any) -> SensorResultRecord:
@@ -130,7 +135,8 @@ def test_ingestion_persists_encrypted_file_and_is_idempotent() -> None:
                                           ai_analysis_allowed=True, notification_allowed=True, payload=body)
             assert first == second
             assert predictor.calls == 1
-            assert first["class"] == 2 and first["recordingId"] and first["predictionId"] and first["alertId"]
+            assert first["class"] == 1 and first["recordingId"] and first["predictionId"] and first["alertId"]
+            assert first["cravingProbability"] == 0.91
             stored_path = Path(directory) / repo.recording_values["storage_uri"]
             assert stored_path.is_file()
             assert canonical_sensor_json(body) not in stored_path.read_bytes()
