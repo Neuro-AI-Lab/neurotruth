@@ -99,10 +99,26 @@ def test_schema_authority_is_self_contained_in_repository() -> None:
     compose = (DB_APP / "docker-compose.yml").read_text(encoding="utf-8")
     assert SCHEMA.parent == REPO_ROOT
     assert SCHEMA_DEFINITION.parent == REPO_ROOT
-    assert "parents[5]" not in migration
-    assert 'parents[4] / "neurotruth_schema_v2_5.sql"' in migration
+    assert "parents[" not in migration
+    assert "for parent in migration_file.resolve().parents" in migration
     assert "../../../neurotruth_schema_v2_5.sql" not in compose
     assert "../../neurotruth_schema_v2_5.sql:/app/schema/neurotruth_schema_v2_5.sql:ro" in compose
+
+
+def test_alembic_schema_path_prefers_configured_mount_at_shallow_container_depth(tmp_path) -> None:
+    spec = importlib.util.spec_from_file_location("v25_baseline_path", MIGRATION)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    mounted_schema = tmp_path / "schema.sql"
+    mounted_schema.write_text("BEGIN;\nSELECT 1;\nCOMMIT;\n", encoding="utf-8")
+
+    resolved = module._resolve_schema_path(
+        Path("/app/alembic/versions/20260715_0001_v25_baseline.py"),
+        str(mounted_schema),
+    )
+
+    assert resolved == mounted_schema
 
 
 def test_alembic_transaction_wrapper_parser_preserves_plpgsql() -> None:

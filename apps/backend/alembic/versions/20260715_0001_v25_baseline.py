@@ -19,16 +19,23 @@ branch_labels = None
 depends_on = None
 
 
-def _schema_path() -> Path:
-    configured = os.getenv("NEUROTRUTH_SCHEMA_SQL")
-    candidates = [
-        Path(configured) if configured else None,
-        Path(__file__).resolve().parents[4] / "neurotruth_schema_v2_5.sql",
-    ]
-    for candidate in candidates:
-        if candidate is not None and candidate.is_file():
+def _resolve_schema_path(migration_file: Path, configured: str | None) -> Path:
+    """Find the schema without assuming a fixed repository/container depth."""
+    if configured:
+        candidate = Path(configured).expanduser()
+        if candidate.is_file():
             return candidate
-    raise RuntimeError("The V2.5 schema SQL reference is unavailable")
+        raise RuntimeError("The configured schema SQL reference is unavailable")
+
+    for parent in migration_file.resolve().parents:
+        candidate = parent / "neurotruth_schema_v2_5.sql"
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError("The schema SQL reference is unavailable")
+
+
+def _schema_path() -> Path:
+    return _resolve_schema_path(Path(__file__), os.getenv("NEUROTRUTH_SCHEMA_SQL"))
 
 
 def _schema_body(source: str) -> str:
