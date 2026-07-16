@@ -1,6 +1,6 @@
 # NeuroTruth
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 NeuroTruth is an authenticated wearable-assisted supportive intervention research prototype. It is intended for people receiving CBT or willing to seek treatment who need ongoing records and dialogue support in craving situations; it is not a treatment, diagnostic, or emergency-response app. Patients register on Android, grant feature-specific consent, upload Watch sensor windows, receive possible-craving alerts, and choose whether to begin a safety-aware intervention conversation. The FastAPI backend owns patient identity, AES-256-GCM persistence, model/prompt traceability, state inference, reports, and audit records. The React web surface is administrator-only.
 
@@ -23,7 +23,7 @@ Access tokens last 15 minutes by default. Opaque 30-day refresh tokens rotate on
 ## Repository Layout
 
 ```text
-apps/backend  FastAPI authenticated API, RF prediction, Bedrock agents, encryption
+apps/backend  FastAPI authenticated API, binary PyTorch prediction, Bedrock agents, encryption
 apps/mobile   Android phone and Wear OS relay
 apps/web      Administrator-only React console
 apps/db       PostgreSQL 16 Compose stack and extension bootstrap
@@ -53,6 +53,21 @@ python -m pytest
 cd ../mobile
 .\gradlew.bat assembleDebug testDebugUnitTest lintDebug
 ```
+
+## Binary craving model deployment
+
+The active model is the two-class PyTorch `Conv1DNet`. It consumes a ten-second PPG/GSR window every second and stores/streams softmax `p(class 1)` as a research-use model craving likelihood. It is not a diagnosis, calibrated clinical severity, or treatment-effect measure. The final weights used all available training data and have no independent final-weight test evaluation.
+
+DGX Spark deployment prefers CUDA and falls back to CPU only when CUDA cannot complete a smoke inference. Start the normal Compose stack with the DGX GPU override and verify the model status reports `actualDevice=cuda:0` before device acceptance. The base Compose remains CPU-capable. No deployment port is changed by the model transition.
+
+Before the binary rollout, back up PostgreSQL and stop prediction processing. Preview and then explicitly remove only legacy three-class derived predictions:
+
+```powershell
+docker compose run --rm backend python -m app.maintenance.purge_legacy_predictions --dry-run
+docker compose run --rm backend python -m app.maintenance.purge_legacy_predictions --confirm DELETE-LEGACY-3CLASS-PREDICTIONS
+```
+
+The command preserves raw sensors, users, consent, AUQ, sessions, messages, interventions, reports, and rPPG captures/jobs. Deleted derived records require the pre-deployment database backup for recovery.
 
 ## Required Security Configuration
 
@@ -87,7 +102,7 @@ The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and
 
 - New sessions do not write the legacy 13 slots or expose `handoffReady`; pre-redesign slot sessions remain read-only history without backfill.
 - Voice/STT/TTS, self-event capture, wearable-absent AUQ automation, and model retraining experiments are deferred. Camera rPPG is an experimental, disabled-by-default extension and is not release-ready until the real-phone/DGX validation gate passes.
-- Low/Mid/High predictions, AUQ, dialogue, and interventions are presented as separate evidence. The UI never claims immediate craving reduction, CBT efficacy, diagnosis, treatment success, or causal effect.
+- Binary low/high predictions and class-1 probability, AUQ, dialogue, and interventions are presented as separate evidence. The Phone alone shows the probability graph; administrator web and Watch do not. The UI never claims immediate craving reduction, CBT efficacy, diagnosis, treatment success, calibrated severity, or causal effect.
 - There is no bulk dataset-download endpoint.
 - Every accepted camera video, including quality and technical failures, is retained encrypted until audited administrator deletion. Inline playback has no download button, but a privileged viewer can technically preserve rendered bytes; least privilege, policy, and audit remain required.
 - Safety-risk dialogue may offer administrator involvement once and show the Korean 109 resource, but no live administrator chat, emergency queue, automatic contact, or connection guarantee exists.

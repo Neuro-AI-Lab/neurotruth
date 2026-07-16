@@ -25,6 +25,9 @@ class Predictor(Protocol):
     model_name: str
     model_version: str
     artifact_uri: str | None
+    inference_task: str
+    output_schema: dict[str, Any]
+    registration_config: dict[str, Any]
 
     async def predict(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -134,6 +137,8 @@ class SensorService:
             prediction = await self.predictor.predict(payload)
         except Exception as exc:
             raise SensorModelUnavailable("Prediction model is unavailable") from exc
+        if int(prediction.get("class", -1)) not in (0, 1):
+            raise SensorModelUnavailable("Prediction model returned an incompatible class")
         alert = self.alert_decider(patient_id, prediction) if notification_allowed else {
             "alertRequired": False, "alertAction": "none",
         }
@@ -145,6 +150,12 @@ class SensorService:
             model_name=self.predictor.model_name,
             model_version=self.predictor.model_version,
             artifact_uri=self.predictor.artifact_uri,
+            inference_task=getattr(self.predictor, "inference_task", "binary_classification"),
+            output_schema=getattr(self.predictor, "output_schema", {
+                "predictionSchema": "binary-craving-v1",
+                "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
+            }),
+            config=getattr(self.predictor, "registration_config", {"window_sec": 10}),
         )
         alert_id = uuid4() if notification_allowed and (
             bool(alert.get("alertRequired")) or alert.get("alertAction") not in (None, "none")
@@ -159,8 +170,10 @@ class SensorService:
             started_at=self._timestamp(payload.get("windowStartMs")),
             ended_at=self._timestamp(payload.get("windowEndMs")),
             class_index=int(prediction["class"]),
+            class_code=str(prediction.get("classCode") or ("high" if int(prediction["class"]) == 1 else "low")),
             confidence=prediction.get("confidence"),
             class_probabilities=prediction.get("classProbabilities") or {},
+            continuous_value=prediction.get("cravingProbability"),
             prediction=public_prediction,
             alert=alert,
             predicted_at=self._timestamp(prediction.get("timestampMs")),

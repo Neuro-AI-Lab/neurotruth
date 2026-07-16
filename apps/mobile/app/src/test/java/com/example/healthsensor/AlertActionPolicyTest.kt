@@ -42,9 +42,9 @@ class AlertActionPolicyTest {
     }
 
     @Test
-    fun unknownActionFallsThroughToValidLevel() {
+    fun unknownActionDoesNotFallThroughToLevelOrClass() {
         assertEquals(
-            AlertAction.RECOMMEND,
+            AlertAction.NONE,
             AlertActionPolicy.resolve(
                 alertAction = "future-action",
                 alertLevel = "recommend",
@@ -76,10 +76,10 @@ class AlertActionPolicyTest {
     }
 
     @Test
-    fun classOnlyPayloadUsesLegacyMapping() {
+    fun classOnlyPayloadNeverTriggersBinaryAlert() {
         assertEquals(AlertAction.NONE, resolveLegacy(0))
-        assertEquals(AlertAction.RECOMMEND, resolveLegacy(1))
-        assertEquals(AlertAction.REQUIRED, resolveLegacy(2))
+        assertEquals(AlertAction.NONE, resolveLegacy(1))
+        assertEquals(AlertAction.NONE, resolveLegacy(2))
     }
 
     private fun resolveLegacy(cravingClass: Int): AlertAction =

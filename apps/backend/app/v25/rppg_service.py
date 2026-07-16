@@ -297,6 +297,12 @@ class RppgService:
         craving_model = await self.v25_repository.ensure_craving_model_version(
             model_name=self.predictor.model_name, model_version=self.predictor.model_version,
             artifact_uri=self.predictor.artifact_uri,
+            inference_task=getattr(self.predictor, "inference_task", "binary_classification"),
+            output_schema=getattr(self.predictor, "output_schema", {
+                "predictionSchema": "binary-craving-v1",
+                "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
+            }),
+            config=getattr(self.predictor, "registration_config", {"window_sec": 10}),
         )
         rppg_model = await self.repository.ensure_rppg_model(
             name=common["model_name"] or "FactorizePhys", version=common["checkpoint"] or "unknown",

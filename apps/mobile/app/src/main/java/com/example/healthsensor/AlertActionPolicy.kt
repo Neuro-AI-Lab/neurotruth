@@ -13,22 +13,16 @@ enum class AlertAction {
 }
 
 object AlertActionPolicy {
+    @Suppress("UNUSED_PARAMETER")
     fun resolve(
         alertAction: String?,
         alertLevel: String?,
         hasAlertMetadata: Boolean,
         cravingClass: Int
     ): AlertAction {
-        parseAction(alertAction)?.let { return it }
-        if (hasAlertMetadata) {
-            return parseLevel(alertLevel) ?: AlertAction.NONE
-        }
-
-        return when (cravingClass) {
-            1 -> AlertAction.RECOMMEND
-            2 -> AlertAction.REQUIRED
-            else -> AlertAction.NONE
-        }
+        // Binary predictions are overlapping one-second windows. The backend owns the
+        // rolling history, downtrend and cooldown rules, so class alone must never alert.
+        return parseAction(alertAction) ?: AlertAction.NONE
     }
 
     fun resolve(prediction: CravingPrediction): AlertAction =
@@ -45,14 +39,6 @@ object AlertActionPolicy {
             "cooldown" -> AlertAction.COOLDOWN
             "recommend", "recommendation", "recommend_intervention" -> AlertAction.RECOMMEND
             "required", "required_intervention" -> AlertAction.REQUIRED
-            else -> null
-        }
-
-    private fun parseLevel(value: String?): AlertAction? =
-        when (value.normalized()) {
-            "none" -> AlertAction.NONE
-            "recommend", "recommendation" -> AlertAction.RECOMMEND
-            "required" -> AlertAction.REQUIRED
             else -> null
         }
 

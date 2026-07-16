@@ -1,6 +1,6 @@
 # NeuroTruth Backend
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 FastAPI backend for the authenticated intervention-support platform. Readiness fails closed when PostgreSQL, the expected Alembic revision, required security settings, or the AES-256-GCM keyring are unavailable.
 
@@ -22,9 +22,9 @@ Use `ALLOW_INSECURE_HTTP=true` only with `APP_ENV=development|test`. Production 
 |---|---|
 | Auth | `POST /api/auth/patient/signup`, `/api/auth/admin/signup`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/change-password` |
 | Profile/consent | `GET/PATCH /api/me`, `POST /api/me/consents` |
-| Sensor/prediction | `POST /api/sensor-windows`, `GET /api/predictions/stream` |
+| Sensor/prediction | `POST /api/sensor-windows`, `GET /api/predictions/stream` (binary class plus class-1 probability) |
 | Session | `POST /api/sessions`, `GET /api/sessions/{id}`, `POST .../messages`, `.../assessments`, `.../finish`, `POST/GET .../reports` |
-| Patient dashboard | `GET /api/me/dashboard?range=24h|7d|30d`, `GET /api/me/predictions/{predictionId}/ppg-preview` |
+| Patient dashboard | `GET /api/me/dashboard?range=24h|7d|30d`, `GET /api/me/craving-probability-series?range=10m|24h|7d|30d`, `GET /api/me/predictions/{predictionId}/ppg-preview` |
 | Administrator | Patients/timeline/dashboard, reason-gated reveal, temporary password, confirmed deletion, settings |
 | Camera rPPG | Patient status/job/poll/retry and administrator capture summary/reveal/delete; disabled by default |
 
@@ -67,19 +67,45 @@ Immediate safety risk prioritizes 119/109 guidance and may record whether admini
 - Patient dashboard PPG preview is owner-only and capped at 512 points.
 - Administrator dashboard contains no raw PPG. Sensitive message/state/intervention/report reveal requires a reason, is audited, and returns `Cache-Control: no-store`.
 
+## Binary Craving Model
+
+The active predictor is the supplied two-class PyTorch `Conv1DNet`. Each accepted
+ten-second PPG/GSR window is linearly resampled to 512 samples per channel,
+independently MinMax-normalized without filtering, and evaluated as `[PPG,GSR]`.
+Class 0 is `low`, class 1 is `high`, and `cravingProbability` is the class-1
+softmax output. It is a research model output, not a diagnosis or calibrated
+clinical severity; the final weights used all retained training data and have no
+independent final-weight test evaluation.
+
+The base Compose build installs the CPU PyTorch wheel. On DGX Spark use:
+
+```powershell
+docker compose -f apps/db/docker-compose.yml -f apps/db/docker-compose.dgx.yml up -d --build
+```
+
+Runtime status reports `actualDevice=cuda:0` after a successful GPU smoke
+inference, or a code-only CPU fallback reason. Legacy three-class derived records
+are never removed automatically. Stop prediction processing, back up PostgreSQL,
+and run:
+
+```powershell
+docker compose run --rm backend python -m app.maintenance.purge_legacy_predictions --dry-run
+docker compose run --rm backend python -m app.maintenance.purge_legacy_predictions --confirm DELETE-LEGACY-3CLASS-PREDICTIONS
+```
+
 ## Optional DGX Spark rPPG
 
-`RPPG_ENABLED=false` is the default. When explicitly enabled and ready, the backend accepts 10-second camera jobs, retains encrypted videos/provider data, calls DGX FactorizePhys, validates quality, resamples rPPG to 512 points at 51.2 Hz, adds 512 zero-valued EDA points, and calls the existing RF model. Mobile never receives the DGX address. The feature is not release-ready before controlled real-phone/DGX validation.
+`RPPG_ENABLED=false` is the default. When explicitly enabled and ready, the backend accepts 10-second camera jobs, retains encrypted videos/provider data, calls DGX FactorizePhys, validates quality, resamples rPPG to 512 points at 51.2 Hz, adds 512 zero-valued EDA points, and calls the binary craving model. Mobile never receives the DGX address. The feature is not release-ready before controlled real-phone/DGX validation.
 
 ## Required Configuration
 
-Required values include `DATABASE_URL`, `DATA_ENCRYPTION_KEYS_B64`, `DATA_ENCRYPTION_CURRENT_KEY_ID`, `JWT_SIGNING_KEY`, `ADMIN_SIGNUP_CODE`, `SENSOR_STORAGE_ROOT`, `APP_ENV`, transport policy, RF model configuration, and live Bedrock credentials/model settings. See the root `.env.example`.
+Required values include `DATABASE_URL`, `DATA_ENCRYPTION_KEYS_B64`, `DATA_ENCRYPTION_CURRENT_KEY_ID`, `JWT_SIGNING_KEY`, `ADMIN_SIGNUP_CODE`, `SENSOR_STORAGE_ROOT`, `APP_ENV`, transport policy, binary model configuration, and live Bedrock credentials/model settings. See the root `.env.example`.
 
 ## Latest Validation
 
 | Check | Result |
 |---|---|
-| Full backend pytest | PASS, 162 tests |
+| Full backend pytest | PASS, 176 tests; 1 model-parity test skips until PyTorch is installed locally |
 | Compileall | PASS |
 | Fresh PostgreSQL 0001→0003 | PASS |
 | Populated 0002→0003 | PASS; legacy session NULL state preserved |

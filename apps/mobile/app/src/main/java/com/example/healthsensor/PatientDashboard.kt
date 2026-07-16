@@ -3,6 +3,7 @@ package com.example.healthsensor
 import android.app.Application
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -48,12 +50,41 @@ enum class DashboardRange(val wire: String, val label: String) {
     DAYS_30("30d", "30일")
 }
 
+enum class ProbabilityRange(
+    val wire: String,
+    val label: String,
+    val durationMs: Long,
+    val bucketSeconds: Int,
+    val maxPoints: Int
+) {
+    MINUTES_10("10m", "실시간 10분", 10 * 60 * 1_000L, 1, 600),
+    HOURS_24("24h", "24시간", 24 * 60 * 60 * 1_000L, 60, 1_440),
+    DAYS_7("7d", "7일", 7 * 24 * 60 * 60 * 1_000L, 600, 1_008),
+    DAYS_30("30d", "30일", 30L * 24 * 60 * 60 * 1_000L, 1_800, 1_440)
+}
+
 data class DashboardPrediction(
     val id: String,
     val atMs: Long,
     val stateClass: String,
     val probability: Float?,
+    val cravingProbability: Float?,
     val ppgPreviewAvailable: Boolean
+)
+
+data class CravingProbabilityPoint(
+    val atMs: Long,
+    val probability: Float,
+    val sampleCount: Int,
+    val predictionId: String? = null
+)
+
+data class CravingProbabilitySeries(
+    val range: ProbabilityRange,
+    val fromMs: Long,
+    val toMs: Long,
+    val bucketSeconds: Int,
+    val points: List<CravingProbabilityPoint>
 )
 
 data class DashboardAssessment(
@@ -107,6 +138,14 @@ class PatientDashboardApi(private val client: AuthenticatedApiClient) {
         if (response.statusCode !in 200..299) throw ApiHttpException(response.statusCode)
         return PatientDashboardParser.parsePpgPreview(response.body)
     }
+
+    fun getCravingProbabilitySeries(range: ProbabilityRange): CravingProbabilitySeries {
+        val response = client.executeAuthenticated(
+            ApiRequest("GET", client.endpoints.cravingProbabilitySeries(range.wire))
+        )
+        if (response.statusCode !in 200..299) throw ApiHttpException(response.statusCode)
+        return PatientDashboardParser.parseProbabilitySeries(response.body)
+    }
 }
 
 object PatientDashboardParser {
@@ -122,6 +161,7 @@ object PatientDashboardParser {
                     atMs = item.instant("at"),
                     stateClass = item.optString("class", "unknown").lowercase(),
                     probability = item.floatOrNull("probability"),
+                    cravingProbability = item.floatOrNull("cravingProbability")?.probabilityOrNull(),
                     ppgPreviewAvailable = item.optBoolean("ppgPreviewAvailable", false)
                 )
             }.sortedBy(DashboardPrediction::atMs),
@@ -169,6 +209,31 @@ object PatientDashboardParser {
         )
     }
 
+    fun parseProbabilitySeries(body: String): CravingProbabilitySeries {
+        val root = JSONObject(body)
+        val range = ProbabilityRange.values().singleOrNull { it.wire == root.optString("range") }
+            ?: throw IllegalArgumentException("invalid probability range")
+        val bucketSeconds = root.optInt("bucketSeconds", -1)
+        require(bucketSeconds == range.bucketSeconds) { "invalid probability bucket" }
+        val points = root.optJSONArray("points").objects().map { item ->
+            CravingProbabilityPoint(
+                atMs = item.instant("at"),
+                probability = (item.floatOrNull("averageCravingProbability")
+                    ?: error("averageCravingProbability missing")).requireProbability(),
+                sampleCount = item.optInt("sampleCount", 0).also { require(it > 0) },
+                predictionId = item.optString("predictionId").takeIf(String::isNotBlank)
+            )
+        }.sortedBy(CravingProbabilityPoint::atMs)
+        require(points.size <= range.maxPoints) { "probability series exceeds range limit" }
+        return CravingProbabilitySeries(
+            range = range,
+            fromMs = root.instant("from"),
+            toMs = root.instant("to"),
+            bucketSeconds = bucketSeconds,
+            points = points
+        )
+    }
+
     private fun JSONObject.toState() = DashboardStateSummary(
         state = optString("state", "unknown"),
         confidence = floatOrNull("confidence"),
@@ -190,6 +255,56 @@ object PatientDashboardParser {
     }
 }
 
+internal object CravingProbabilitySeriesState {
+    fun appendLive(
+        current: CravingProbabilitySeries,
+        prediction: CravingPrediction
+    ): CravingProbabilitySeries {
+        if (current.range != ProbabilityRange.MINUTES_10) return current
+        val probability = prediction.cravingProbability?.probabilityOrNull() ?: return current
+        val point = CravingProbabilityPoint(
+            atMs = prediction.timestampMs,
+            probability = probability,
+            sampleCount = 1,
+            predictionId = prediction.predictionId
+        )
+        val updatedTo = maxOf(current.toMs, point.atMs)
+        val updatedFrom = updatedTo - current.range.durationMs
+        val retained = current.points.filterNot { existing ->
+            existing.atMs == point.atMs || (
+                point.predictionId != null && existing.predictionId == point.predictionId
+            )
+        }
+        val points = (retained + point)
+            .filter { it.atMs in updatedFrom..updatedTo }
+            .sortedBy(CravingProbabilityPoint::atMs)
+            .takeLast(current.range.maxPoints)
+        return current.copy(fromMs = updatedFrom, toMs = updatedTo, points = points)
+    }
+
+    fun segments(series: CravingProbabilitySeries): List<List<CravingProbabilityPoint>> {
+        if (series.points.isEmpty()) return emptyList()
+        val maxContinuousGapMs = series.bucketSeconds * 1_500L
+        val segments = mutableListOf<MutableList<CravingProbabilityPoint>>()
+        series.points.sortedBy(CravingProbabilityPoint::atMs).forEach { point ->
+            val current = segments.lastOrNull()
+            if (current == null || point.atMs - current.last().atMs > maxContinuousGapMs) {
+                segments += mutableListOf(point)
+            } else {
+                current += point
+            }
+        }
+        return segments
+    }
+}
+
+private fun Float.requireProbability(): Float {
+    require(isFinite() && this in 0f..1f) { "probability must be between zero and one" }
+    return this
+}
+
+private fun Float.probabilityOrNull(): Float? = takeIf { it.isFinite() && it in 0f..1f }
+
 class PatientDashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val api = PatientDashboardApi(MobileApiProvider.get(application))
     private val _range = MutableStateFlow(DashboardRange.HOURS_24)
@@ -202,6 +317,25 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
     val status: StateFlow<String> = _status
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
+    private val _probabilityRange = MutableStateFlow(ProbabilityRange.MINUTES_10)
+    val probabilityRange: StateFlow<ProbabilityRange> = _probabilityRange
+    private val _probabilitySeries = MutableStateFlow<CravingProbabilitySeries?>(null)
+    val probabilitySeries: StateFlow<CravingProbabilitySeries?> = _probabilitySeries
+    private val _probabilityStatus = MutableStateFlow("갈망 가능성을 불러오는 중입니다")
+    val probabilityStatus: StateFlow<String> = _probabilityStatus
+    private val _probabilityLoading = MutableStateFlow(false)
+    val probabilityLoading: StateFlow<Boolean> = _probabilityLoading
+
+    init {
+        viewModelScope.launch {
+            PhoneMonitoringState.latestPrediction.collect { prediction ->
+                prediction ?: return@collect
+                _probabilitySeries.value?.let { current ->
+                    _probabilitySeries.value = CravingProbabilitySeriesState.appendLive(current, prediction)
+                }
+            }
+        }
+    }
 
     fun load(range: DashboardRange = _range.value) {
         if (!MobileAuthRuntime.state.value.authenticated || _loading.value) return
@@ -209,6 +343,7 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
         _loading.value = true
         _status.value = "기록을 불러오는 중입니다"
         _preview.value = null
+        loadProbability(_probabilityRange.value)
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { api.get(range) } }
                 .onSuccess {
@@ -217,6 +352,25 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
                 }
                 .onFailure { _status.value = "기록을 불러오지 못했습니다" }
             _loading.value = false
+        }
+    }
+
+    fun loadProbability(range: ProbabilityRange) {
+        if (!MobileAuthRuntime.state.value.authenticated || _probabilityLoading.value) return
+        _probabilityRange.value = range
+        _probabilityLoading.value = true
+        _probabilityStatus.value = "갈망 가능성을 불러오는 중입니다"
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.getCravingProbabilitySeries(range) } }
+                .onSuccess {
+                    _probabilitySeries.value = it
+                    _probabilityStatus.value = if (it.points.isEmpty()) "이 기간에는 예측 기록이 없습니다" else "최근 기록"
+                }
+                .onFailure {
+                    _probabilitySeries.value = null
+                    _probabilityStatus.value = "갈망 가능성을 불러오지 못했습니다"
+                }
+            _probabilityLoading.value = false
         }
     }
 
@@ -247,6 +401,10 @@ fun PatientDashboardScreen(
     val preview by viewModel.preview.collectAsState()
     val status by viewModel.status.collectAsState()
     val loading by viewModel.loading.collectAsState()
+    val probabilityRange by viewModel.probabilityRange.collectAsState()
+    val probabilitySeries by viewModel.probabilitySeries.collectAsState()
+    val probabilityStatus by viewModel.probabilityStatus.collectAsState()
+    val probabilityLoading by viewModel.probabilityLoading.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFFF7F8FA)).verticalScroll(rememberScrollState())
@@ -271,11 +429,36 @@ fun PatientDashboardScreen(
             else SignalLineChart(livePpg.takeLast(250).map { it.value })
         }
 
-        DashboardCard("갈망 가능성 추세") {
+        DashboardCard("갈망 가능성(모델)") {
+            val latest = probabilitySeries?.points?.lastOrNull()?.probability
+            Text(
+                text = latest?.let { String.format(java.util.Locale.KOREA, "%.1f%%", it * 100f) } ?: "--.-%",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "연구용 모델 출력이며 진단이나 임상적 갈망 강도를 의미하지 않습니다.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ProbabilityRange.values().forEach { candidate ->
+                    if (candidate == probabilityRange) {
+                        Button(onClick = { viewModel.loadProbability(candidate) }) { Text(candidate.label) }
+                    } else {
+                        OutlinedButton(onClick = { viewModel.loadProbability(candidate) }) { Text(candidate.label) }
+                    }
+                }
+            }
+            Text(probabilityStatus, style = MaterialTheme.typography.bodySmall)
+            if (probabilityLoading && probabilitySeries == null) Text("불러오는 중…")
+            probabilitySeries?.let { series ->
+                if (series.points.isNotEmpty()) ProbabilityLineChart(series)
+            }
+
             val predictions = data?.predictions.orEmpty()
-            Text("Low · Mid · High 단계", style = MaterialTheme.typography.bodySmall)
-            if (predictions.isEmpty()) Text("이 기간에는 예측 기록이 없습니다")
-            else StateStepChart(predictions)
             predictions.lastOrNull { it.ppgPreviewAvailable }?.let { prediction ->
                 OutlinedButton(onClick = { viewModel.loadPreview(prediction.id) }) { Text("10초 PPG 보기") }
             }
@@ -319,23 +502,24 @@ private fun DashboardCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun StateStepChart(values: List<DashboardPrediction>) {
+private fun ProbabilityLineChart(series: CravingProbabilitySeries) {
     Canvas(modifier = Modifier.fillMaxWidth().height(130.dp)) {
-        if (values.isEmpty()) return@Canvas
-        fun y(value: String): Float = when (value.lowercase()) {
-            "high" -> size.height * .18f
-            "mid" -> size.height * .5f
-            else -> size.height * .82f
+        val spanMs = (series.toMs - series.fromMs).coerceAtLeast(1L).toFloat()
+        drawLine(Color(0xFFE1E5EA), Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1f)
+        drawLine(Color(0xFFE1E5EA), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), strokeWidth = 1f)
+        drawLine(Color(0xFFE1E5EA), Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1f)
+        CravingProbabilitySeriesState.segments(series).forEach { segment ->
+            if (segment.isEmpty()) return@forEach
+            val path = Path()
+            segment.forEachIndexed { index, point ->
+                val x = ((point.atMs - series.fromMs) / spanMs).coerceIn(0f, 1f) * size.width
+                val y = (1f - point.probability.coerceIn(0f, 1f)) * size.height
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, Color(0xFF246B60), style = Stroke(width = 3f))
         }
-        val step = if (values.size <= 1) 0f else size.width / (values.size - 1)
-        val path = Path().apply { moveTo(0f, y(values.first().stateClass)) }
-        values.drop(1).forEachIndexed { index, value ->
-            val x = (index + 1) * step
-            path.lineTo(x, y(values[index].stateClass))
-            path.lineTo(x, y(value.stateClass))
-        }
-        drawPath(path, Color(0xFF246B60), style = Stroke(width = 5f))
     }
+    Text("세로축 0–100%", style = MaterialTheme.typography.labelSmall)
 }
 
 @Composable

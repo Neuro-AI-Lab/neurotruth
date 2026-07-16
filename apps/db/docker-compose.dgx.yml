@@ -1,0 +1,8 @@
+services:
+  backend:
+    build:
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
+    gpus: all
+    environment:
+      CRAVING_INFERENCE_DEVICE: auto

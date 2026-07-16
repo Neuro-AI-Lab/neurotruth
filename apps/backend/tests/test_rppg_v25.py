@@ -99,13 +99,17 @@ class FakeV25Repository:
 
 class FakePredictor:
     ready = True
-    model_name = "RandomForest"
+    model_name = "Conv1DNet"
     model_version = "test"
     artifact_uri = None
     def __init__(self): self.payload = None
     async def predict(self, payload):
         self.payload = payload
-        return {"class": 2, "confidence": 0.9}
+        return {
+            "predictionSchema": "binary-craving-v1", "class": 1, "classCode": "high",
+            "confidence": 0.9, "cravingProbability": 0.9,
+            "classProbabilities": {"low": 0.1, "high": 0.9},
+        }
 
 
 def make_service(tmp_path: Path) -> tuple[RppgService, FakeRppgRepository, FakePredictor]:
@@ -120,7 +124,7 @@ def make_service(tmp_path: Path) -> tuple[RppgService, FakeRppgRepository, FakeP
     return service, repo, predictor
 
 
-def test_quality_failure_never_calls_random_forest(workdir: Path) -> None:
+def test_quality_failure_never_calls_craving_model(workdir: Path) -> None:
     tmp_path = workdir
     service, repo, predictor = make_service(tmp_path)
     row = {"id": uuid4(), "patient_id": uuid4()}

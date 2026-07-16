@@ -73,6 +73,10 @@ class AuthenticatedApiClientTest {
 
         assertEquals("https://example.test/api/sensor-windows", endpoints.sensorWindows)
         assertEquals("https://example.test/api/predictions/stream", endpoints.predictionStream)
+        assertEquals(
+            "https://example.test/api/me/craving-probability-series?range=10m",
+            endpoints.cravingProbabilitySeries("10m")
+        )
         assertEquals("https://example.test/api/sessions/$sessionId/messages", endpoints.messages(sessionId))
         assertEquals("https://example.test/api/sessions/$sessionId/finish", endpoints.finish(sessionId))
     }

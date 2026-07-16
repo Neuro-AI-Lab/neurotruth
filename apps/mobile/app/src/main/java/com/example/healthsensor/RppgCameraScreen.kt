@@ -257,8 +257,7 @@ private fun phaseLabel(phase: RppgCapturePhase): String = when (phase) {
 
 private fun cameraCravingLabel(value: Int): String = when (value) {
     0 -> "0 낮음"
-    1 -> "1 중간"
-    2 -> "2 높음"
+    1 -> "1 높음"
     else -> "$value 알 수 없음"
 }
 

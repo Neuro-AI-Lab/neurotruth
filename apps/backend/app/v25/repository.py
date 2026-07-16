@@ -104,7 +104,10 @@ class V25Repository(ABC):
         raise NotImplementedError
 
     async def ensure_craving_model_version(
-        self, *, model_name: str, model_version: str, artifact_uri: str | None
+        self, *, model_name: str, model_version: str, artifact_uri: str | None,
+        inference_task: str = "binary_classification",
+        output_schema: dict[str, Any] | None = None,
+        config: dict[str, Any] | None = None,
     ) -> UUID:
         raise NotImplementedError
 
@@ -148,6 +151,10 @@ class V25Repository(ABC):
     async def add_state_inference(self, **values: Any) -> dict[str, Any]: raise NotImplementedError
     async def state_inferences(self, patient_id: UUID, session_id: UUID | None = None) -> list[dict[str, Any]]: raise NotImplementedError
     async def dashboard_rows(self, patient_id: UUID, since: datetime) -> dict[str, list[dict[str, Any]]]: raise NotImplementedError
+    async def craving_probability_rows(
+        self, patient_id: UUID, since: datetime, until: datetime,
+        bucket_seconds: int, max_points: int,
+    ) -> list[dict[str, Any]]: raise NotImplementedError
     async def prediction_sensor(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any] | None: raise NotImplementedError
     async def ensure_rule_model_version(self, *, component: str, rule_version: str) -> UUID: raise NotImplementedError
     @asynccontextmanager
@@ -380,7 +387,17 @@ class SqlAlchemyV25Repository(V25Repository):
             checksum_sha256=row["checksum_sha256"], prediction=dict(row["output_metadata"] or {}),
         )
 
-    async def ensure_craving_model_version(self, *, model_name: str, model_version: str, artifact_uri: str | None) -> UUID:
+    async def ensure_craving_model_version(
+        self, *, model_name: str, model_version: str, artifact_uri: str | None,
+        inference_task: str = "binary_classification",
+        output_schema: dict[str, Any] | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> UUID:
+        output_schema = output_schema or {
+            "predictionSchema": "binary-craving-v1",
+            "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
+        }
+        config = config or {"window_sec": 10}
         async with self.engine.begin() as conn:
             await conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('neurotruth-craving-model'))"))
             active = (await conn.execute(text("""
@@ -396,23 +413,19 @@ class SqlAlchemyV25Repository(V25Repository):
             return (await conn.execute(text("""
                 INSERT INTO model_versions
                   (component,model_name,model_version,inference_task,output_schema,config,artifact_uri,is_active)
-                VALUES ('craving_model',:name,:version,'multiclass_classification',
+                VALUES ('craving_model',:name,:version,:inference_task,
                   CAST(:output_schema AS jsonb),CAST(:config AS jsonb),:artifact,true)
                 ON CONFLICT (component,model_name,model_version) DO UPDATE SET
-                  artifact_uri=EXCLUDED.artifact_uri,is_active=true
+                  inference_task=EXCLUDED.inference_task,output_schema=EXCLUDED.output_schema,
+                  config=EXCLUDED.config,artifact_uri=EXCLUDED.artifact_uri,is_active=true
                 RETURNING id
             """), {
                 "name": model_name,
                 "version": model_version,
                 "artifact": artifact_uri,
-                "output_schema": json.dumps({
-                    "classes": [
-                        {"index": 0, "code": "low"},
-                        {"index": 1, "code": "mid"},
-                        {"index": 2, "code": "high"},
-                    ]
-                }, separators=(",", ":")),
-                "config": json.dumps({"window_sec": 10}, separators=(",", ":")),
+                "inference_task": inference_task,
+                "output_schema": json.dumps(output_schema, separators=(",", ":")),
+                "config": json.dumps(config, separators=(",", ":")),
             })).scalar_one()
 
     async def persist_sensor_recording(self, **values: Any) -> SensorResultRecord:
@@ -471,16 +484,20 @@ class SqlAlchemyV25Repository(V25Repository):
                     INSERT INTO craving_predictions
                       (id,patient_id,sensor_recording_id,window_started_at,window_ended_at,
                        input_modalities,model_version_id,predicted_class_index,predicted_class_code,
-                       predicted_class_probability,class_probabilities,signal_quality,motion_context,
+                       predicted_class_probability,class_probabilities,continuous_value,
+                       continuous_scale_min,continuous_scale_max,signal_quality,motion_context,
                        quality_gate_passed,output_metadata,predicted_at)
                     VALUES (:prediction_id,:patient_id,:recording_id,:started_at,:ended_at,
                        :modalities,:model_version_id,:class_index,:class_code,:confidence,
-                       CAST(:probabilities AS jsonb),'{}'::jsonb,'{}'::jsonb,true,
+                       CAST(:probabilities AS jsonb),:continuous_value,0.0,1.0,
+                       CAST(:signal_quality AS jsonb),'{}'::jsonb,true,
                        CAST(:prediction_json AS jsonb),:predicted_at)
                 """), {
                     **values,
-                    "class_code": f"class_{values['class_index']}",
+                    "class_code": values.get("class_code") or ("high" if int(values["class_index"]) == 1 else "low"),
                     "probabilities": json.dumps(values.get("class_probabilities") or {}, separators=(",", ":")),
+                    "continuous_value": values.get("continuous_value"),
+                    "signal_quality": json.dumps((values.get("prediction") or {}).get("inputQuality") or {}, separators=(",", ":")),
                     "prediction_json": json.dumps(values["prediction"], separators=(",", ":")),
                 })
                 if values.get("alert_id") is not None:
@@ -974,7 +991,8 @@ class SqlAlchemyV25Repository(V25Repository):
         async with self.engine.connect() as conn:
             predictions = (await conn.execute(text("""
                 SELECT p.id,p.sensor_recording_id,p.predicted_class_index,p.predicted_class_code,
-                       p.predicted_class_probability,p.predicted_at,p.quality_gate_passed,m.output_schema
+                       p.predicted_class_probability,p.continuous_value,p.predicted_at,
+                       p.quality_gate_passed,m.output_schema
                        ,(r.id IS NOT NULL AND 'ppg'=ANY(r.modalities) AND r.deleted_at IS NULL) AS ppg_preview_available
                 FROM craving_predictions p JOIN model_versions m ON m.id=p.model_version_id
                 LEFT JOIN sensor_recordings r ON r.id=p.sensor_recording_id AND r.patient_id=p.patient_id
@@ -1020,6 +1038,41 @@ class SqlAlchemyV25Repository(V25Repository):
             "sessions": sessions, "interventions": interventions,
             "inferences": inferences, "reports": reports,
         }.items()}
+
+    async def craving_probability_rows(
+        self, patient_id: UUID, since: datetime, until: datetime,
+        bucket_seconds: int, max_points: int,
+    ) -> list[dict[str, Any]]:
+        async with self.engine.connect() as conn:
+            rows = (await conn.execute(text("""
+                WITH bucketed AS (
+                    SELECT to_timestamp(
+                               floor(extract(epoch FROM p.predicted_at) / :bucket) * :bucket
+                           ) AS bucket_at,
+                           avg(p.continuous_value) AS average_probability,
+                           count(*) AS sample_count
+                    FROM craving_predictions p
+                    JOIN model_versions m ON m.id=p.model_version_id
+                    WHERE p.patient_id=:patient
+                      AND p.predicted_at>=:since AND p.predicted_at<=:until
+                      AND p.quality_gate_passed AND p.continuous_value IS NOT NULL
+                      AND m.component='craving_model' AND m.is_active
+                      AND m.inference_task='binary_classification'
+                    GROUP BY bucket_at
+                )
+                SELECT bucket_at,average_probability,sample_count
+                FROM (
+                    SELECT * FROM bucketed ORDER BY bucket_at DESC LIMIT :max_points
+                ) AS recent
+                ORDER BY bucket_at
+            """), {
+                "patient": patient_id,
+                "since": since,
+                "until": until,
+                "bucket": int(bucket_seconds),
+                "max_points": int(max_points),
+            })).mappings().all()
+        return [dict(row) for row in rows]
 
     async def prediction_sensor(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any] | None:
         async with self.engine.connect() as conn:

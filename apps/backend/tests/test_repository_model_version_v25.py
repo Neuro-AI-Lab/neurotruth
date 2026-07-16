@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from uuid import UUID
 
 from app.v25.repository import SqlAlchemyV25Repository
@@ -79,12 +80,13 @@ def test_craving_model_json_uses_named_parameters_not_numeric_bind_tokens() -> N
             call for call in engine.connection.calls if "INSERT INTO model_versions" in str(call[0])
         )
         assert set(statement._bindparams) == {
-            "name", "version", "output_schema", "config", "artifact"
+            "name", "version", "inference_task", "output_schema", "config", "artifact"
         }
         assert all(not key.isdigit() for key in statement._bindparams)
-        assert json.loads(parameters["output_schema"])["classes"][2] == {
-            "index": 2, "code": "high"
-        }
+        assert json.loads(parameters["output_schema"])["classes"] == [
+            {"index": 0, "code": "low"}, {"index": 1, "code": "high"}
+        ]
+        assert parameters["inference_task"] == "binary_classification"
         assert json.loads(parameters["config"]) == {"window_sec": 10}
 
     asyncio.run(scenario())
@@ -100,6 +102,13 @@ def test_optional_inference_filters_and_terminal_statuses_have_explicit_sql_type
         session_id = UUID("00000000-0000-0000-0000-000000000125")
 
         await repository.inference_evidence(patient_id, session_id)
+        await repository.craving_probability_rows(
+            patient_id,
+            datetime(2026, 7, 15, tzinfo=timezone.utc),
+            datetime(2026, 7, 16, tzinfo=timezone.utc),
+            60,
+            1440,
+        )
         await repository.finish_session(
             session_id, status="completed", reason="normal"
         )
@@ -118,5 +127,8 @@ def test_optional_inference_filters_and_terminal_statuses_have_explicit_sql_type
         assert "CAST(:since AS timestamptz) IS NULL" in sql
         assert "CAST(:status AS varchar)='abandoned'" in sql
         assert "CAST(:status AS varchar)='ready'" in sql
+        assert "p.predicted_at<=:until" in sql
+        assert "ORDER BY bucket_at DESC LIMIT :max_points" in sql
+        assert "ORDER BY bucket_at" in sql
 
     asyncio.run(scenario())
