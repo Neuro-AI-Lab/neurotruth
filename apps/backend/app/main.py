@@ -281,6 +281,36 @@ class HandoffRequest(BaseModel):
     predictionSummary: dict[str, Any] | None = None
 
 
+class RuntimePredictorAdapter:
+    """Expose the asynchronously loaded craving model to authenticated routes."""
+
+    def __init__(self, service: RealtimePredictionService) -> None:
+        self.service = service
+
+    @property
+    def ready(self) -> bool:
+        # Model loading happens on the inference worker. Readiness must be
+        # observed dynamically instead of being frozen during app startup.
+        return bool(self.service.model.ready)
+
+    @property
+    def model_name(self) -> str:
+        return self.service.model.model_name or "RandomForest"
+
+    @property
+    def model_version(self) -> str:
+        return os.getenv(
+            "CRAVING_MODEL_VERSION", self.service.model.model_path.name
+        )
+
+    @property
+    def artifact_uri(self) -> str:
+        return str(self.service.model.model_path)
+
+    async def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await asyncio.to_thread(self.service.model.predict, payload)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load the model at startup and stop the inference worker on shutdown."""
@@ -291,14 +321,7 @@ async def lifespan(app: FastAPI):
     prediction_service.memory.database_url = None
     await prediction_service.start()
     if runtime.ready:
-        class RuntimePredictor:
-            ready = prediction_service.model.ready
-            model_name = prediction_service.model.model_name or "RandomForest"
-            model_version = os.getenv("CRAVING_MODEL_VERSION", prediction_service.model.model_path.name)
-            artifact_uri = str(prediction_service.model.model_path)
-
-            async def predict(self, payload: dict[str, Any]) -> dict[str, Any]:
-                return await asyncio.to_thread(prediction_service.model.predict, payload)
+        runtime_predictor = RuntimePredictorAdapter(prediction_service)
 
         def decide_alert(patient_id, event):
             return prediction_service.alerts.for_session(f"patient:{patient_id}").evaluate(
@@ -308,7 +331,7 @@ async def lifespan(app: FastAPI):
         app.state.v25_sensor_service = SensorService(
             runtime.repository,
             EncryptedSensorStorage(runtime.settings.sensor_storage_root, runtime.settings.keyring()),
-            RuntimePredictor(),
+            runtime_predictor,
             decide_alert,
         )
         from app.v25.rppg_dgx import DgxClient
@@ -325,7 +348,7 @@ async def lifespan(app: FastAPI):
                 read_timeout=runtime.settings.rppg_read_timeout_seconds,
             ),
             inspector=FfprobeMediaInspector(runtime.settings.rppg_ffprobe_path),
-            predictor=RuntimePredictor(), alert_decider=decide_alert,
+            predictor=runtime_predictor, alert_decider=decide_alert,
             enabled=runtime.settings.rppg_enabled,
             max_concurrency=runtime.settings.rppg_max_concurrency,
             read_timeout_seconds=runtime.settings.rppg_read_timeout_seconds,
