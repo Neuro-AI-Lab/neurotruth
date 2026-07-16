@@ -141,6 +141,7 @@ def test_open_is_slot_free_and_starts_safety_with_encrypted_ledger() -> None:
         assert created["inactivityTimeoutSeconds"] == 3600
         assert "slots" not in created and "missingSlots" not in created and "handoffReady" not in created
         assert repo.sessions[session_id]["dialogue_state_encrypted"] and repo.messages[0]["role"] == "assistant"
+        assert svc._dialogue_state(repo.patient_id, repo.sessions[session_id])["askedTopicIds"] == ["safety"]
         assert repo.inferences[0]["state_class"] == "unknown"
         await svc.shutdown()
     asyncio.run(scenario())
@@ -304,6 +305,15 @@ def test_agent_output_validation_blocks_repeats_multiple_questions_and_treatment
     assert validate_agent_output({"assistantText": "안전한가요 그리고 술이 있나요", "questionTopicId": "safety"}, state) is None
     assert validate_agent_output({"assistantText": "지금 느낌을 살펴볼까요?", "questionTopicId": "emotion_body", "interventionType": "other"}, state) is None
     assert validate_agent_output({"assistantText": "지금 느낌을 살펴볼까요?", "questionTopicId": "emotion_body", "interventionType": None}, state)
+
+
+def test_agent_output_rejects_safety_question_after_safety_is_clear() -> None:
+    state = {"askedTopicIds": [], "declinedTopicIds": [], "safety": {"status": "clear"}}
+    assert validate_agent_output({
+        "assistantText": "지금 바로 다치거나 위험해질 상황은 없나요?",
+        "questionTopicId": "safety",
+        "interventionType": None,
+    }, state) is None
 
 
 @pytest.mark.parametrize(("text", "topic"), [

@@ -418,7 +418,11 @@ class SessionService:
     def _dialogue_state(self, patient_id: UUID, row: dict[str, Any]) -> dict[str, Any]:
         packed = row.get("dialogue_state_encrypted")
         if not packed: return initial_dialogue_state()
-        return self._decrypt_json("sessions", "dialogue_state_encrypted", patient_id, row["id"], packed)
+        state = self._decrypt_json("sessions", "dialogue_state_encrypted", patient_id, row["id"], packed)
+        asked_topics = state.setdefault("askedTopicIds", [])
+        if (state.get("safety") or {}).get("status") != "awaiting_response" and "safety" not in asked_topics:
+            asked_topics.append("safety")
+        return state
 
     async def _history(self, patient_id: UUID, session_id: UUID) -> list[dict[str, str]]:
         return [{"role": row["role"], "content": self.keyring.decrypt(row["content_encrypted"], aad=aad_for(

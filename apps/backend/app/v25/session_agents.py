@@ -67,7 +67,7 @@ def initial_dialogue_state() -> dict[str, Any]:
     return {
         "version": 1,
         "questionBankVersion": QUESTION_BANK_VERSION,
-        "askedTopicIds": [],
+        "askedTopicIds": ["safety"],
         "declinedTopicIds": [],
         "safety": {
             "status": "awaiting_response",
@@ -90,6 +90,8 @@ def validate_agent_output(payload: Any, state: dict[str, Any]) -> dict[str, Any]
         if topic not in QUESTION_TOPICS or questions != 1:
             return None
         if topic in set(state.get("askedTopicIds") or ()) | set(state.get("declinedTopicIds") or ()):
+            return None
+        if topic == "safety" and (state.get("safety") or {}).get("status") == "clear":
             return None
     elif questions:
         return None
@@ -129,7 +131,8 @@ class BedrockSessionAgent:
         system = (
             "You are the NeuroTruth research-use supportive dialogue agent. Return one JSON object only. "
             "Be nonjudgmental. Never diagnose, prescribe, promise contact, claim certainty, immediate craving reduction, "
-            "treatment success, or causal treatment effect. Respect asked/refused topic IDs."
+            "treatment success, or causal treatment effect. Respect asked/refused topic IDs. "
+            "Never ask about safety again when dialogueState.safety.status is clear."
         )
         draft = parse_json_object(await self.adapter.complete(
             system=system, messages=messages, max_tokens=700, temperature=0.3,
