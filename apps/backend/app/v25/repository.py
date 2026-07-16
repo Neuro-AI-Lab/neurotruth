@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -396,12 +397,23 @@ class SqlAlchemyV25Repository(V25Repository):
                 INSERT INTO model_versions
                   (component,model_name,model_version,inference_task,output_schema,config,artifact_uri,is_active)
                 VALUES ('craving_model',:name,:version,'multiclass_classification',
-                  '{"classes":[{"index":0,"code":"low"},{"index":1,"code":"mid"},{"index":2,"code":"high"}]}'::jsonb,
-                  '{"window_sec":10}'::jsonb,:artifact,true)
+                  CAST(:output_schema AS jsonb),CAST(:config AS jsonb),:artifact,true)
                 ON CONFLICT (component,model_name,model_version) DO UPDATE SET
                   artifact_uri=EXCLUDED.artifact_uri,is_active=true
                 RETURNING id
-            """), {"name": model_name, "version": model_version, "artifact": artifact_uri})).scalar_one()
+            """), {
+                "name": model_name,
+                "version": model_version,
+                "artifact": artifact_uri,
+                "output_schema": json.dumps({
+                    "classes": [
+                        {"index": 0, "code": "low"},
+                        {"index": 1, "code": "mid"},
+                        {"index": 2, "code": "high"},
+                    ]
+                }, separators=(",", ":")),
+                "config": json.dumps({"window_sec": 10}, separators=(",", ":")),
+            })).scalar_one()
 
     async def persist_sensor_recording(self, **values: Any) -> SensorResultRecord:
         import json
@@ -726,9 +738,9 @@ class SqlAlchemyV25Repository(V25Repository):
     async def finish_session(self, session_id: UUID, *, status: str, reason: str) -> None:
         async with self.engine.begin() as conn:
             await conn.execute(text("""
-                UPDATE sessions SET status=:status,completion_reason=:reason,ended_at=now(),
-                  started_at=CASE WHEN :status='abandoned' THEN started_at ELSE COALESCE(started_at,now()) END,
-                  interaction_phase=CASE WHEN interaction_phase IS NULL THEN NULL ELSE :phase END
+                UPDATE sessions SET status=CAST(:status AS varchar),completion_reason=CAST(:reason AS varchar),ended_at=now(),
+                  started_at=CASE WHEN CAST(:status AS varchar)='abandoned' THEN started_at ELSE COALESCE(started_at,now()) END,
+                  interaction_phase=CASE WHEN interaction_phase IS NULL THEN NULL ELSE CAST(:phase AS varchar) END
                 WHERE id=:id AND status IN ('created','in_progress','completed')
             """), {"id": session_id, "status": status, "reason": reason,
                     "phase": "completed" if status == "completed" else "abandoned"})
@@ -839,8 +851,8 @@ class SqlAlchemyV25Repository(V25Repository):
     async def finish_report_job(self, **values: Any) -> None:
         async with self.engine.begin() as conn:
             await conn.execute(text("""
-                UPDATE session_reports SET status=:status,content_encrypted=:content,
-                  encryption_key_version=:key,failure_reason=:failure,generated_at=CASE WHEN :status='ready' THEN now() ELSE NULL END
+                UPDATE session_reports SET status=CAST(:status AS varchar),content_encrypted=:content,
+                  encryption_key_version=:key,failure_reason=:failure,generated_at=CASE WHEN CAST(:status AS varchar)='ready' THEN now() ELSE NULL END
                 WHERE id=:id
             """), values)
 
@@ -886,34 +898,34 @@ class SqlAlchemyV25Repository(V25Repository):
                 LEFT JOIN craving_alerts a ON a.trigger_prediction_id=p.id
                 LEFT JOIN sessions s ON s.trigger_alert_id=a.id
                 WHERE p.patient_id=:patient AND p.quality_gate_passed
-                  AND (:session IS NULL OR s.id=:session OR s.id IS NULL)
-                  AND (:since IS NULL OR p.predicted_at>=:since)
-                ORDER BY (s.id=:session) DESC NULLS LAST,p.predicted_at DESC,p.id DESC LIMIT 1
+                  AND (CAST(:session AS uuid) IS NULL OR s.id=CAST(:session AS uuid) OR s.id IS NULL)
+                  AND (CAST(:since AS timestamptz) IS NULL OR p.predicted_at>=CAST(:since AS timestamptz))
+                ORDER BY (s.id=CAST(:session AS uuid)) DESC NULLS LAST,p.predicted_at DESC,p.id DESC LIMIT 1
             """), params)).mappings().one_or_none()
             assessments = (await conn.execute(text("""
                 SELECT a.id,a.raw_score,a.scale_min,a.scale_max,a.completed_at
                 FROM craving_assessments a JOIN sessions s ON s.id=a.session_id
-                WHERE s.patient_id=:patient AND (:session IS NULL OR s.id=:session)
-                  AND (:since IS NULL OR a.completed_at>=:since)
+                WHERE s.patient_id=:patient AND (CAST(:session AS uuid) IS NULL OR s.id=CAST(:session AS uuid))
+                  AND (CAST(:since AS timestamptz) IS NULL OR a.completed_at>=CAST(:since AS timestamptz))
                 ORDER BY a.completed_at,a.id
             """), params)).mappings().all()
             alerts = (await conn.execute(text("""
                 SELECT id,status,triggered_at,notified_at,acknowledged_at,dismissed_at
                 FROM craving_alerts WHERE patient_id=:patient
-                  AND (:since IS NULL OR triggered_at>=:since)
+                  AND (CAST(:since AS timestamptz) IS NULL OR triggered_at>=CAST(:since AS timestamptz))
                 ORDER BY triggered_at,id
             """), params)).mappings().all()
             interventions = (await conn.execute(text("""
                 SELECT i.id,i.intervention_type,i.status,i.presentation_order,i.created_at
                 FROM interventions i JOIN sessions s ON s.id=i.session_id
-                WHERE s.patient_id=:patient AND (:session IS NULL OR s.id=:session)
-                  AND (:since IS NULL OR i.created_at>=:since)
+                WHERE s.patient_id=:patient AND (CAST(:session AS uuid) IS NULL OR s.id=CAST(:session AS uuid))
+                  AND (CAST(:since AS timestamptz) IS NULL OR i.created_at>=CAST(:since AS timestamptz))
                 ORDER BY i.created_at,i.id
             """), params)).mappings().all()
             messages = (await conn.execute(text("""
                 SELECT m.id,m.role,m.created_at FROM messages m JOIN sessions s ON s.id=m.session_id
-                WHERE s.patient_id=:patient AND (:session IS NULL OR s.id=:session)
-                  AND (:since IS NULL OR m.created_at>=:since)
+                WHERE s.patient_id=:patient AND (CAST(:session AS uuid) IS NULL OR s.id=CAST(:session AS uuid))
+                  AND (CAST(:since AS timestamptz) IS NULL OR m.created_at>=CAST(:since AS timestamptz))
                 ORDER BY m.created_at,m.id
             """), params)).mappings().all()
         return {
@@ -952,7 +964,7 @@ class SqlAlchemyV25Repository(V25Repository):
         async with self.engine.connect() as conn:
             rows = (await conn.execute(text("""
                 SELECT * FROM state_inferences WHERE patient_id=:patient
-                  AND (:session IS NULL OR session_id=:session)
+                  AND (CAST(:session AS uuid) IS NULL OR session_id=CAST(:session AS uuid))
                 ORDER BY created_at,id
             """), {"patient": patient_id, "session": session_id})).mappings().all()
         return [dict(row) for row in rows]
