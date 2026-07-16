@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.security.crypto import AesGcmKeyring, aad_for
 
@@ -22,6 +23,7 @@ PROBABILITY_RANGES = {
 
 
 class DashboardRangeError(ValueError): pass
+class DashboardTimezoneError(ValueError): pass
 class PpgPreviewNotFound(ValueError): pass
 class DashboardUnavailable(RuntimeError): pass
 
@@ -125,6 +127,128 @@ class DashboardService:
             "points": points,
         }
 
+    async def craving_dashboard(
+        self,
+        patient_id: UUID,
+        timezone_name: str,
+        event_range: str,
+        auq_range: str,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        if event_range not in {"7d", "30d"} or auq_range not in {"today", "7d", "30d"}:
+            raise DashboardRangeError("Unsupported craving dashboard range")
+        try:
+            local_zone = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise DashboardTimezoneError("Invalid IANA timezone") from exc
+
+        generated_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        local_today = generated_at.astimezone(local_zone).date()
+        day_start_local = datetime.combine(local_today, time.min, tzinfo=local_zone)
+        day_end_local = datetime.combine(local_today + timedelta(days=1), time.min, tzinfo=local_zone)
+        event_days = 7 if event_range == "7d" else 30
+        event_start_date = local_today - timedelta(days=event_days - 1)
+        event_start_local = datetime.combine(event_start_date, time.min, tzinfo=local_zone)
+        if auq_range == "today":
+            auq_start_date = local_today
+            auq_bucket_unit = "hour"
+        else:
+            auq_days = 7 if auq_range == "7d" else 30
+            auq_start_date = local_today - timedelta(days=auq_days - 1)
+            auq_bucket_unit = "day"
+        auq_start_local = datetime.combine(auq_start_date, time.min, tzinfo=local_zone)
+
+        rows = await self.repository.craving_dashboard_rows(
+            patient_id,
+            timezone_name,
+            day_start_local.astimezone(timezone.utc),
+            day_end_local.astimezone(timezone.utc),
+            event_start_local.astimezone(timezone.utc),
+            auq_start_local.astimezone(timezone.utc),
+            auq_bucket_unit,
+        )
+        hourly_by_hour = {int(row["local_hour"]): row for row in rows["hourly"]}
+        hourly_buckets = []
+        for hour in range(24):
+            row = hourly_by_hour.get(hour)
+            hourly_buckets.append({
+                "localStart": datetime.combine(
+                    local_today, time(hour=hour), tzinfo=local_zone,
+                ).isoformat(),
+                "averageProbability": self._probability(row, "average_probability"),
+                "minimumProbability": self._probability(row, "minimum_probability"),
+                "maximumProbability": self._probability(row, "maximum_probability"),
+                "sampleCount": int(row["sample_count"]) if row else 0,
+            })
+
+        prediction_days = {
+            self._as_date(row["local_date"]): int(row["prediction_count"])
+            for row in rows["prediction_days"]
+        }
+        alert_days = {
+            self._as_date(row["local_date"]): row for row in rows["alert_days"]
+        }
+        event_buckets = []
+        for offset in range(event_days):
+            local_date = event_start_date + timedelta(days=offset)
+            row = alert_days.get(local_date)
+            recommend = int(row["recommend_count"]) if row else 0
+            required = int(row["required_count"]) if row else 0
+            event_buckets.append({
+                "localDate": local_date.isoformat(),
+                "hasPredictionData": prediction_days.get(local_date, 0) > 0,
+                "recommendCount": recommend,
+                "requiredCount": required,
+                "totalCount": recommend + required,
+            })
+
+        auq_rows = {row["bucket_key"]: row for row in rows["auq"]}
+        auq_buckets = []
+        if auq_bucket_unit == "hour":
+            keyed = {int(key): value for key, value in auq_rows.items()}
+            for hour in range(24):
+                row = keyed.get(hour)
+                auq_buckets.append({
+                    "localStart": datetime.combine(
+                        local_today, time(hour=hour), tzinfo=local_zone,
+                    ).isoformat(),
+                    "averageNormalizedScore": self._probability(
+                        row, "average_normalized_score",
+                    ),
+                    "sampleCount": int(row["sample_count"]) if row else 0,
+                })
+        else:
+            keyed = {self._as_date(key): value for key, value in auq_rows.items()}
+            auq_days = 7 if auq_range == "7d" else 30
+            for offset in range(auq_days):
+                local_date = auq_start_date + timedelta(days=offset)
+                row = keyed.get(local_date)
+                auq_buckets.append({
+                    "localDate": local_date.isoformat(),
+                    "averageNormalizedScore": self._probability(
+                        row, "average_normalized_score",
+                    ),
+                    "sampleCount": int(row["sample_count"]) if row else 0,
+                })
+
+        current = rows.get("current")
+        return {
+            "timezone": timezone_name,
+            "generatedAt": generated_at.isoformat(),
+            "currentCraving": {
+                "probability": self._probability(current, "probability"),
+                "at": current["predicted_at"].isoformat() if current else None,
+            },
+            "hourlyCraving": {"buckets": hourly_buckets},
+            "dailyEvents": {"range": event_range, "buckets": event_buckets},
+            "auq": {
+                "range": auq_range,
+                "bucketUnit": auq_bucket_unit,
+                "buckets": auq_buckets,
+            },
+        }
+
     async def ppg_preview(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any]:
         row = await self.repository.prediction_sensor(patient_id, prediction_id)
         if row is None:
@@ -192,3 +316,18 @@ class DashboardService:
                 output.append((at, value))
         output.sort(key=lambda item: item[0])
         return output
+
+    @staticmethod
+    def _probability(row: dict[str, Any] | None, key: str) -> float | None:
+        if not row or row.get(key) is None:
+            return None
+        value = float(row[key])
+        if not math.isfinite(value):
+            return None
+        return round(min(1.0, max(0.0, value)), 6)
+
+    @staticmethod
+    def _as_date(value: Any) -> date:
+        if isinstance(value, date):
+            return value
+        return date.fromisoformat(str(value))

@@ -157,33 +157,63 @@ class PhoneMonitoringService : Service() {
 
                 PhoneMonitoringState.rememberUpload(payload)
                 PhoneMonitoringState.uploadStatus.value = "백그라운드 전송 중: ${payload.samples.size} samples"
+                val attemptStartedAtMs = System.currentTimeMillis()
                 val result = runCatching {
                     withContext(Dispatchers.IO) {
                         serverUploader.postWindowAuthenticated(apiClient, url, payload)
                     }
                 }.getOrElse { e ->
-                    if (e is AuthenticationRequiredException || (e is ApiHttpException && e.statusCode == 401)) {
-                        handleAuthenticationFailure()
-                    }
-                    UploadResult(false, -1, e.message ?: "unknown error")
+                    val authenticationFailure =
+                        e is AuthenticationRequiredException ||
+                            (e is ApiHttpException && e.statusCode == 401)
+                    UploadResult(
+                        false,
+                        if (authenticationFailure) 401 else -1,
+                        e.message ?: "unknown error"
+                    )
                 }
-                PhoneMonitoringState.recordUploadLatency(payload)
+                PhoneMonitoringState.recordUploadLatency(
+                    sessionId = payload.sessionId,
+                    attemptStartedAtMs = attemptStartedAtMs
+                )
 
                 if (result.success) {
                     windowIdStore.markCompleted(uploadKey(payload))
                     pendingUpload = null
                 } else {
-                    pendingUpload = payload
-                    if (result.statusCode == 401 || !MobileAuthRuntime.state.value.authenticated) {
-                        handleAuthenticationFailure()
-                        break
+                    when (UploadFailurePolicy.resolve(result.statusCode)) {
+                        UploadFailureAction.AUTHENTICATION_REQUIRED -> {
+                            handleAuthenticationFailure()
+                            break
+                        }
+                        UploadFailureAction.DROP_AND_CONTINUE -> {
+                            windowIdStore.markCompleted(uploadKey(payload))
+                            pendingUpload = null
+                        }
+                        UploadFailureAction.PAUSE_AND_DROP -> {
+                            windowIdStore.markCompleted(uploadKey(payload))
+                            pendingUpload = null
+                            PhoneMonitoringState.isUploadEnabled.value = false
+                        }
+                        UploadFailureAction.RETRY_SAME_PAYLOAD -> {
+                            pendingUpload = payload
+                        }
                     }
                 }
 
                 PhoneMonitoringState.uploadStatus.value = if (result.success) {
                     "백그라운드 전송 완료: #${payload.sequence}, ${payload.samples.size} samples"
                 } else {
-                    "백그라운드 전송 실패: ${result.statusCode} ${result.message}"
+                    when (UploadFailurePolicy.resolve(result.statusCode)) {
+                        UploadFailureAction.DROP_AND_CONTINUE ->
+                            "전송 충돌 window 폐기: 다음 새 window로 계속합니다"
+                        UploadFailureAction.PAUSE_AND_DROP ->
+                            "전송 중지: 동의 또는 요청 설정을 확인해 주세요 (${result.statusCode})"
+                        UploadFailureAction.AUTHENTICATION_REQUIRED ->
+                            "전송 중지: 다시 로그인해 주세요"
+                        UploadFailureAction.RETRY_SAME_PAYLOAD ->
+                            "일시적 전송 실패: 동일 window 재시도 예정 (${result.statusCode})"
+                    }
                 }
             }
         }

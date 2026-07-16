@@ -1,6 +1,6 @@
 # Phone App
 
-최종 업데이트: 2026-07-15
+최종 업데이트: 2026-07-16
 
 Phone 앱은 인증된 환자 client이자 Watch의 유일한 backend relay입니다. Watch가 보낸 센서 batch를 표시·업로드하고, 인증된 prediction SSE와 세션 대화를 사용자에게 제공합니다.
 
@@ -11,7 +11,7 @@ Phone 앱은 인증된 환자 client이자 Watch의 유일한 backend relay입�
 3. `401`이면 refresh token을 한 번 회전하고 원래 요청을 한 번 재시도합니다. 실패하면 로컬 세션을 지우고 로그인 화면으로 이동합니다.
 4. 생체신호 동의가 있을 때만 Watch sensor window를 전송하고 prediction SSE를 유지합니다.
 5. 갈망 상승 가능성 알림에서 `지금 대화하기` 또는 `나중에`를 선택합니다. 대화를 승인하면 AUQ를 작성하거나 건너뛸 수 있습니다.
-6. AI 분석 동의가 있을 때 backend UUID session을 생성/재개하고 안전 확인 뒤 자유 중재 대화를 진행합니다.
+6. AI 분석 동의가 있을 때 backend UUID session을 생성/재개하고 중립 안내 뒤 `free_dialogue` 자유 대화를 진행합니다.
 7. 수동 종료 또는 비활동 timeout 뒤 상태 추론과 보고서 생성 상태를 조회합니다.
 8. 로그아웃하면 monitoring/SSE를 중지하고 phone token을 제거합니다. Watch에는 backend credential이 없습니다.
 
@@ -40,23 +40,29 @@ Phone 앱은 인증된 환자 client이자 Watch의 유일한 backend relay입�
 
 ## 대화 UI
 
-Backend가 발급한 UUID session만 사용합니다. 신규 응답은 `assistantText`, `phase`, `safety`, `activeInterventions`, `stateSnapshot`, `reportStatus`, `inactivityTimeoutSeconds`를 표시합니다. 신규 session에는 slot 진행률이나 `handoffReady`가 없습니다. 기존 13-slot session은 `legacy=true` 읽기 전용 이력으로만 조회됩니다.
+Backend가 발급한 UUID session만 사용합니다. 신규 응답은 `userMessageId`, `assistantMessageId`, `assistantText`, `phase=free_dialogue`, `reportStatus`, `inactivityTimeoutSeconds`를 표시합니다. 신규 session에는 slot 진행률이나 `handoffReady`가 없습니다. 기존 13-slot session은 `legacy=true` 읽기 전용 이력으로만 조회됩니다.
 
-첫 단계는 안전 확인이며, 규칙 엔진이 첫 일반 중재 유형을 선택합니다. 이후 대화는 필수 질문 순서나 완료율 없이 진행합니다. 한 턴에는 필요할 때 짧은 질문 하나만 사용하고 답변했거나 거부한 내용을 반복 질문하지 않습니다.
+신규 session은 “지금 상황이나 원하는 도움을 편하게 말씀해 주세요”라는 중립 안내로 시작합니다. 규칙 기반 첫 중재나 필수 질문 순서 없이 자유 대화를 진행하며, 한 응답에는 질문을 최대 하나만 사용하고 이전 질문이나 사용자가 거부한 질문을 반복하지 않습니다.
+
+Phone은 새 사용자 메시지마다 UUID `clientMessageId`를 생성합니다. Agent 호출이 구조화된 HTTP `502`로 실패하면 사용자 말풍선을 그대로 유지하고 `다시 시도` 버튼을 표시합니다. 수동 재시도는 같은 `clientMessageId`와 같은 내용을 재사용해 사용자 메시지를 중복 저장하지 않으며 최초 요청 뒤 한 번만 허용됩니다. 재시도까지 실패하면 버튼을 숨깁니다.
 
 턴 수 제한은 없고 수동 종료 버튼과 server의 동적 비활동 timeout을 사용합니다. 수동 종료는 `completed`, timeout은 `abandoned`로 저장합니다. 종료 시 근거 기반 상태 추론과 비동기 보고서를 생성하되 현재 앱은 보고서 상태만 표시합니다.
 
-안전 위험 문맥에서는 별도 배너 대신 채팅 안에 119/자살예방 상담전화 109 안내와 “관리자에게 도움 요청 사실을 기록할지” 질문을 한 번 표시합니다. 수락/거절 후 대화는 계속되며 실시간 관리자 연결이나 즉각적 연락을 보장하지 않는다는 문구를 유지합니다.
+신규 자유 대화의 위험 문맥 판단과 119/자살예방 상담전화 109 안내는 LLM prompt에 의존합니다. 이는 연구·데모용 보조 기능이며 안정적인 응급 탐지, 실시간 관리자 연결 또는 즉각적 연락을 보장하지 않습니다.
 
 ## 화면 상태
 
 - 인증: 가입, 로그인, 임시 비밀번호 변경, 로그아웃
 - 동의: 필수/선택 항목과 현재 처리 가능 상태
 - Dashboard: Watch 연결, sensor/monitoring, prediction/alert
-- Session: 선택형 AUQ, 안전 확인, 자유 중재 chat, 수동 종료, 동적 timeout
-- Dashboard: 24h/7d/30d class·AUQ·event, 상태 요약, live/과거 PPG
+- Session: 선택형 AUQ, `free_dialogue`, 안정적인 `clientMessageId`, agent 실패 1회 수동 retry, 수동 종료, 동적 timeout
+- Patient Dashboard: 오늘 24개 시간별 갈망 가능성 막대, 7/30일 일별 `recommend|required` 이벤트 막대, 오늘 시간별·7/30일 일별 AUQ 평균 막대
+- Patient Dashboard: 회색 no-data와 prediction이 있는 유효한 이벤트 `0건`을 구분하고, 막대 선택 시 평균·최소·최대·표본/응답/이벤트 건수를 표시
+- Patient Dashboard: 상태 요약, 보고서 상태, live Watch PPG와 소유 prediction의 과거 PPG preview 유지
 - Report: `generating|ready|failed` 상태만 표시하고 본문은 미노출
 - 오류: `401` 재인증, `403` 동의 부족, `409` 충돌/active session, `502` agent 일시 실패, `503` readiness/model 실패를 구분해 표시
+
+막대 대시보드는 Phone 전용입니다. 기존 관리자 웹과 Wear OS 화면·동작은 변경하지 않습니다.
 
 ## 카메라 rPPG 확장
 

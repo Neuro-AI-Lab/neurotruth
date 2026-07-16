@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -31,7 +32,26 @@ class SessionNotFound(SessionError): code = "session_not_found"
 class SessionStateError(SessionError): code = "session_not_active"
 class LegacySessionReadOnly(SessionStateError): code = "legacy_session_read_only"
 class MessageInProgress(SessionStateError): code = "message_in_progress"
-class SessionAgentError(SessionError): code = "dialogue_provider_error"
+class ClientMessageConflict(SessionStateError): code = "client_message_conflict"
+
+
+class SessionAgentError(SessionError):
+    code = "dialogue_provider_error"
+
+    def __init__(
+        self,
+        *,
+        code: str,
+        client_message_id: UUID | None,
+        user_message_id: UUID,
+        attempts_remaining: int,
+    ) -> None:
+        super().__init__(code)
+        self.code = code
+        self.client_message_id = client_message_id
+        self.user_message_id = user_message_id
+        self.attempts_remaining = attempts_remaining
+        self.retryable = client_message_id is not None and attempts_remaining > 0
 
 
 _SELF_HARM = re.compile(r"(자살|자해|죽고\s*싶|목숨을\s*끊|suicid|self[- ]?harm)", re.I)
@@ -79,7 +99,7 @@ _INTERVENTION_TEXT = {
     "self_monitoring": "지금 갈망이 언제 강해지고 약해지는지 판단 없이 잠시 관찰해 보세요.",
 }
 
-_INITIAL_PROMPT = "지금 바로 다치거나 위험해질 상황은 없는지 먼저 확인할게요. 현재 안전한가요?"
+_INITIAL_PROMPT = "지금 상황이나 원하는 도움을 편하게 말씀해 주세요."
 _FALLBACK = "말씀해 주신 내용을 기록했어요. 지금 할 수 있는 안전하고 부담이 적은 방법부터 함께 살펴볼게요."
 
 
@@ -159,8 +179,10 @@ class SessionService:
         if row.get("interaction_phase") is None:
             return await self._public_session(patient.id, row)
         if row["id"] == session_id:
-            await self._message(patient.id, session_id, "assistant", _INITIAL_PROMPT, "rule_engine", None)
-            await self._create_inference(patient.id, session_id, "realtime", event_tag="session_started")
+            await self._message(
+                patient.id, session_id, "assistant", _INITIAL_PROMPT, "rule_engine", None,
+                generation_metadata={"dialogueStateVersion": 2},
+            )
         result = await self._public_session(patient.id, row)
         result["assistantText"] = _INITIAL_PROMPT if row["id"] == session_id else None
         return result
@@ -168,7 +190,166 @@ class SessionService:
     async def get(self, patient: UserRecord, session_id: UUID) -> dict[str, Any]:
         return await self._public_session(patient.id, await self._owned(patient.id, session_id))
 
-    async def message(self, patient: UserRecord, session_id: UUID, content: str) -> dict[str, Any]:
+    async def message(
+        self,
+        patient: UserRecord,
+        session_id: UUID,
+        content: str,
+        client_message_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        await self.auth_service.require_consent(patient.id, "ai_analysis")
+        row = await self._active_new(patient.id, session_id)
+        state = self._dialogue_state(patient.id, row)
+        if state.get("version") != 2:
+            return await self._structured_message(patient, session_id, content)
+
+        async with self.repository.message_turn(session_id) as acquired:
+            if not acquired:
+                raise MessageInProgress("Another message is being processed")
+            row = await self._active_new(patient.id, session_id)
+            state = self._dialogue_state(patient.id, row)
+            attempt = 1
+            existing = (
+                await self.repository.message_by_client_id(session_id, client_message_id)
+                if client_message_id is not None else None
+            )
+            if existing is not None:
+                if self._decrypt_message(patient.id, existing) != content:
+                    raise ClientMessageConflict("clientMessageId was already used with different content")
+                user_message_id = existing["id"]
+                assistant_row = await self.repository.assistant_reply_for_user(
+                    session_id, user_message_id,
+                )
+                if assistant_row is not None:
+                    return await self._free_dialogue_response(
+                        patient.id,
+                        session_id,
+                        user_message_id,
+                        assistant_row["id"],
+                        self._decrypt_message(patient.id, assistant_row),
+                    )
+                attempts = int((existing.get("generation_metadata") or {}).get("dialogueAttempts") or 1)
+                if attempts >= 2:
+                    raise SessionAgentError(
+                        code=str(
+                            (existing.get("generation_metadata") or {}).get("dialogueLastErrorCode")
+                            or "dialogue_provider_error"
+                        ),
+                        client_message_id=client_message_id,
+                        user_message_id=user_message_id,
+                        attempts_remaining=0,
+                    )
+                attempt = attempts + 1
+                await self.repository.update_message_generation_metadata(
+                    user_message_id,
+                    {
+                        **(existing.get("generation_metadata") or {}),
+                        "clientMessageId": str(client_message_id),
+                        "dialogueAttempts": attempt,
+                    },
+                )
+            else:
+                user_message_id = await self._message(
+                    patient.id,
+                    session_id,
+                    "user",
+                    content,
+                    None,
+                    None,
+                    generation_metadata={
+                        "clientMessageId": str(client_message_id) if client_message_id else None,
+                        "dialogueAttempts": 1,
+                    },
+                )
+
+            latest_question = state.get("latestQuestion")
+            if latest_question and _REFUSE_TOPIC.search(content):
+                refused = state.setdefault("refusedQuestions", [])
+                if latest_question not in refused:
+                    refused.append(latest_question)
+                    del refused[:-50]
+
+            failure_phase = "model_registration"
+            try:
+                model_id = await self._model("dialogue_agent", DIALOGUE_PROMPT_VERSION)
+                failure_phase = "provider_call"
+                draft = await self.agent.dialogue({
+                    "history": await self._history(patient.id, session_id, limit=20),
+                    "dialogueState": state,
+                    "questionLedger": {
+                        "askedQuestions": list(state.get("askedQuestions") or ())[-50:],
+                        "refusedQuestions": list(state.get("refusedQuestions") or ())[-50:],
+                        "latestQuestion": state.get("latestQuestion"),
+                    },
+                })
+                failure_phase = "output_validation"
+                accepted = validate_agent_output(draft, state)
+                if accepted is None:
+                    raise ValueError("dialogue_output_rejected")
+                question = accepted.get("questionText")
+                if question:
+                    asked = state.setdefault("askedQuestions", [])
+                    asked.append(question)
+                    del asked[:-50]
+                    state["latestQuestion"] = question
+                else:
+                    state["latestQuestion"] = None
+                await self._store_state(patient.id, session_id, "free_dialogue", state)
+                failure_phase = "assistant_persistence"
+                assistant_id = await self._message(
+                    patient.id,
+                    session_id,
+                    "assistant",
+                    accepted["assistantText"],
+                    "dialogue",
+                    model_id,
+                    generation_metadata={"replyToUserMessageId": str(user_message_id)},
+                )
+                return await self._free_dialogue_response(
+                    patient.id,
+                    session_id,
+                    user_message_id,
+                    assistant_id,
+                    accepted["assistantText"],
+                )
+            except Exception as exc:
+                code = "dialogue_output_rejected" if "rejected" in str(exc) else "dialogue_provider_error"
+                await self._store_state(patient.id, session_id, "free_dialogue", state)
+                if client_message_id is not None:
+                    user_row = await self.repository.message_by_client_id(
+                        session_id, client_message_id,
+                    )
+                    await self.repository.update_message_generation_metadata(
+                        user_message_id,
+                        {
+                            **((user_row or {}).get("generation_metadata") or {}),
+                            "clientMessageId": str(client_message_id),
+                            "dialogueAttempts": attempt,
+                            "dialogueLastErrorCode": code,
+                        },
+                    )
+                await self.repository.audit(
+                    actor_id=None,
+                    actor_role="agent",
+                    action="dialogue.failed",
+                    resource_type="session",
+                    resource_id=session_id,
+                    metadata={
+                        "code": code,
+                        "stage": failure_phase,
+                        "exceptionClass": type(exc).__name__,
+                        "userMessageId": str(user_message_id),
+                        "attempt": attempt,
+                    },
+                )
+                raise SessionAgentError(
+                    code=code,
+                    client_message_id=client_message_id,
+                    user_message_id=user_message_id,
+                    attempts_remaining=(2 - attempt) if client_message_id else 0,
+                ) from exc
+
+    async def _structured_message(self, patient: UserRecord, session_id: UUID, content: str) -> dict[str, Any]:
         await self.auth_service.require_consent(patient.id, "ai_analysis")
         async with self.repository.message_turn(session_id) as acquired:
             if not acquired: raise MessageInProgress("Another message is being processed")
@@ -255,12 +436,19 @@ class SessionService:
                 if not settings or not settings.interventions_enabled:
                     assistant = _FALLBACK
                 else:
+                    failure_phase = "model_registration"
                     try:
                         model_id = await self._model("dialogue_agent", DIALOGUE_PROMPT_VERSION)
+                        failure_phase = "evidence_preparation"
+                        latest_evidence = self._json_safe(
+                            await self.repository.inference_evidence(patient.id, session_id)
+                        )
+                        failure_phase = "provider_call"
                         draft = await self.agent.dialogue({
                             "history": history, "dialogueState": state, "activeInterventions": active,
-                            "latestEvidence": await self.repository.inference_evidence(patient.id, session_id),
+                            "latestEvidence": latest_evidence,
                         })
+                        failure_phase = "output_validation"
                         draft = validate_agent_output(draft, state)
                         if draft is None:
                             raise ValueError("dialogue_output_rejected")
@@ -269,12 +457,18 @@ class SessionService:
                         if topic and topic not in state["askedTopicIds"]: state["askedTopicIds"].append(topic)
                         kind = draft.get("interventionType")
                         if kind and kind in APPROVED_INTERVENTIONS:
+                            failure_phase = "intervention_persistence"
                             delivered = await self._persist_intervention(patient.id, session_id, kind, assistant,
                                                                          {"messageIds": [str(user_message_id)]}, model_id)
                     except Exception as exc:
                         code = "dialogue_output_rejected" if "rejected" in str(exc) else "dialogue_provider_error"
                         await self.repository.audit(actor_id=None, actor_role="agent", action="dialogue.failed",
-                                                    resource_type="session", resource_id=session_id, metadata={"code": code})
+                                                    resource_type="session", resource_id=session_id,
+                                                    metadata={
+                                                        "code": code,
+                                                        "phase": failure_phase,
+                                                        "errorType": type(exc).__name__,
+                                                    })
                         assistant = _FALLBACK
             phase = "safety_check" if state["safety"]["status"] in {"awaiting_response", "concern", "urgent"} else "intervention_dialogue"
             await self._store_state(patient.id, session_id, phase, state)
@@ -300,7 +494,6 @@ class SessionService:
             answers=self._encrypt_json("craving_assessments", "answers_encrypted", patient.id, assessment_id, body["answers"]),
             key=self.keyring.current_key_id, score=body["rawScore"], minimum=body["scaleMin"], maximum=body["scaleMax"],
         )
-        await self._create_inference(patient.id, session_id, "realtime")
         return {"assessmentId": str(assessment_id)}
 
     async def finish(self, patient: UserRecord, session_id: UUID) -> dict[str, Any]:
@@ -387,6 +580,13 @@ class SessionService:
             return result
         state = self._dialogue_state(patient_id, row)
         inferences = await self.repository.state_inferences(patient_id, row["id"])
+        if state.get("version") == 2:
+            result.update(
+                safety={"status": "llm_only", "riskCodes": [], "supportResources": []},
+                activeInterventions=[],
+                stateSnapshot=self._public_inference(patient_id, inferences[-1] if inferences else None),
+            )
+            return result
         result.update(
             safety={"status": state["safety"]["status"], "riskCodes": state["safety"]["riskCodes"], "supportResources": []},
             activeInterventions=await self._public_interventions(patient_id, row["id"]),
@@ -404,15 +604,37 @@ class SessionService:
     def _dialogue_state(self, patient_id: UUID, row: dict[str, Any]) -> dict[str, Any]:
         packed = row.get("dialogue_state_encrypted")
         if not packed: return initial_dialogue_state()
-        return self._decrypt_json("sessions", "dialogue_state_encrypted", patient_id, row["id"], packed)
+        state = self._decrypt_json("sessions", "dialogue_state_encrypted", patient_id, row["id"], packed)
+        if state.get("version") == 2:
+            state.setdefault("askedQuestions", [])
+            state.setdefault("refusedQuestions", [])
+            state.setdefault("latestQuestion", None)
+            return state
+        asked_topics = state.setdefault("askedTopicIds", [])
+        if (state.get("safety") or {}).get("status") != "awaiting_response" and "safety" not in asked_topics:
+            asked_topics.append("safety")
+        return state
 
-    async def _history(self, patient_id: UUID, session_id: UUID) -> list[dict[str, str]]:
-        return [{"role": row["role"], "content": self.keyring.decrypt(row["content_encrypted"], aad=aad_for(
-            table="messages", column="content_encrypted", patient_id=str(patient_id), record_id=str(row["id"]),
-        )).decode("utf-8")} for row in await self.repository.session_messages(session_id)]
+    async def _history(
+        self, patient_id: UUID, session_id: UUID, *, limit: int | None = None,
+    ) -> list[dict[str, str]]:
+        rows = await self.repository.session_messages(session_id)
+        if limit is not None:
+            rows = rows[-limit:]
+        return [
+            {"role": row["role"], "content": self._decrypt_message(patient_id, row)}
+            for row in rows
+        ]
+
+    def _decrypt_message(self, patient_id: UUID, row: dict[str, Any]) -> str:
+        return self.keyring.decrypt(row["content_encrypted"], aad=aad_for(
+            table="messages", column="content_encrypted",
+            patient_id=str(patient_id), record_id=str(row["id"]),
+        )).decode("utf-8")
 
     async def _message(self, patient_id: UUID, session_id: UUID, role: str, content: str,
-                       source_agent: str | None, model_id: UUID | None) -> UUID:
+                       source_agent: str | None, model_id: UUID | None,
+                       generation_metadata: dict[str, Any] | None = None) -> UUID:
         message_id = uuid4()
         packed = self.keyring.encrypt(content.encode("utf-8"), aad=aad_for(
             table="messages", column="content_encrypted", patient_id=str(patient_id), record_id=str(message_id),
@@ -420,7 +642,30 @@ class SessionService:
         return await self.repository.append_message(
             message_id=message_id, session_id=session_id, role=role, content_encrypted=packed,
             key_version=self.keyring.current_key_id, source_agent=source_agent, model_version_id=model_id,
+            generation_metadata=generation_metadata or {},
         )
+
+    async def _free_dialogue_response(
+        self,
+        patient_id: UUID,
+        session_id: UUID,
+        user_message_id: UUID,
+        assistant_message_id: UUID,
+        assistant_text: str,
+    ) -> dict[str, Any]:
+        inferences = await self.repository.state_inferences(patient_id, session_id)
+        settings = await self.repository.system_settings()
+        return {
+            "userMessageId": str(user_message_id),
+            "assistantMessageId": str(assistant_message_id),
+            "assistantText": assistant_text,
+            "phase": "free_dialogue",
+            "safety": {"status": "llm_only", "riskCodes": [], "supportResources": []},
+            "activeInterventions": [],
+            "stateSnapshot": self._public_inference(patient_id, inferences[-1] if inferences else None),
+            "reportStatus": await self._report_status(patient_id, session_id),
+            "inactivityTimeoutSeconds": settings.chat_timeout_seconds if settings else 3600,
+        }
 
     async def _persist_intervention(self, patient_id: UUID, session_id: UUID, kind: str, content: str,
                                     evidence: dict[str, Any], model_id: UUID | None) -> dict[str, Any]:
@@ -592,8 +837,10 @@ class SessionService:
     @staticmethod
     def _json_safe(value: Any) -> Any:
         if isinstance(value, dict): return {key: SessionService._json_safe(item) for key, item in value.items()}
-        if isinstance(value, list): return [SessionService._json_safe(item) for item in value]
-        if isinstance(value, (datetime, UUID)): return str(value)
+        if isinstance(value, (list, tuple)): return [SessionService._json_safe(item) for item in value]
+        if isinstance(value, UUID): return str(value)
+        if isinstance(value, (datetime, date)): return value.isoformat()
+        if isinstance(value, Decimal): return float(value)
         return value
 
     @staticmethod

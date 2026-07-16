@@ -18,6 +18,18 @@ def test_0003_is_additive_and_contains_required_constraints() -> None:
     assert "raise RuntimeError" in migration
 
 
+def test_0004_only_extends_phase_and_client_message_idempotency() -> None:
+    migration = (ROOT / "alembic/versions/20260716_0004_free_dialogue.py").read_text(encoding="utf-8")
+    assert 'revision = "20260716_0004"' in migration
+    assert 'down_revision = "20260715_0003"' in migration
+    assert "'free_dialogue'" in migration
+    assert "uq_messages_session_client_message_id" in migration
+    assert "generation_metadata->>'clientMessageId'" in migration
+    assert "WHERE role='user'" in migration
+    assert "UPDATE public.sessions" not in migration
+    assert "DELETE FROM" not in migration
+
+
 def test_new_session_implementation_does_not_write_legacy_slots_or_memory() -> None:
     service = (ROOT / "app/v25/session_service.py").read_text(encoding="utf-8")
     assert "upsert_session_slot" not in service

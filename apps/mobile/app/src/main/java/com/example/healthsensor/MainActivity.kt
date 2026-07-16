@@ -448,6 +448,7 @@ fun UserHomeScreen(
     val chatMessages by viewModel.chatMessages.collectAsState()
     val chatStatus by viewModel.chatStatus.collectAsState()
     val isChatSending by viewModel.isChatSending.collectAsState()
+    val pendingChatRetry by viewModel.pendingChatRetry.collectAsState()
     val conversationPhase by viewModel.conversationPhase.collectAsState()
     val sessionReportStatus by viewModel.sessionReportStatus.collectAsState()
     val inactivityTimeoutSeconds by viewModel.sessionInactivityTimeoutSeconds.collectAsState()
@@ -479,10 +480,12 @@ fun UserHomeScreen(
             messages = chatMessages,
             chatStatus = chatStatus,
             isChatSending = isChatSending,
+            pendingRetry = pendingChatRetry,
             phase = conversationPhase,
             reportStatus = sessionReportStatus,
             inactivityTimeoutSeconds = inactivityTimeoutSeconds,
             onSend = viewModel::sendChatMessage,
+            onRetry = viewModel::retryChatMessage,
             onFinish = viewModel::finishConversationManually,
             onClose = viewModel::closeChat
         )
@@ -888,10 +891,12 @@ private fun CravingChatScreen(
     messages: List<ChatMessage>,
     chatStatus: String,
     isChatSending: Boolean,
+    pendingRetry: PendingChatRetry?,
     phase: String,
     reportStatus: String,
     inactivityTimeoutSeconds: Int?,
     onSend: (String) -> Unit,
+    onRetry: () -> Unit,
     onFinish: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -913,8 +918,9 @@ private fun CravingChatScreen(
                 Text("대화", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = HealthText)
                 Text(
                     when (phase) {
-                        "safety_check" -> "안전 확인"
-                        "intervention_dialogue" -> "대화형 중재"
+                        "free_dialogue" -> "자유 대화"
+                        "safety_check" -> "이전 대화 · 안전 확인"
+                        "intervention_dialogue" -> "이전 대화 · 대화형 중재"
                         "closing" -> "마무리"
                         "completed" -> "종료됨"
                         else -> "대화 진행 중"
@@ -979,6 +985,16 @@ private fun CravingChatScreen(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(if (isChatSending) "대기" else "전송")
+            }
+        }
+
+        if (pendingRetry != null) {
+            OutlinedButton(
+                onClick = onRetry,
+                enabled = !isChatSending && pendingRetry.attemptsRemaining > 0,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("다시 시도")
             }
         }
 

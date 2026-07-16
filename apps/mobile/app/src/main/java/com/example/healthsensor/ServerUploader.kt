@@ -80,6 +80,24 @@ data class UploadResult(
     val message: String
 )
 
+enum class UploadFailureAction {
+    RETRY_SAME_PAYLOAD,
+    DROP_AND_CONTINUE,
+    PAUSE_AND_DROP,
+    AUTHENTICATION_REQUIRED
+}
+
+object UploadFailurePolicy {
+    fun resolve(statusCode: Int): UploadFailureAction =
+        when {
+            statusCode == 401 -> UploadFailureAction.AUTHENTICATION_REQUIRED
+            statusCode == 409 -> UploadFailureAction.DROP_AND_CONTINUE
+            statusCode == 408 || statusCode == 429 -> UploadFailureAction.RETRY_SAME_PAYLOAD
+            statusCode in 400..499 -> UploadFailureAction.PAUSE_AND_DROP
+            else -> UploadFailureAction.RETRY_SAME_PAYLOAD
+        }
+}
+
 data class AlertMetadata(
     val alertLevel: String = "none",
     val alertAction: String? = null,

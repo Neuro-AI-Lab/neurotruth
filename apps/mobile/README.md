@@ -13,7 +13,7 @@
   ← Bearer GET /api/predictions/stream
   → 갈망 상승 가능성 알림: 지금 대화하기 / 나중에
   → 선택형 AUQ: 작성하기 / 건너뛰고 대화하기
-  → 안전 확인 → 자유 중재 대화 → 수동 종료/비활동 timeout
+  → 중립 안내 → 자유 대화 → 수동 종료/비활동 timeout
   ← 상태 추론·리포트 상태·대시보드
 ```
 
@@ -24,11 +24,13 @@ NeuroTruth는 치료·진단·응급 대응 앱이 아니라 CBT 치료 중이�
 - 환자 직접 가입, 로그인, 필수/선택 동의, 비밀번호 변경
 - Android Keystore 기반 refresh token 보관과 회전
 - Watch 센서 수신, 인증된 sensor upload, prediction SSE
-- `지금 대화하기`/`나중에`, optional AUQ, slot 없는 자유 중재 대화
+- `지금 대화하기`/`나중에`, optional AUQ, `free_dialogue` 기반 slot 없는 자유 대화
+- 각 사용자 메시지에 안정적인 UUID `clientMessageId`를 사용하며 agent `502` 실패 시 같은 ID와 내용으로 한 번만 수동 재시도
 - 서버의 `inactivityTimeoutSeconds`를 사용한 동적 timeout 안내
 - 앱 재시작 후 active session 복구와 수동 종료
 - 2-class(`낮음/높음`) prediction과 class-1 softmax 기반 `갈망 가능성(모델)` 대시보드
-- 실시간 10분(1초), 24시간(1분), 7일(10분), 30일(30분) 확률 그래프
+- 기기 현지시간 기준 오늘 24개 시간별 갈망 가능성, 7/30일 일별 갈망 이벤트, 오늘/7/30일 AUQ 평균 막대 그래프
+- 데이터 없음은 회색 막대로, prediction이 있으나 이벤트가 없는 날은 유효한 `0건`으로 구분
 - 실시간 Watch PPG와 소유 prediction의 최대 512점 PPG preview
 - 리포트 `생성 중|준비됨|실패` 상태만 표시하고 본문은 표시하지 않음
 
@@ -42,6 +44,8 @@ NeuroTruth는 치료·진단·응급 대응 앱이 아니라 CBT 치료 중이�
 - backend credential과 DGX 주소 미보관
 
 Watch는 class `2`를 호환되지 않는 legacy prediction으로 거부합니다. Class 값 자체로 알림을 만들지 않고 서버 `alertAction`을 우선하며, action이 없을 때만 `alertLevel`을 사용합니다. 확률 그래프는 Phone에만 있으며 Watch에는 추가하지 않습니다. 기존 sensor 수집과 Watch relay는 유지하지만 카메라 rPPG prediction은 Watch에 보내지 않습니다.
+
+신규 막대 대시보드도 Phone 전용입니다. 관리자 웹과 Wear OS 화면에는 추가하지 않습니다.
 
 ## 선택적 카메라 rPPG
 

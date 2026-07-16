@@ -109,6 +109,15 @@ def test_optional_inference_filters_and_terminal_statuses_have_explicit_sql_type
             60,
             1440,
         )
+        await repository.craving_dashboard_rows(
+            patient_id,
+            "Asia/Seoul",
+            datetime(2026, 7, 15, 15, tzinfo=timezone.utc),
+            datetime(2026, 7, 16, 15, tzinfo=timezone.utc),
+            datetime(2026, 7, 9, 15, tzinfo=timezone.utc),
+            datetime(2026, 7, 15, 15, tzinfo=timezone.utc),
+            "hour",
+        )
         await repository.finish_session(
             session_id, status="completed", reason="normal"
         )
@@ -130,5 +139,10 @@ def test_optional_inference_filters_and_terminal_statuses_have_explicit_sql_type
         assert "p.predicted_at<=:until" in sql
         assert "ORDER BY bucket_at DESC LIMIT :max_points" in sql
         assert "ORDER BY bucket_at" in sql
+        assert "timezone(:timezone,p.predicted_at)" in sql
+        assert "m.inference_task='binary_classification'" in sql
+        assert "m.is_active" in sql
+        assert "a.instrument_code='AUQ'" in sql
+        assert "a.trigger_reason->>'alertLevel'" in sql
 
     asyncio.run(scenario())

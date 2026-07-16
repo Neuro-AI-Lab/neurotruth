@@ -2,7 +2,9 @@ package com.example.healthsensor
 
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.URLEncoder
 import java.net.URL
+import java.nio.charset.StandardCharsets
 
 data class ApiRequest(
     val method: String,
@@ -69,6 +71,7 @@ class ApiEndpoints(baseUrl: String) {
     val rppgJobs = "$base/api/rppg/jobs"
     val patientDashboard = "$base/api/me/dashboard"
     val cravingProbabilitySeries = "$base/api/me/craving-probability-series"
+    val cravingDashboard = "$base/api/me/craving-dashboard"
 
     fun session(sessionId: String): String = "$sessions/${requireUuid(sessionId)}"
     fun messages(sessionId: String): String = "${session(sessionId)}/messages"
@@ -79,6 +82,10 @@ class ApiEndpoints(baseUrl: String) {
     fun retryRppgJob(jobId: String): String = "${rppgJob(jobId)}/retry"
     fun dashboard(range: String): String = "$patientDashboard?range=$range"
     fun cravingProbabilitySeries(range: String): String = "$cravingProbabilitySeries?range=$range"
+    fun cravingDashboard(timezone: String, eventRange: String, auqRange: String): String {
+        fun encode(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.name())
+        return "$cravingDashboard?timezone=${encode(timezone)}&eventRange=${encode(eventRange)}&auqRange=${encode(auqRange)}"
+    }
     fun ppgPreview(predictionId: String): String =
         "$base/api/me/predictions/${requireUuid(predictionId)}/ppg-preview"
 

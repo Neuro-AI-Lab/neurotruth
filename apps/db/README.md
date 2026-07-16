@@ -1,6 +1,6 @@
 # NeuroTruth Database and Local Stack
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 This directory owns the PostgreSQL extension bootstrap and Docker Compose stack. Alembic under `apps/backend/alembic` owns all business-schema changes.
 
@@ -23,8 +23,12 @@ The legacy `postgres_data` volume is backup/rollback material. Do not attach it 
 | `20260715_0001` | 18-table authenticated baseline |
 | `20260715_0002` | DGX rPPG captures/jobs and prediction linkage |
 | `20260715_0003` | Intervention-first session state, `state_inferences`, multi-intervention evidence |
+| `20260716_0004` | `free_dialogue` session phase and unique client-message retry idempotency |
 
-`session_slots` remains for legacy read-only history. New sessions do not write it.
+`20260716_0004` is the current required head. `session_slots` remains for legacy
+read-only history. New sessions start in `free_dialogue`, do not write slots,
+and use `clientMessageId` metadata to retry a failed dialogue once without
+duplicating the user message.
 
 ## Start a Fresh Local Stack
 
@@ -82,7 +86,7 @@ deploy TLS before transmitting real participant data over the public internet.
 1. Stop writes to the legacy deployment.
 2. Back up the existing `postgres_data` volume.
 3. Create fresh database and encrypted-storage volumes.
-4. Run migrations through `20260715_0003`.
+4. Run migrations through the current head, `20260716_0004`.
 5. Deploy backend and Android together, then the administrator web.
 6. Keep the legacy image/volume for rollback; do not downgrade new-schema data.
 
@@ -92,8 +96,9 @@ Do not store plaintext exports, decrypted sensor files, keys, or database dumps 
 
 | Check | Result |
 |---|---|
-| Fresh PostgreSQL 0001→0002→0003 | PASS |
-| Populated fixture 0002→0003 | PASS |
-| Legacy session interaction/dialogue state after 0003 | Preserved as NULL/read-only |
+| Alembic application head | `20260716_0004` |
+| Fresh PostgreSQL 0001→0004 | Pending local Docker verification |
+| Populated fixture 0003→0004 | Pending local Docker verification; additive migration |
+| Legacy session interaction/dialogue state | Preserved as NULL/read-only |
 | Expected application tables | PASS |
 | Required unique indexes | PASS |

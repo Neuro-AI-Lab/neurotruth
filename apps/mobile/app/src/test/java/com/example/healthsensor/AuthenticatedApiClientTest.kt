@@ -77,6 +77,10 @@ class AuthenticatedApiClientTest {
             "https://example.test/api/me/craving-probability-series?range=10m",
             endpoints.cravingProbabilitySeries("10m")
         )
+        assertEquals(
+            "https://example.test/api/me/craving-dashboard?timezone=Etc%2FGMT%2B5&eventRange=30d&auqRange=today",
+            endpoints.cravingDashboard("Etc/GMT+5", "30d", "today")
+        )
         assertEquals("https://example.test/api/sessions/$sessionId/messages", endpoints.messages(sessionId))
         assertEquals("https://example.test/api/sessions/$sessionId/finish", endpoints.finish(sessionId))
     }

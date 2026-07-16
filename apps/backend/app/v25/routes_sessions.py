@@ -24,6 +24,7 @@ class SessionCreate(BaseModel):
 
 class MessageBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    clientMessageId: UUID | None = None
     content: str = Field(min_length=1, max_length=10_000)
 
 
@@ -42,8 +43,15 @@ class AssessmentBody(BaseModel):
 def _map(exc: Exception) -> None:
     def detail(code: str, message: str) -> dict[str, str]: return {"code": code, "message": message}
     if isinstance(exc, SessionNotFound): raise HTTPException(status_code=404, detail=detail(exc.code, "Session not found")) from exc
+    if isinstance(exc, SessionAgentError):
+        raise HTTPException(status_code=502, detail={
+            "code": exc.code,
+            "clientMessageId": str(exc.client_message_id) if exc.client_message_id else None,
+            "userMessageId": str(exc.user_message_id),
+            "retryable": exc.retryable,
+            "attemptsRemaining": exc.attempts_remaining,
+        }) from exc
     if isinstance(exc, SessionStateError): raise HTTPException(status_code=409, detail=detail(exc.code, str(exc))) from exc
-    if isinstance(exc, SessionAgentError): raise HTTPException(status_code=502, detail=detail(exc.code, "Dialogue is temporarily unavailable")) from exc
     if isinstance(exc, AuthorizationError): raise HTTPException(status_code=403, detail=str(exc)) from exc
     raise exc
 
@@ -72,7 +80,10 @@ async def post_message(session_id: UUID, body: MessageBody,
                        runtime: Annotated[V25Runtime, Depends(get_runtime)],
                        user: Annotated[UserRecord, Depends(patient_user)]) -> dict[str, Any]:
     await _ai_consent(runtime, user)
-    try: return await runtime.session_service.message(user, session_id, body.content.strip())
+    try:
+        return await runtime.session_service.message(
+            user, session_id, body.content.strip(), body.clientMessageId,
+        )
     except SessionError as exc: _map(exc)
 
 
