@@ -38,7 +38,7 @@ services:
       TMPDIR: /dev/shm/neurotruth-rppg
       NEUROTRUTH_SCHEMA_SQL: /app/schema/neurotruth_schema_v2_5.sql
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_PORT:-25991}:25991"
     depends_on:
       db:
         condition: service_healthy
@@ -50,7 +50,7 @@ services:
       - ../../neurotruth_schema_v2_5.sql:/app/schema/neurotruth_schema_v2_5.sql:ro
     tmpfs:
       - /dev/shm/neurotruth-rppg:size=256m,mode=0700
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 25991"]
     networks:
       - neurotruth-network
 
@@ -61,7 +61,7 @@ services:
     container_name: neurotruth-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${WEB_HOST_PORT:-3000}:3000"
     depends_on:
       - backend
     networks:

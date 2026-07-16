@@ -42,8 +42,39 @@ The backend applies `alembic upgrade head` before starting. Readiness fails if t
 Health:
 
 ```powershell
-Invoke-RestMethod -Uri http://localhost:8000/health
+Invoke-RestMethod -Uri http://localhost:25991/health
 ```
+
+## DGX Spark Deployment Beside rPPG
+
+When the DGX Spark already runs the FactorizePhys rPPG API on its internal/LAN
+port `8000`, keep that port for rPPG and publish only the NeuroTruth backend on
+the separately forwarded port `25991`.
+Add these values to the DGX-only root `.env` (never commit that file):
+
+```dotenv
+BACKEND_HOST_PORT=25991
+RPPG_ENABLED=true
+RPPG_BASE_URL=http://192.168.68.50:8000
+```
+
+The NeuroTruth backend listens on container port `25991`, and nginx proxies
+internal `/api/` requests to `backend:25991`. The web and rPPG services do not
+need public router port forwarding.
+
+From the repository root on the DGX:
+
+```bash
+docker compose -f apps/db/docker-compose.yml up -d --build
+docker compose -f apps/db/docker-compose.yml ps
+curl -fsS http://127.0.0.1:25991/health
+curl -I http://127.0.0.1:3000/
+```
+
+For the configured external mobile build, use
+`http://223.194.33.26:25991` as the API base URL. Do not point the phone directly
+at the web or rPPG services. Plain HTTP is for controlled experiments only;
+deploy TLS before transmitting real participant data over the public internet.
 
 ## Deployment Safety
 

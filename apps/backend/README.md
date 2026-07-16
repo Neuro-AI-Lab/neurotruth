@@ -11,7 +11,7 @@ cd apps/backend
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m compileall -q app tests
 alembic upgrade head
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 25991
 ```
 
 Use `ALLOW_INSECURE_HTTP=true` only with `APP_ENV=development|test`. Production requires HTTPS.
