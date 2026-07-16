@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -255,12 +256,19 @@ class SessionService:
                 if not settings or not settings.interventions_enabled:
                     assistant = _FALLBACK
                 else:
+                    failure_phase = "model_registration"
                     try:
                         model_id = await self._model("dialogue_agent", DIALOGUE_PROMPT_VERSION)
+                        failure_phase = "evidence_preparation"
+                        latest_evidence = self._json_safe(
+                            await self.repository.inference_evidence(patient.id, session_id)
+                        )
+                        failure_phase = "provider_call"
                         draft = await self.agent.dialogue({
                             "history": history, "dialogueState": state, "activeInterventions": active,
-                            "latestEvidence": await self.repository.inference_evidence(patient.id, session_id),
+                            "latestEvidence": latest_evidence,
                         })
+                        failure_phase = "output_validation"
                         draft = validate_agent_output(draft, state)
                         if draft is None:
                             raise ValueError("dialogue_output_rejected")
@@ -269,12 +277,18 @@ class SessionService:
                         if topic and topic not in state["askedTopicIds"]: state["askedTopicIds"].append(topic)
                         kind = draft.get("interventionType")
                         if kind and kind in APPROVED_INTERVENTIONS:
+                            failure_phase = "intervention_persistence"
                             delivered = await self._persist_intervention(patient.id, session_id, kind, assistant,
                                                                          {"messageIds": [str(user_message_id)]}, model_id)
                     except Exception as exc:
                         code = "dialogue_output_rejected" if "rejected" in str(exc) else "dialogue_provider_error"
                         await self.repository.audit(actor_id=None, actor_role="agent", action="dialogue.failed",
-                                                    resource_type="session", resource_id=session_id, metadata={"code": code})
+                                                    resource_type="session", resource_id=session_id,
+                                                    metadata={
+                                                        "code": code,
+                                                        "phase": failure_phase,
+                                                        "errorType": type(exc).__name__,
+                                                    })
                         assistant = _FALLBACK
             phase = "safety_check" if state["safety"]["status"] in {"awaiting_response", "concern", "urgent"} else "intervention_dialogue"
             await self._store_state(patient.id, session_id, phase, state)
@@ -592,8 +606,10 @@ class SessionService:
     @staticmethod
     def _json_safe(value: Any) -> Any:
         if isinstance(value, dict): return {key: SessionService._json_safe(item) for key, item in value.items()}
-        if isinstance(value, list): return [SessionService._json_safe(item) for item in value]
-        if isinstance(value, (datetime, UUID)): return str(value)
+        if isinstance(value, (list, tuple)): return [SessionService._json_safe(item) for item in value]
+        if isinstance(value, UUID): return str(value)
+        if isinstance(value, (datetime, date)): return value.isoformat()
+        if isinstance(value, Decimal): return float(value)
         return value
 
     @staticmethod

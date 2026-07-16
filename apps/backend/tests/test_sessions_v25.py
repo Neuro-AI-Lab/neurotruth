@@ -4,6 +4,7 @@ import asyncio
 import base64
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
@@ -29,8 +30,9 @@ class Agent:
     model_name = "fake-sonnet"; model_version = "1"
     def __init__(self) -> None:
         self.dialogue_result = {"assistantText": "지금 가장 필요한 도움을 알려주실 수 있나요?", "questionTopicId": "desired_help", "interventionType": None}
-        self.fail_dialogue = False; self.fail_summary = False; self.report_calls = []
+        self.fail_dialogue = False; self.fail_summary = False; self.report_calls = []; self.dialogue_contexts = []
     async def dialogue(self, context):
+        self.dialogue_contexts.append(context)
         if self.fail_dialogue: raise RuntimeError("AWS secret-value")
         return dict(self.dialogue_result)
     async def summarize_state(self, evidence):
@@ -191,6 +193,34 @@ def test_provider_failure_uses_safe_fallback_and_summary_failure_keeps_inference
         assert result["stateSnapshot"]["state"] == "unknown"
         assert "secret-value" not in repr(repo.audits)
         assert {row["metadata"]["code"] for row in repo.audits if "code" in row.get("metadata", {})} >= {"dialogue_provider_error", "state_summary_provider_error"}
+        await svc.shutdown()
+    asyncio.run(scenario())
+
+
+def test_dialogue_normalizes_database_evidence_before_provider_call() -> None:
+    async def scenario():
+        svc, repo, agent, patient, session_id, _ = await opened()
+        prediction_id = uuid4()
+        predicted_at = datetime.now(timezone.utc)
+        repo.prediction = {
+            "id": prediction_id,
+            "predicted_class_index": 1,
+            "predicted_class_code": "high",
+            "predicted_class_probability": Decimal("0.812345"),
+            "quality_gate_passed": True,
+            "output_schema": {"classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}]},
+            "predicted_at": predicted_at,
+        }
+        await svc.message(patient, session_id, "네, 지금은 안전해요")
+        await svc.message(patient, session_id, "그냥 힘들어요")
+        result = await svc.message(patient, session_id, "조금 더 말할게요")
+
+        evidence = agent.dialogue_contexts[-1]["latestEvidence"]
+        assert evidence["prediction"]["id"] == str(prediction_id)
+        assert evidence["prediction"]["predicted_at"] == predicted_at.isoformat()
+        assert evidence["prediction"]["predicted_class_probability"] == pytest.approx(0.812345)
+        assert not any(row["action"] == "dialogue.failed" for row in repo.audits)
+        assert result["assistantText"] == agent.dialogue_result["assistantText"]
         await svc.shutdown()
     asyncio.run(scenario())
 
