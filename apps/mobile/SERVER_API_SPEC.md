@@ -271,7 +271,9 @@ alcohol-urge-related responses at that time.
 ## Speech-to-text and local TTS
 
 - `GET /api/stt/status` returns `enabled`, `available`, model, requested/actual
-  device, fallback state, and sanitized `errorCode`.
+  device, inference `engine`, fallback state/reason, and sanitized `errorCode`.
+  DGX production should report `engine=pytorch`, `actualDevice=cuda:0`, and
+  `fallback=false`.
 - `POST /api/sessions/{sessionId}/transcriptions` is multipart with `audio`
   (`.m4a` or `.wav`) and `language=ko`. It requires patient authentication,
   `voice` consent, and an active owned session.

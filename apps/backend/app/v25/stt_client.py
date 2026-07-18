@@ -94,7 +94,9 @@ class SttClient:
                 "model": "whisper-large-v3-turbo",
                 "requestedDevice": None,
                 "actualDevice": None,
+                "engine": None,
                 "fallback": False,
+                "fallbackReason": None,
                 "errorCode": "stt_disabled",
             }
         try:
@@ -110,7 +112,9 @@ class SttClient:
                 "model": "whisper-large-v3-turbo",
                 "requestedDevice": None,
                 "actualDevice": None,
+                "engine": None,
                 "fallback": False,
+                "fallbackReason": None,
                 "errorCode": "stt_unavailable",
             }
         return {
@@ -119,7 +123,9 @@ class SttClient:
             "model": str(body.get("model") or "whisper-large-v3-turbo"),
             "requestedDevice": body.get("requestedDevice"),
             "actualDevice": body.get("actualDevice"),
+            "engine": body.get("engine"),
             "fallback": bool(body.get("fallback", False)),
+            "fallbackReason": body.get("fallbackReason"),
             "errorCode": body.get("errorCode"),
         }
 

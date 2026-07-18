@@ -1,0 +1,387 @@
+{"kind":"deck","id":"pr/rx7cgg","name":"Deck"}
+{"kind":"layout","layoutId":"/ppt/slideMasters/slideMaster1.xml","name":"","type":"master"}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout1.xml","name":"DEFAULT"}
+{"kind":"slide","id":"sl/y90nupkv","slide":1,"title":"NeuroTruth v10 사용자 흐름","textShapes":27}
+{"kind":"textbox","id":"sh/547294r6","slide":1,"name":"Text 0","text":"NeuroTruth v10 사용자 흐름","textPreview":"NeuroTruth v10 사용자 흐름","textChars":21,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/k3yl0zql","slide":1,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/65g3298r","slide":1,"name":"Text 3","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"shape","id":"sh/ts7md4r2","slide":1,"name":"화살표: 오른쪽 5","bbox":[238,151,36,13]}
+{"kind":"shape","id":"sh/sryl4zqx","slide":1,"name":"화살표: 오른쪽 6","bbox":[430,151,36,13]}
+{"kind":"shape","id":"sh/fu94fe98","slide":1,"name":"화살표: 오른쪽 7","bbox":[622,151,36,13]}
+{"kind":"shape","id":"sh/utg3698n","slide":1,"name":"화살표: 아래쪽 8","bbox":[734,198,13,46]}
+{"kind":"shape","id":"sh/wn6dc7eh","slide":1,"name":"화살표: 왼쪽 9","bbox":[250,282,32,13]}
+{"kind":"shape","id":"sh/hofulsf2","slide":1,"name":"화살표: 왼쪽 10","bbox":[438,282,32,13]}
+{"kind":"shape","id":"sh/ul4vaxgb","slide":1,"name":"화살표: 왼쪽 11","bbox":[626,282,32,13]}
+{"kind":"textbox","id":"sh/vmdcj2xw","slide":1,"name":"사각형: 둥근 모서리 12","text":"① 시작 →","textPreview":"① 시작 →","textChars":6,"textLines":1,"bbox":[94,108,110,18]}
+{"kind":"textbox","id":"sh/4r6dg7et","slide":1,"name":"사각형: 둥근 모서리 13","text":"② 기록 흐름 ←","textPreview":"② 기록 흐름 ←","textChars":9,"textLines":1,"bbox":[94,234,140,18]}
+{"kind":"shape","id":"sh/5sfepcfe","slide":1,"name":"사각형: 둥근 모서리 14","bbox":[94,126,144,64]}
+{"kind":"textbox","id":"sh/ipovexwn","slide":1,"name":"사각형: 둥근 모서리 15","text":"제품 안내","textPreview":"제품 안내","textChars":5,"textLines":1,"bbox":[102,133,128,26]}
+{"kind":"textbox","id":"sh/3qxwn2x8","slide":1,"name":"사각형: 둥근 모서리 16","text":"NT-01 · 대상·한계","textPreview":"NT-01 · 대상·한계","textChars":13,"textLines":1,"bbox":[102,160,128,24]}
+{"kind":"shape","id":"sh/sfqdkrep","slide":1,"name":"사각형: 둥근 모서리 17","bbox":[274,126,156,64]}
+{"kind":"textbox","id":"sh/dgzetcfa","slide":1,"name":"사각형: 둥근 모서리 18","text":"가입 · 로그인","textPreview":"가입 · 로그인","textChars":8,"textLines":1,"bbox":[282,133,140,26]}
+{"kind":"textbox","id":"sh/1cvuxc7e","slide":1,"name":"사각형: 둥근 모서리 19","text":"NT-02 · 환자 가입","textPreview":"NT-02 · 환자 가입","textChars":13,"textLines":1,"bbox":[282,160,140,24]}
+{"kind":"shape","id":"sh/0bmd476t","slide":1,"name":"사각형: 둥근 모서리 20","bbox":[466,126,156,64]}
+{"kind":"textbox","id":"sh/zadcv2p8","slide":1,"name":"사각형: 둥근 모서리 21","text":"동의 · 권한","textPreview":"동의 · 권한","textChars":7,"textLines":1,"bbox":[474,133,140,26]}
+{"kind":"textbox","id":"sh/e94v2hon","slide":1,"name":"사각형: 둥근 모서리 22","text":"NT-03 · 음성·카메라 선택","textPreview":"NT-03 · 음성·카메라 선택","textChars":17,"textLines":1,"bbox":[474,160,140,24]}
+{"kind":"shape","id":"sh/90ve1w7q","slide":1,"name":"사각형: 둥근 모서리 23","bbox":[658,126,156,64]}
+{"kind":"textbox","id":"sh/ozmd8r65","slide":1,"name":"사각형: 둥근 모서리 24","text":"홈","textPreview":"홈","textChars":1,"textLines":1,"bbox":[666,133,140,26]}
+{"kind":"textbox","id":"sh/nydczmpk","slide":1,"name":"사각형: 둥근 모서리 25","text":"NT-04 상태·Watch·얼굴 측정","textPreview":"NT-04 상태·Watch·얼굴 측정","textChars":20,"textLines":1,"bbox":[666,160,140,24]}
+{"kind":"shape","id":"sh/mx4v6hoz","slide":1,"name":"사각형: 둥근 모서리 26","bbox":[658,252,156,64]}
+{"kind":"textbox","id":"sh/p4bu5s76","slide":1,"name":"사각형: 둥근 모서리 27","text":"갈망 알림","textPreview":"갈망 알림","textChars":5,"textLines":1,"bbox":[666,259,140,26]}
+{"kind":"textbox","id":"sh/432dwn6l","slide":1,"name":"사각형: 둥근 모서리 28","text":"NT-05 · 지금/나중에","textPreview":"NT-05 · 지금/나중에","textChars":14,"textLines":1,"bbox":[666,286,140,24]}
+{"kind":"shape","id":"sh/uxgjq907","slide":1,"name":"사각형: 둥근 모서리 29","bbox":[470,252,156,64]}
+{"kind":"textbox","id":"sh/vyp0je1s","slide":1,"name":"사각형: 둥근 모서리 30","text":"AUQ","textPreview":"AUQ","textChars":3,"textLines":1,"bbox":[478,259,140,26]}
+{"kind":"textbox","id":"sh/wzy1szid","slide":1,"name":"사각형: 둥근 모서리 31","text":"NT-06 · 8문항·7단계","textPreview":"NT-06 · 8문항·7단계","textChars":15,"textLines":1,"bbox":[478,286,140,24]}
+{"kind":"shape","id":"sh/h072l4jy","slide":1,"name":"사각형: 둥근 모서리 32","bbox":[282,252,156,64]}
+{"kind":"textbox","id":"sh/i1gje90j","slide":1,"name":"사각형: 둥근 모서리 33","text":"AI 챗봇","textPreview":"AI 챗봇","textChars":5,"textLines":1,"bbox":[290,259,140,26]}
+{"kind":"textbox","id":"sh/j2pkne14","slide":1,"name":"사각형: 둥근 모서리 34","text":"NT-07 · 텍스트·STT·TTS","textPreview":"NT-07 · 텍스트·STT·TTS","textChars":19,"textLines":1,"bbox":[290,286,140,24]}
+{"kind":"shape","id":"sh/43y1gji9","slide":1,"name":"사각형: 둥근 모서리 35","bbox":[94,252,156,64]}
+{"kind":"textbox","id":"sh/54r2poju","slide":1,"name":"사각형: 둥근 모서리 36","text":"대시보드","textPreview":"대시보드","textChars":4,"textLines":1,"bbox":[102,259,140,26]}
+{"kind":"textbox","id":"sh/y5wjip0z","slide":1,"name":"사각형: 둥근 모서리 37","text":"NT-08 · 상태·이벤트·AUQ","textPreview":"NT-08 · 상태·이벤트·AUQ","textChars":18,"textLines":1,"bbox":[102,286,140,24]}
+{"kind":"textbox","id":"sh/z650ba1k","slide":1,"name":"사각형: 둥근 모서리 38","text":"하단 탭: 홈 · 대시보드 · 챗봇","textPreview":"하단 탭: 홈 · 대시보드 · 챗봇","textChars":19,"textLines":1,"bbox":[640,322,220,24]}
+{"kind":"shape","id":"sh/z2xgf6to","slide":1,"name":"사각형: 둥근 모서리 39","bbox":[34,382,284,86]}
+{"kind":"textbox","id":"sh/e1oz61c3","slide":1,"name":"사각형: 둥근 모서리 40","text":"NT-04 · 홈","textPreview":"NT-04 · 홈","textChars":9,"textLines":1,"bbox":[50,392,252,34]}
+{"kind":"textbox","id":"sh/14fyhgbe","slide":1,"name":"사각형: 둥근 모서리 41","text":"프로필 · 상태 문구 · Watch · 얼굴 측정","textPreview":"프로필 · 상태 문구 · Watch · 얼굴 측정","textChars":27,"textLines":1,"bbox":[50,426,252,28]}
+{"kind":"shape","id":"sh/036h8but","slide":1,"name":"사각형: 둥근 모서리 42","bbox":[338,382,284,86]}
+{"kind":"textbox","id":"sh/nqxgjqtk","slide":1,"name":"사각형: 둥근 모서리 43","text":"NT-08 · 대시보드","textPreview":"NT-08 · 대시보드","textChars":12,"textLines":1,"bbox":[354,392,252,34]}
+{"kind":"textbox","id":"sh/mpozalcz","slide":1,"name":"사각형: 둥근 모서리 44","text":"갈망 구간 · 이벤트 · AUQ X/56","textPreview":"갈망 구간 · 이벤트 · AUQ X/56","textChars":22,"textLines":1,"bbox":[354,430,252,28]}
+{"kind":"shape","id":"sh/9sfylgbq","slide":1,"name":"사각형: 둥근 모서리 45","bbox":[642,382,284,86]}
+{"kind":"textbox","id":"sh/or6hcvu5","slide":1,"name":"사각형: 둥근 모서리 46","text":"NT-07 · 챗봇","textPreview":"NT-07 · 챗봇","textChars":10,"textLines":1,"bbox":[658,392,252,34]}
+{"kind":"textbox","id":"sh/buh0nqtg","slide":1,"name":"사각형: 둥근 모서리 47","text":"텍스트·음성 입력 · AI TTS 듣기","textPreview":"텍스트·음성 입력 · AI TTS 듣기","textChars":21,"textLines":1,"bbox":[658,430,252,28]}
+{"kind":"notes","id":"nt/y90nupkv","slide":1,"text":""}
+{"kind":"slide","id":"sl/hwbqtkby","slide":2,"title":"시작 — 안내 · 가입 · 동의와 권한","textShapes":11}
+{"kind":"textbox","id":"sh/9072xkry","slide":2,"name":"Text 0","text":"시작 — 안내 · 가입 · 동의와 권한","textPreview":"시작 — 안내 · 가입 · 동의와 권한","textChars":21,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/ozy1ofad","slide":2,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/a10jqpsj","slide":2,"name":"Text 3","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"textbox","id":"sh/x4r21kru","slide":2,"name":"사각형: 둥근 모서리 5","text":"NT-01 · 제품 안내","textPreview":"NT-01 · 제품 안내","textChars":13,"textLines":1,"bbox":[44,104,157.44,18]}
+{"kind":"textbox","id":"sh/w3i1sfa9","slide":2,"name":"사각형: 둥근 모서리 6","text":"NT-02 · 가입 · 로그인","textPreview":"NT-02 · 가입 · 로그인","textChars":16,"textLines":1,"bbox":[222,104,157.44,18]}
+{"kind":"textbox","id":"sh/r65knqtk","slide":2,"name":"사각형: 둥근 모서리 7","text":"NT-03 · 동의 · 음성·카메라","textPreview":"NT-03 · 동의 · 음성·카메라","textChars":19,"textLines":1,"bbox":[400,104,157.44,18]}
+{"kind":"shape","id":"sh/nu58f2hs","slide":2,"name":"사각형: 둥근 모서리 12","bbox":[594,126,332,160]}
+{"kind":"shape","id":"sh/wjy9sry9","slide":2,"name":"타원 13","bbox":[608,140,30,30]}
+{"kind":"textbox","id":"sh/xk7qlczu","slide":2,"name":"사각형: 둥근 모서리 14","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[608,140,30,30]}
+{"kind":"textbox","id":"sh/ahwrqhgj","slide":2,"name":"사각형: 둥근 모서리 15","text":"안내 후 가입","textPreview":"안내 후 가입","textChars":7,"textLines":1,"bbox":[646,136,264,34]}
+{"kind":"textbox","id":"sh/bip8jmho","slide":2,"name":"사각형: 둥근 모서리 16","text":"사용 대상과 한계를 확인한 뒤 환자가 직접 가입합니다. 로그인 전에는 하단 탭을 표시하지 않습니다.","textPreview":"사용 대상과 한계를 확인한 뒤 환자가 직접 가입합니다. 로그인 전에는 하단 탭을 표시하지 않습니다.","textChars":55,"textLines":1,"bbox":[610,174,300,102]}
+{"kind":"shape","id":"sh/cnupgny5","slide":2,"name":"사각형: 둥근 모서리 17","bbox":[594,306,332,160]}
+{"kind":"shape","id":"sh/do3q9szq","slide":2,"name":"타원 18","bbox":[608,320,30,30]}
+{"kind":"textbox","id":"sh/t8byxkn2","slide":2,"name":"사각형: 둥근 모서리 19","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[608,320,30,30]}
+{"kind":"textbox","id":"sh/s72xofmh","slide":2,"name":"사각형: 둥근 모서리 20","text":"동의와 사용 시점 권한","textPreview":"동의와 사용 시점 권한","textChars":12,"textLines":1,"bbox":[646,316,264,34]}
+{"kind":"textbox","id":"sh/76twva5c","slide":2,"name":"사각형: 둥근 모서리 21","text":"음성·카메라는 선택 동의로 두고 실제 기능 진입 시 마이크·카메라 권한을 요청합니다. 완료 후 홈으로 이동합니다.","textPreview":"음성·카메라는 선택 동의로 두고 실제 기능 진입 시 마이크·카메라 권한을 요청합니다. 완료 후 홈으로 이동합니다.","textChars":63,"textLines":1,"bbox":[610,354,300,102]}
+{"kind":"image","id":"im/do3yp03u","slide":2,"name":"그림 29","bbox":[44,126,157.44,340.8]}
+{"kind":"image","id":"im/ypcfi5kf","slide":2,"name":"그림 30","bbox":[222,126,157.44,340.8]}
+{"kind":"image","id":"im/zqlgral0","slide":2,"name":"그림 31","bbox":[400,126,157.44,340.8]}
+{"kind":"notes","id":"nt/hwbqtkby","slide":2,"text":""}
+{"kind":"slide","id":"sl/ofy9wn61","slide":3,"title":"홈 — 갈망 상태와 20초 얼굴 측정","textShapes":27}
+{"kind":"textbox","id":"sh/cza94vmx","slide":3,"name":"Text 0","text":"홈 — 갈망 상태와 20초 얼굴 측정","textPreview":"홈 — 갈망 상태와 20초 얼굴 측정","textChars":20,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/d0jax03i","slide":3,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/3ah8rqlg","slide":3,"name":"Text 3","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"shape","id":"sh/obq90bml","slide":3,"name":"화살표: 오른쪽 5","bbox":[238,151,36,13]}
+{"kind":"shape","id":"sh/pcjqtg36","slide":3,"name":"화살표: 오른쪽 6","bbox":[430,151,36,13]}
+{"kind":"shape","id":"sh/m5cra54z","slide":3,"name":"화살표: 오른쪽 7","bbox":[622,151,36,13]}
+{"kind":"shape","id":"sh/n6ls3alk","slide":3,"name":"화살표: 아래쪽 8","bbox":[734,198,13,46]}
+{"kind":"shape","id":"sh/n2l4fq98","slide":3,"name":"화살표: 왼쪽 9","bbox":[250,282,32,13]}
+{"kind":"shape","id":"sh/m1c3mlsn","slide":3,"name":"화살표: 왼쪽 10","bbox":[438,282,32,13]}
+{"kind":"shape","id":"sh/943mhgre","slide":3,"name":"화살표: 왼쪽 11","bbox":[626,282,32,13]}
+{"kind":"textbox","id":"sh/83ulovat","slide":3,"name":"사각형: 둥근 모서리 12","text":"① 홈 상태 →","textPreview":"① 홈 상태 →","textChars":8,"textLines":1,"bbox":[94,108,110,18]}
+{"kind":"textbox","id":"sh/v6l4jq94","slide":3,"name":"사각형: 둥근 모서리 13","text":"② 얼굴 측정 ←","textPreview":"② 얼굴 측정 ←","textChars":9,"textLines":1,"bbox":[94,234,140,18]}
+{"kind":"shape","id":"sh/a5c3ql8z","slide":3,"name":"사각형: 둥근 모서리 14","bbox":[94,126,144,64]}
+{"kind":"textbox","id":"sh/x8nml0ra","slide":3,"name":"사각형: 둥근 모서리 15","text":"프로필","textPreview":"프로필","textChars":3,"textLines":1,"bbox":[102,133,128,26]}
+{"kind":"textbox","id":"sh/w7ulsvqp","slide":3,"name":"사각형: 둥근 모서리 16","text":"사용자 이름 · 기본 정보","textPreview":"사용자 이름 · 기본 정보","textChars":14,"textLines":1,"bbox":[102,160,128,24]}
+{"kind":"shape","id":"sh/ja54na9g","slide":3,"name":"사각형: 둥근 모서리 17","bbox":[274,126,156,64]}
+{"kind":"textbox","id":"sh/i9w3u58v","slide":3,"name":"사각형: 둥근 모서리 18","text":"갈망 상태","textPreview":"갈망 상태","textChars":5,"textLines":1,"bbox":[282,133,140,26]}
+{"kind":"textbox","id":"sh/e10f2twf","slide":3,"name":"사각형: 둥근 모서리 19","text":"낮은 가능성 ~ 높은 가능성","textPreview":"낮은 가능성 ~ 높은 가능성","textChars":15,"textLines":1,"bbox":[282,160,140,24]}
+{"kind":"shape","id":"sh/f29gbyx0","slide":3,"name":"사각형: 둥근 모서리 20","bbox":[466,126,156,64]}
+{"kind":"textbox","id":"sh/03ix43e5","slide":3,"name":"사각형: 둥근 모서리 21","text":"Watch","textPreview":"Watch","textChars":5,"textLines":1,"bbox":[474,133,140,26]}
+{"kind":"textbox","id":"sh/14ryd8fq","slide":3,"name":"사각형: 둥근 모서리 22","text":"연결됨 · 연결 필요","textPreview":"연결됨 · 연결 필요","textChars":11,"textLines":1,"bbox":[474,160,140,24]}
+{"kind":"shape","id":"sh/6d0fytg3","slide":3,"name":"사각형: 둥근 모서리 23","bbox":[658,126,156,64]}
+{"kind":"textbox","id":"sh/re9g7yxo","slide":3,"name":"사각형: 둥근 모서리 24","text":"얼굴로 측정","textPreview":"얼굴로 측정","textChars":6,"textLines":1,"bbox":[666,133,140,26]}
+{"kind":"textbox","id":"sh/sfix03y9","slide":3,"name":"사각형: 둥근 모서리 25","text":"서버 준비·동의 확인","textPreview":"서버 준비·동의 확인","textChars":11,"textLines":1,"bbox":[666,160,140,24]}
+{"kind":"shape","id":"sh/tgry9ofu","slide":3,"name":"사각형: 둥근 모서리 26","bbox":[658,252,156,64]}
+{"kind":"textbox","id":"sh/a9kfadwn","slide":3,"name":"사각형: 둥근 모서리 27","text":"측정 진행","textPreview":"측정 진행","textChars":5,"textLines":1,"bbox":[666,259,140,26]}
+{"kind":"textbox","id":"sh/batgjixs","slide":3,"name":"사각형: 둥근 모서리 28","text":"촬영 · 업로드 · 분석","textPreview":"촬영 · 업로드 · 분석","textChars":13,"textLines":1,"bbox":[666,286,140,24]}
+{"kind":"shape","id":"sh/l4fi9cza","slide":3,"name":"사각형: 둥근 모서리 29","bbox":[470,252,156,64]}
+{"kind":"textbox","id":"sh/k3m1g7yp","slide":3,"name":"사각형: 둥근 모서리 30","text":"결과 반영","textPreview":"결과 반영","textChars":5,"textLines":1,"bbox":[478,259,140,26]}
+{"kind":"textbox","id":"sh/z2d07mh4","slide":3,"name":"사각형: 둥근 모서리 31","text":"갈망 상태 문구 갱신","textPreview":"갈망 상태 문구 갱신","textChars":11,"textLines":1,"bbox":[478,286,140,24]}
+{"kind":"shape","id":"sh/y14jehgj","slide":3,"name":"사각형: 둥근 모서리 32","bbox":[282,252,156,64]}
+{"kind":"textbox","id":"sh/x0vi5czy","slide":3,"name":"사각형: 둥근 모서리 33","text":"대시보드","textPreview":"대시보드","textChars":4,"textLines":1,"bbox":[290,259,140,26]}
+{"kind":"textbox","id":"sh/czmhc7id","slide":3,"name":"사각형: 둥근 모서리 34","text":"새 기록 확인","textPreview":"새 기록 확인","textChars":7,"textLines":1,"bbox":[290,286,140,24]}
+{"kind":"shape","id":"sh/byd032h8","slide":3,"name":"사각형: 둥근 모서리 35","bbox":[94,252,156,64]}
+{"kind":"textbox","id":"sh/ax4zax0n","slide":3,"name":"사각형: 둥근 모서리 36","text":"홈","textPreview":"홈","textChars":1,"textLines":1,"bbox":[102,259,140,26]}
+{"kind":"textbox","id":"sh/hwzihwzi","slide":3,"name":"사각형: 둥근 모서리 37","text":"같은 탭으로 복귀","textPreview":"같은 탭으로 복귀","textChars":9,"textLines":1,"bbox":[102,286,140,24]}
+{"kind":"textbox","id":"sh/wv61obyx","slide":3,"name":"사각형: 둥근 모서리 38","text":"하단 탭: 홈 · 대시보드 · 챗봇","textPreview":"하단 탭: 홈 · 대시보드 · 챗봇","textChars":19,"textLines":1,"bbox":[640,322,220,24]}
+{"kind":"shape","id":"sh/4nuhs7uh","slide":3,"name":"사각형: 둥근 모서리 39","bbox":[34,382,284,86]}
+{"kind":"textbox","id":"sh/po3ilcvm","slide":3,"name":"사각형: 둥근 모서리 40","text":"프로필 · 설정","textPreview":"프로필 · 설정","textChars":8,"textLines":1,"bbox":[50,392,252,34]}
+{"kind":"textbox","id":"sh/21szqxcb","slide":3,"name":"사각형: 둥근 모서리 41","text":"프로필 첫 카드 · 설정 우측 상단","textPreview":"프로필 첫 카드 · 설정 우측 상단","textChars":19,"textLines":1,"bbox":[50,426,252,28]}
+{"kind":"shape","id":"sh/32l0j2dw","slide":3,"name":"사각형: 둥근 모서리 42","bbox":[338,382,284,86]}
+{"kind":"textbox","id":"sh/cruhwrud","slide":3,"name":"사각형: 둥근 모서리 43","text":"갈망 · Watch","textPreview":"갈망 · Watch","textChars":10,"textLines":1,"bbox":[354,392,252,34]}
+{"kind":"textbox","id":"sh/ds3ipcvy","slide":3,"name":"사각형: 둥근 모서리 44","text":"상태 문구 · Watch 연결 상태","textPreview":"상태 문구 · Watch 연결 상태","textChars":19,"textLines":1,"bbox":[354,430,252,28]}
+{"kind":"shape","id":"sh/qpczuhc7","slide":3,"name":"사각형: 둥근 모서리 45","bbox":[642,382,284,86]}
+{"kind":"textbox","id":"sh/rql0nmds","slide":3,"name":"사각형: 둥근 모서리 46","text":"얼굴로 측정","textPreview":"얼굴로 측정","textChars":6,"textLines":1,"bbox":[658,392,252,34]}
+{"kind":"textbox","id":"sh/0ve10ru9","slide":3,"name":"사각형: 둥근 모서리 47","text":"조건 충족 시 표시 · 결과는 홈에 반영","textPreview":"조건 충족 시 표시 · 결과는 홈에 반영","textChars":22,"textLines":1,"bbox":[658,430,252,28]}
+{"kind":"notes","id":"nt/ofy9wn61","slide":3,"text":""}
+{"kind":"slide","id":"sl/jyx0ra1s","slide":4,"title":"알림 · AUQ · 자유대화 진입","textShapes":27}
+{"kind":"textbox","id":"sh/1cj2d8b6","slide":4,"name":"Text 0","text":"알림 · AUQ · 자유대화 진입","textPreview":"알림 · AUQ · 자유대화 진입","textChars":18,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/0ba143al","slide":4,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/ql8jytsj","slide":4,"name":"Text 3","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"shape","id":"sh/doj29oba","slide":4,"name":"화살표: 오른쪽 5","bbox":[238,151,36,13]}
+{"kind":"shape","id":"sh/sna103ap","slide":4,"name":"화살표: 오른쪽 6","bbox":[430,151,36,13]}
+{"kind":"shape","id":"sh/3ihk3et8","slide":4,"name":"화살표: 오른쪽 7","bbox":[622,151,36,13]}
+{"kind":"shape","id":"sh/ih8ju9sn","slide":4,"name":"화살표: 아래쪽 8","bbox":[734,198,13,46]}
+{"kind":"shape","id":"sh/kbm987y5","slide":4,"name":"화살표: 왼쪽 9","bbox":[250,282,32,13]}
+{"kind":"shape","id":"sh/5cva1cfq","slide":4,"name":"화살표: 왼쪽 10","bbox":[438,282,32,13]}
+{"kind":"shape","id":"sh/i94r6xgz","slide":4,"name":"화살표: 왼쪽 11","bbox":[626,282,32,13]}
+{"kind":"textbox","id":"sh/jadsz2xk","slide":4,"name":"사각형: 둥근 모서리 12","text":"① 대화 진입 →","textPreview":"① 대화 진입 →","textChars":9,"textLines":1,"bbox":[94,108,110,18]}
+{"kind":"textbox","id":"sh/w72947yt","slide":4,"name":"사각형: 둥근 모서리 13","text":"② 입력 · 응답 ←","textPreview":"② 입력 · 응답 ←","textChars":11,"textLines":1,"bbox":[94,234,140,18]}
+{"kind":"shape","id":"sh/x8vaxsfe","slide":4,"name":"사각형: 둥근 모서리 14","bbox":[94,126,144,64]}
+{"kind":"textbox","id":"sh/a5kr2xg3","slide":4,"name":"사각형: 둥근 모서리 15","text":"갈망 알림","textPreview":"갈망 알림","textChars":5,"textLines":1,"bbox":[102,133,128,26]}
+{"kind":"textbox","id":"sh/v6tsv2xo","slide":4,"name":"사각형: 둥근 모서리 16","text":"스마트폰 팝업","textPreview":"스마트폰 팝업","textChars":7,"textLines":1,"bbox":[102,160,128,24]}
+{"kind":"shape","id":"sh/g36tgryd","slide":4,"name":"사각형: 둥근 모서리 17","bbox":[274,126,156,64]}
+{"kind":"textbox","id":"sh/h4fa9wfy","slide":4,"name":"사각형: 둥근 모서리 18","text":"지금 대화하기","textPreview":"지금 대화하기","textChars":7,"textLines":1,"bbox":[282,133,140,26]}
+{"kind":"textbox","id":"sh/p0batw72","slide":4,"name":"사각형: 둥근 모서리 19","text":"AUQ 화면 열기","textPreview":"AUQ 화면 열기","textChars":9,"textLines":1,"bbox":[282,160,140,24]}
+{"kind":"shape","id":"sh/oz29krqh","slide":4,"name":"사각형: 둥근 모서리 20","bbox":[466,126,156,64]}
+{"kind":"textbox","id":"sh/3ytsrmpw","slide":4,"name":"사각형: 둥근 모서리 21","text":"AUQ 작성","textPreview":"AUQ 작성","textChars":6,"textLines":1,"bbox":[474,133,140,26]}
+{"kind":"textbox","id":"sh/2xkrih8b","slide":4,"name":"사각형: 둥근 모서리 22","text":"8문항 · 7문장 선택","textPreview":"8문항 · 7문장 선택","textChars":12,"textLines":1,"bbox":[474,160,140,24]}
+{"kind":"shape","id":"sh/1wbapc7q","slide":4,"name":"사각형: 둥근 모서리 23","bbox":[658,126,156,64]}
+{"kind":"textbox","id":"sh/gv29g7q5","slide":4,"name":"사각형: 둥근 모서리 24","text":"건너뛰기","textPreview":"건너뛰기","textChars":4,"textLines":1,"bbox":[666,133,140,26]}
+{"kind":"textbox","id":"sh/fu9sn2p0","slide":4,"name":"사각형: 둥근 모서리 25","text":"바로 챗봇 열기","textPreview":"바로 챗봇 열기","textChars":8,"textLines":1,"bbox":[666,160,140,24]}
+{"kind":"shape","id":"sh/et0reh8f","slide":4,"name":"사각형: 둥근 모서리 26","bbox":[658,252,156,64]}
+{"kind":"textbox","id":"sh/tsrqlc7u","slide":4,"name":"사각형: 둥근 모서리 27","text":"AI 챗봇","textPreview":"AI 챗봇","textChars":5,"textLines":1,"bbox":[666,259,140,26]}
+{"kind":"textbox","id":"sh/sri9s7q9","slide":4,"name":"사각형: 둥근 모서리 28","text":"중립 안내로 시작","textPreview":"중립 안내로 시작","textChars":9,"textLines":1,"bbox":[666,286,140,24]}
+{"kind":"shape","id":"sh/ilwf69kv","slide":4,"name":"사각형: 둥근 모서리 29","bbox":[470,252,156,64]}
+{"kind":"textbox","id":"sh/jm5gze1g","slide":4,"name":"사각형: 둥근 모서리 30","text":"텍스트 입력","textPreview":"텍스트 입력","textChars":6,"textLines":1,"bbox":[478,259,140,26]}
+{"kind":"textbox","id":"sh/knex8j21","slide":4,"name":"사각형: 둥근 모서리 31","text":"작성 후 전송","textPreview":"작성 후 전송","textChars":7,"textLines":1,"bbox":[478,286,140,24]}
+{"kind":"shape","id":"sh/5ony1oj6","slide":4,"name":"사각형: 둥근 모서리 32","bbox":[282,252,156,64]}
+{"kind":"textbox","id":"sh/axcf29kj","slide":4,"name":"사각형: 둥근 모서리 33","text":"음성 입력","textPreview":"음성 입력","textChars":5,"textLines":1,"bbox":[290,259,140,26]}
+{"kind":"textbox","id":"sh/vy5gbe14","slide":4,"name":"사각형: 둥근 모서리 34","text":"녹음 · 편집 · 전송","textPreview":"녹음 · 편집 · 전송","textChars":12,"textLines":1,"bbox":[290,286,140,24]}
+{"kind":"shape","id":"sh/wzex4z2p","slide":4,"name":"사각형: 둥근 모서리 35","bbox":[94,252,156,64]}
+{"kind":"textbox","id":"sh/xknyx4ja","slide":4,"name":"사각형: 둥근 모서리 36","text":"TTS 듣기","textPreview":"TTS 듣기","textChars":6,"textLines":1,"bbox":[102,259,140,26]}
+{"kind":"textbox","id":"sh/mtcfypkn","slide":4,"name":"사각형: 둥근 모서리 37","text":"말풍선 듣기 · 정지","textPreview":"말풍선 듣기 · 정지","textChars":11,"textLines":1,"bbox":[102,286,140,24]}
+{"kind":"textbox","id":"sh/nulw7u18","slide":4,"name":"사각형: 둥근 모서리 38","text":"나중에 → 현재 화면 유지","textPreview":"나중에 → 현재 화면 유지","textChars":14,"textLines":1,"bbox":[640,322,220,24]}
+{"kind":"shape","id":"sh/fm5c3q54","slide":4,"name":"사각형: 둥근 모서리 39","bbox":[34,382,284,86]}
+{"kind":"textbox","id":"sh/elwba54j","slide":4,"name":"사각형: 둥근 모서리 40","text":"NT-05 · 알림","textPreview":"NT-05 · 알림","textChars":10,"textLines":1,"bbox":[50,392,252,34]}
+{"kind":"textbox","id":"sh/18nu50nu","slide":4,"name":"사각형: 둥근 모서리 41","text":"지금 대화하기 · 나중에 · 확정 표현 금지","textPreview":"지금 대화하기 · 나중에 · 확정 표현 금지","textChars":24,"textLines":1,"bbox":[50,426,252,28]}
+{"kind":"shape","id":"sh/0netcvm9","slide":4,"name":"사각형: 둥근 모서리 42","bbox":[338,382,284,86]}
+{"kind":"textbox","id":"sh/rilczq5s","slide":4,"name":"사각형: 둥근 모서리 43","text":"NT-06 · AUQ","textPreview":"NT-06 · AUQ","textChars":11,"textLines":1,"bbox":[354,392,252,34]}
+{"kind":"textbox","id":"sh/qhcb6l47","slide":4,"name":"사각형: 둥근 모서리 44","text":"매우 그렇지 않다 … 매우 그렇다","textPreview":"매우 그렇지 않다 … 매우 그렇다","textChars":18,"textLines":1,"bbox":[354,430,252,28]}
+{"kind":"shape","id":"sh/dknu10ny","slide":4,"name":"사각형: 둥근 모서리 45","bbox":[642,382,284,86]}
+{"kind":"textbox","id":"sh/sjut8vmd","slide":4,"name":"사각형: 둥근 모서리 46","text":"NT-07 · 챗봇","textPreview":"NT-07 · 챗봇","textChars":10,"textLines":1,"bbox":[658,392,252,34]}
+{"kind":"textbox","id":"sh/3elcv65w","slide":4,"name":"사각형: 둥근 모서리 47","text":"자유대화 · STT·TTS 선택","textPreview":"자유대화 · STT·TTS 선택","textChars":17,"textLines":1,"bbox":[658,430,252,28]}
+{"kind":"notes","id":"nt/jyx0ra1s","slide":4,"text":""}
+{"kind":"slide","id":"sl/i107q5of","slide":5,"title":"AI 챗봇 — 텍스트·음성과 사용자 주도 대화","textShapes":13}
+{"kind":"textbox","id":"sh/dgbulwnm","slide":5,"name":"Text 0","text":"AI 챗봇 — 텍스트·음성과 사용자 주도 대화","textPreview":"AI 챗봇 — 텍스트·음성과 사용자 주도 대화","textChars":25,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/cf2tcr61","slide":5,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/yhkbe1o7","slide":5,"name":"Text 3","text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"textbox","id":"sh/l4bupwny","slide":5,"name":"사각형: 둥근 모서리 5","text":"NT-07 · 텍스트·음성 입력","textPreview":"NT-07 · 텍스트·음성 입력","textChars":17,"textLines":1,"bbox":[58,107.52,170,18]}
+{"kind":"textbox","id":"sh/032tgr6d","slide":5,"name":"사각형: 둥근 모서리 6","text":"NT-07 · 자유대화·TTS","textPreview":"NT-07 · 자유대화·TTS","textChars":16,"textLines":1,"bbox":[272,107.52,170,18]}
+{"kind":"shape","id":"sh/x4vedgvm","slide":5,"name":"사각형: 둥근 모서리 10","bbox":[492,126,434,106]}
+{"kind":"shape","id":"sh/ahkvi1cb","slide":5,"name":"타원 11","bbox":[506,140,30,30]}
+{"kind":"textbox","id":"sh/v2twb6dw","slide":5,"name":"사각형: 둥근 모서리 12","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[506,140,30,30]}
+{"kind":"textbox","id":"sh/k7mxovud","slide":5,"name":"사각형: 둥근 모서리 13","text":"입력 방법","textPreview":"입력 방법","textChars":5,"textLines":1,"bbox":[544,136,366,34]}
+{"kind":"textbox","id":"sh/58vehgvy","slide":5,"name":"사각형: 둥근 모서리 14","text":"키보드로 입력하거나 마이크를 탭해 녹음을 시작·종료합니다. 두 입력은 같은 사용자 발화로 처리합니다.","textPreview":"키보드로 입력하거나 마이크를 탭해 녹음을 시작·종료합니다. 두 입력은 같은 사용자 발화로 처리합니다.","textChars":56,"textLines":1,"bbox":[508,174,402,48]}
+{"kind":"shape","id":"sh/i54fmlc7","slide":5,"name":"사각형: 둥근 모서리 15","bbox":[492,248,434,112]}
+{"kind":"shape","id":"sh/j6dwfqds","slide":5,"name":"타원 16","bbox":[506,262,30,30]}
+{"kind":"textbox","id":"sh/sb6xsvu9","slide":5,"name":"사각형: 둥근 모서리 17","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[506,262,30,30]}
+{"kind":"textbox","id":"sh/tcfel0vu","slide":5,"name":"사각형: 둥근 모서리 18","text":"사용자 주도 자유대화","textPreview":"사용자 주도 자유대화","textChars":11,"textLines":1,"bbox":[544,258,366,34]}
+{"kind":"textbox","id":"sh/hgrmpwj2","slide":5,"name":"사각형: 둥근 모서리 19","text":"인식 문장은 편집 후 전송합니다. AI는 공감과 반영을 우선하고 필요한 경우에만 질문 하나를 사용합니다.","textPreview":"인식 문장은 편집 후 전송합니다. AI는 공감과 반영을 우선하고 필요한 경우에만 질문 하나를 사용합니다.","textChars":58,"textLines":1,"bbox":[508,296,402,54]}
+{"kind":"shape","id":"sh/gfi5grih","slide":5,"name":"사각형: 둥근 모서리 20","bbox":[492,376,434,104]}
+{"kind":"shape","id":"sh/fe94nm1w","slide":5,"name":"타원 21","bbox":[506,390,30,30]}
+{"kind":"textbox","id":"sh/ud0ne10b","slide":5,"name":"사각형: 둥근 모서리 22","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[506,390,30,30]}
+{"kind":"textbox","id":"sh/pkr6tgjy","slide":5,"name":"사각형: 둥근 모서리 23","text":"듣기 · 재시도 · 종료","textPreview":"듣기 · 재시도 · 종료","textChars":13,"textLines":1,"bbox":[544,386,366,34]}
+{"kind":"textbox","id":"sh/4ji5kbid","slide":5,"name":"사각형: 둥근 모서리 24","text":"텍스트는 항상 표시합니다. 듣기·정지와 응답 재시도, 수동 종료와 1시간 미활동 종료를 제공합니다.","textPreview":"텍스트는 항상 표시합니다. 듣기·정지와 응답 재시도, 수동 종료와 1시간 미활동 종료를 제공합니다.","textChars":55,"textLines":1,"bbox":[508,424,402,46]}
+{"kind":"image","id":"im/8j2x8b6t","slide":5,"name":"그림 31","bbox":[58,129.52,170,378]}
+{"kind":"image","id":"im/9kbyhg7e","slide":5,"name":"그림 32","bbox":[272,129.52,170,378]}
+{"kind":"notes","id":"nt/i107q5of","slide":5,"text":""}
+{"kind":"slide","id":"sl/x8f69ofe","slide":6,"title":"대시보드 — 상태·이벤트·AUQ 기록","textShapes":27}
+{"kind":"textbox","id":"sh/yhg7epsj","slide":6,"name":"Text 0","text":"대시보드 — 상태·이벤트·AUQ 기록","textPreview":"대시보드 — 상태·이벤트·AUQ 기록","textChars":20,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/zi98nu94","slide":6,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/98rqt4r6","slide":6,"name":"Text 3","text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"shape","id":"sh/ml07i9sv","slide":6,"name":"화살표: 오른쪽 5","bbox":[238,151,36,13]}
+{"kind":"shape","id":"sh/7m98ru9g","slide":6,"name":"화살표: 오른쪽 6","bbox":[430,151,36,13]}
+{"kind":"shape","id":"sh/oryp8fah","slide":6,"name":"화살표: 오른쪽 7","bbox":[622,151,36,13]}
+{"kind":"shape","id":"sh/pc76hkr2","slide":6,"name":"화살표: 아래쪽 8","bbox":[734,198,13,46]}
+{"kind":"shape","id":"sh/h4bupgn6","slide":6,"name":"화살표: 왼쪽 9","bbox":[250,282,32,13]}
+{"kind":"shape","id":"sh/w32twb6l","slide":6,"name":"화살표: 왼쪽 10","bbox":[438,282,32,13]}
+{"kind":"shape","id":"sh/v2tcn650","slide":6,"name":"화살표: 왼쪽 11","bbox":[626,282,32,13]}
+{"kind":"textbox","id":"sh/u1kbu1ov","slide":6,"name":"사각형: 둥근 모서리 12","text":"① 상태 기록 →","textPreview":"① 상태 기록 →","textChars":9,"textLines":1,"bbox":[94,108,110,18]}
+{"kind":"textbox","id":"sh/5svutgni","slide":6,"name":"사각형: 둥근 모서리 13","text":"② 설문 · 이벤트 ←","textPreview":"② 설문 · 이벤트 ←","textChars":12,"textLines":1,"bbox":[94,234,140,18]}
+{"kind":"shape","id":"sh/47mt0b6x","slide":6,"name":"사각형: 둥근 모서리 14","bbox":[94,126,144,64]}
+{"kind":"textbox","id":"sh/j6dcr65c","slide":6,"name":"사각형: 둥근 모서리 15","text":"날짜 선택","textPreview":"날짜 선택","textChars":5,"textLines":1,"bbox":[102,133,128,26]}
+{"kind":"textbox","id":"sh/i54bylor","slide":6,"name":"사각형: 둥근 모서리 16","text":"오늘 · 7일 · 30일","textPreview":"오늘 · 7일 · 30일","textChars":13,"textLines":1,"bbox":[102,160,128,24]}
+{"kind":"shape","id":"sh/twfux0ne","slide":6,"name":"사각형: 둥근 모서리 17","bbox":[274,126,156,64]}
+{"kind":"textbox","id":"sh/svmt4v6t","slide":6,"name":"사각형: 둥근 모서리 18","text":"갈망 상태","textPreview":"갈망 상태","textChars":5,"textLines":1,"bbox":[282,133,140,26]}
+{"kind":"textbox","id":"sh/cbe5g3ih","slide":6,"name":"사각형: 둥근 모서리 19","text":"네 구간 문구","textPreview":"네 구간 문구","textChars":7,"textLines":1,"bbox":[282,160,140,24]}
+{"kind":"shape","id":"sh/dcnm98zm","slide":6,"name":"사각형: 둥근 모서리 20","bbox":[466,126,156,64]}
+{"kind":"textbox","id":"sh/qpwnet0b","slide":6,"name":"사각형: 둥근 모서리 21","text":"단계 중첩 막대","textPreview":"단계 중첩 막대","textChars":8,"textLines":1,"bbox":[474,133,140,26]}
+{"kind":"textbox","id":"sh/bq547yhw","slide":6,"name":"사각형: 둥근 모서리 22","text":"오늘 24시간","textPreview":"오늘 24시간","textChars":7,"textLines":1,"bbox":[474,160,140,24]}
+{"kind":"shape","id":"sh/0fy5k3id","slide":6,"name":"사각형: 둥근 모서리 23","bbox":[658,126,156,64]}
+{"kind":"textbox","id":"sh/lg76d8zy","slide":6,"name":"사각형: 둥근 모서리 24","text":"막대 선택","textPreview":"막대 선택","textChars":5,"textLines":1,"bbox":[666,133,140,26]}
+{"kind":"textbox","id":"sh/ydgnit07","slide":6,"name":"사각형: 둥근 모서리 25","text":"4단계 비율 · 표본","textPreview":"4단계 비율 · 표본","textChars":11,"textLines":1,"bbox":[666,160,140,24]}
+{"kind":"shape","id":"sh/zep4byhs","slide":6,"name":"사각형: 둥근 모서리 26","bbox":[658,252,156,64]}
+{"kind":"textbox","id":"sh/gju58ji9","slide":6,"name":"사각형: 둥근 모서리 27","text":"AUQ","textPreview":"AUQ","textChars":3,"textLines":1,"bbox":[666,259,140,26]}
+{"kind":"textbox","id":"sh/1k3mhozu","slide":6,"name":"사각형: 둥근 모서리 28","text":"총점 X/56","textPreview":"총점 X/56","textChars":7,"textLines":1,"bbox":[666,286,140,24]}
+{"kind":"shape","id":"sh/jet8nm1c","slide":6,"name":"사각형: 둥근 모서리 29","bbox":[470,252,156,64]}
+{"kind":"textbox","id":"sh/idk7ehkr","slide":6,"name":"사각형: 둥근 모서리 30","text":"AUQ 막대","textPreview":"AUQ 막대","textChars":6,"textLines":1,"bbox":[478,259,140,26]}
+{"kind":"textbox","id":"sh/50bqpcj2","slide":6,"name":"사각형: 둥근 모서리 31","text":"8~56 원점수","textPreview":"8~56 원점수","textChars":8,"textLines":1,"bbox":[478,286,140,24]}
+{"kind":"shape","id":"sh/4f2pgr2h","slide":6,"name":"사각형: 둥근 모서리 32","bbox":[282,252,156,64]}
+{"kind":"textbox","id":"sh/va98j210","slide":6,"name":"사각형: 둥근 모서리 33","text":"갈망 이벤트","textPreview":"갈망 이벤트","textChars":6,"textLines":1,"bbox":[290,259,140,26]}
+{"kind":"textbox","id":"sh/u907axkf","slide":6,"name":"사각형: 둥근 모서리 34","text":"알림 발생 건수","textPreview":"알림 발생 건수","textChars":8,"textLines":1,"bbox":[290,286,140,24]}
+{"kind":"shape","id":"sh/hcrqlcj6","slide":6,"name":"사각형: 둥근 모서리 35","bbox":[94,252,156,64]}
+{"kind":"textbox","id":"sh/wbipc72l","slide":6,"name":"사각형: 둥근 모서리 36","text":"데이터 없음","textPreview":"데이터 없음","textChars":6,"textLines":1,"bbox":[102,259,140,26]}
+{"kind":"textbox","id":"sh/7698f214","slide":6,"name":"사각형: 둥근 모서리 37","text":"0건과 구분","textPreview":"0건과 구분","textChars":6,"textLines":1,"bbox":[102,286,140,24]}
+{"kind":"textbox","id":"sh/m5076xkj","slide":6,"name":"사각형: 둥근 모서리 38","text":"막대를 누르면 선택 구간 상세를 표시합니다","textPreview":"막대를 누르면 선택 구간 상세를 표시합니다","textChars":23,"textLines":1,"bbox":[640,322,220,24]}
+{"kind":"shape","id":"sh/2dkbalg3","slide":6,"name":"사각형: 둥근 모서리 39","bbox":[34,382,284,86]}
+{"kind":"textbox","id":"sh/netcjqxo","slide":6,"name":"사각형: 둥근 모서리 40","text":"갈망 상태","textPreview":"갈망 상태","textChars":5,"textLines":1,"bbox":[50,392,252,34]}
+{"kind":"textbox","id":"sh/of2tcvy9","slide":6,"name":"사각형: 둥근 모서리 41","text":"낮음·관찰·주의·높음 비율을 한 막대에 중첩","textPreview":"낮음·관찰·주의·높음 비율을 한 막대에 중첩","textChars":24,"textLines":1,"bbox":[50,426,252,28]}
+{"kind":"shape","id":"sh/pgbul0fu","slide":6,"name":"사각형: 둥근 모서리 42","bbox":[338,382,284,86]}
+{"kind":"textbox","id":"sh/ep0b6lg7","slide":6,"name":"사각형: 둥근 모서리 43","text":"AUQ","textPreview":"AUQ","textChars":3,"textLines":1,"bbox":[354,392,252,34]}
+{"kind":"textbox","id":"sh/fq9cfqxc","slide":6,"name":"사각형: 둥근 모서리 44","text":"총점 X/56 · 높을수록 응답이 높음","textPreview":"총점 X/56 · 높을수록 응답이 높음","textChars":21,"textLines":1,"bbox":[354,430,252,28]}
+{"kind":"shape","id":"sh/0r2t8vyx","slide":6,"name":"사각형: 둥근 모서리 45","bbox":[642,382,284,86]}
+{"kind":"textbox","id":"sh/1sbuh0fi","slide":6,"name":"사각형: 둥근 모서리 46","text":"빈 구간 · 0건","textPreview":"빈 구간 · 0건","textChars":9,"textLines":1,"bbox":[658,392,252,34]}
+{"kind":"textbox","id":"sh/ql0b21gv","slide":6,"name":"사각형: 둥근 모서리 47","text":"데이터 없음은 공백 · 유효한 0건은 0건","textPreview":"데이터 없음은 공백 · 유효한 0건은 0건","textChars":23,"textLines":1,"bbox":[658,430,252,28]}
+{"kind":"notes","id":"nt/x8f69ofe","slide":6,"text":""}
+{"kind":"slide","id":"sl/gnmp4jqx","slide":7,"title":"파이프라인 1 — 시작부터 20초 측정까지","textShapes":30}
+{"kind":"textbox","id":"sh/cb2tkvap","slide":7,"name":"Text 0","text":"파이프라인 1 — 시작부터 20초 측정까지","textPreview":"파이프라인 1 — 시작부터 20초 측정까지","textChars":23,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/dcbud0ra","slide":7,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/zedcfa9g","slide":7,"name":"Text 3","text":"7","textPreview":"7","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"textbox","id":"sh/kzmdova1","slide":7,"name":"사각형: 둥근 모서리 5","text":"NT-01 · 제품 안내","textPreview":"NT-01 · 제품 안내","textChars":13,"textLines":1,"bbox":[36,106,128,18]}
+{"kind":"textbox","id":"sh/l0vuh0rm","slide":7,"name":"사각형: 둥근 모서리 6","text":"NT-02 · 가입 · 로그인","textPreview":"NT-02 · 가입 · 로그인","textChars":16,"textLines":1,"bbox":[170,106,128,18]}
+{"kind":"textbox","id":"sh/eh0ba1sr","slide":7,"name":"사각형: 둥근 모서리 7","text":"NT-03 · 동의 · 권한","textPreview":"NT-03 · 동의 · 권한","textChars":15,"textLines":1,"bbox":[304,106,128,18]}
+{"kind":"shape","id":"sh/cbq1sv25","slide":7,"name":"사각형: 둥근 모서리 12","bbox":[42,416,386,58]}
+{"kind":"textbox","id":"sh/n6x0fqlo","slide":7,"name":"사각형: 둥근 모서리 13","text":"NT-04 · 홈과 측정","textPreview":"NT-04 · 홈과 측정","textChars":13,"textLines":1,"bbox":[50,423,370,26]}
+{"kind":"textbox","id":"sh/25ojml43","slide":7,"name":"사각형: 둥근 모서리 14","text":"Watch 20초 수집 · 10초마다 최신 창 전송 · 얼굴 측정 버튼","textPreview":"Watch 20초 수집 · 10초마다 최신 창 전송 · 얼굴 측정 버튼","textChars":39,"textLines":1,"bbox":[50,450,370,18]}
+{"kind":"textbox","id":"sh/p8fih03e","slide":7,"name":"사각형: 둥근 모서리 15","text":"누르는 항목","textPreview":"누르는 항목","textChars":6,"textLines":1,"bbox":[494,106,112,18]}
+{"kind":"textbox","id":"sh/o761ov2t","slide":7,"name":"사각형: 둥근 모서리 16","text":"앱 반응","textPreview":"앱 반응","textChars":4,"textLines":1,"bbox":[634,106,154,18]}
+{"kind":"textbox","id":"sh/f2d0b6lc","slide":7,"name":"사각형: 둥근 모서리 17","text":"이동·유지 화면","textPreview":"이동·유지 화면","textChars":8,"textLines":1,"bbox":[816,106,110,18]}
+{"kind":"shape","id":"sh/eh4jil4r","slide":7,"name":"화살표: 오른쪽 18","bbox":[608,152,20,13]}
+{"kind":"shape","id":"sh/id4ju1oz","slide":7,"name":"화살표: 오른쪽 19","bbox":[790,152,20,13]}
+{"kind":"shape","id":"sh/jedkn654","slide":7,"name":"타원 20","bbox":[456,146,26,26]}
+{"kind":"textbox","id":"sh/4fm1wb6p","slide":7,"name":"사각형: 둥근 모서리 21","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[456,146,26,26]}
+{"kind":"textbox","id":"sh/50v2pgna","slide":7,"name":"사각형: 둥근 모서리 22","text":"확인하고 계속","textPreview":"확인하고 계속","textChars":7,"textLines":1,"bbox":[494,130,112,58]}
+{"kind":"textbox","id":"sh/q143ylov","slide":7,"name":"사각형: 둥근 모서리 23","text":"제품 안내 확인 상태를 저장","textPreview":"제품 안내 확인 상태를 저장","textChars":15,"textLines":1,"bbox":[634,130,154,58]}
+{"kind":"textbox","id":"sh/r2dkrq5g","slide":7,"name":"사각형: 둥근 모서리 24","text":"NT-02\n가입·로그인","textPreview":"NT-02 | 가입·로그인","textChars":12,"textLines":2,"bbox":[816,130,110,58]}
+{"kind":"shape","id":"sh/s3ml0v61","slide":7,"name":"화살표: 오른쪽 25","bbox":[608,222,20,13]}
+{"kind":"shape","id":"sh/d4f2t0nm","slide":7,"name":"화살표: 오른쪽 26","bbox":[790,222,20,13]}
+{"kind":"shape","id":"sh/e5o32lor","slide":7,"name":"타원 27","bbox":[456,216,26,26]}
+{"kind":"textbox","id":"sh/f6xkvq5c","slide":7,"name":"사각형: 둥근 모서리 28","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[456,216,26,26]}
+{"kind":"textbox","id":"sh/p0zmlk7u","slide":7,"name":"사각형: 둥근 모서리 29","text":"가입하고 시작\n기존 계정 로그인","textPreview":"가입하고 시작 | 기존 계정 로그인","textChars":17,"textLines":2,"bbox":[494,200,112,58]}
+{"kind":"textbox","id":"sh/ozq5szq9","slide":7,"name":"사각형: 둥근 모서리 30","text":"계정 처리 후 필요한 동의 상태를 확인","textPreview":"계정 처리 후 필요한 동의 상태를 확인","textChars":21,"textLines":1,"bbox":[634,200,154,58]}
+{"kind":"textbox","id":"sh/nyh4jupo","slide":7,"name":"사각형: 둥근 모서리 31","text":"NT-03 /\nNT-04","textPreview":"NT-03 / | NT-04","textChars":13,"textLines":2,"bbox":[816,200,110,58]}
+{"kind":"shape","id":"sh/2x8nqp83","slide":7,"name":"화살표: 오른쪽 32","bbox":[608,292,20,13]}
+{"kind":"shape","id":"sh/x4j6p47q","slide":7,"name":"화살표: 오른쪽 33","bbox":[790,292,20,13]}
+{"kind":"shape","id":"sh/c3a5wzq5","slide":7,"name":"타원 34","bbox":[456,286,26,26]}
+{"kind":"textbox","id":"sh/b2h4nupk","slide":7,"name":"사각형: 둥근 모서리 35","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[456,286,26,26]}
+{"kind":"textbox","id":"sh/a18nup8z","slide":7,"name":"사각형: 둥근 모서리 36","text":"동의 저장 → 홈","textPreview":"동의 저장 → 홈","textChars":9,"textLines":1,"bbox":[494,270,112,58]}
+{"kind":"textbox","id":"sh/lsj6t47m","slide":7,"name":"사각형: 둥근 모서리 37","text":"음성·카메라 선택과 권한 상태를 저장","textPreview":"음성·카메라 선택과 권한 상태를 저장","textChars":20,"textLines":1,"bbox":[634,270,154,58]}
+{"kind":"textbox","id":"sh/kra50jqh","slide":7,"name":"사각형: 둥근 모서리 38","text":"NT-04\n홈","textPreview":"NT-04 | 홈","textChars":7,"textLines":2,"bbox":[816,270,110,58]}
+{"kind":"shape","id":"sh/wneps3ap","slide":7,"name":"화살표: 오른쪽 39","bbox":[608,362,20,13]}
+{"kind":"shape","id":"sh/honq18ru","slide":7,"name":"화살표: 오른쪽 40","bbox":[790,362,20,13]}
+{"kind":"shape","id":"sh/ulc7qdsj","slide":7,"name":"타원 41","bbox":[456,356,26,26]}
+{"kind":"textbox","id":"sh/vm58zi94","slide":7,"name":"사각형: 둥근 모서리 42","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[456,356,26,26]}
+{"kind":"textbox","id":"sh/8jupo3ad","slide":7,"name":"사각형: 둥근 모서리 43","text":"Watch 연결","textPreview":"Watch 연결","textChars":8,"textLines":1,"bbox":[494,340,112,58]}
+{"kind":"textbox","id":"sh/9k3qx8ry","slide":7,"name":"사각형: 둥근 모서리 44","text":"20초를 모은 뒤 10초마다 최신 창을 전송","textPreview":"20초를 모은 뒤 10초마다 최신 창을 전송","textChars":24,"textLines":1,"bbox":[634,340,154,58]}
+{"kind":"textbox","id":"sh/mxc7mts7","slide":7,"name":"사각형: 둥근 모서리 45","text":"NT-04\n홈 상태","textPreview":"NT-04 | 홈 상태","textChars":10,"textLines":2,"bbox":[816,340,110,58]}
+{"kind":"shape","id":"sh/7yl8vy9s","slide":7,"name":"화살표: 오른쪽 46","bbox":[608,432,20,13]}
+{"kind":"shape","id":"sh/sfy907ah","slide":7,"name":"화살표: 오른쪽 47","bbox":[790,432,20,13]}
+{"kind":"shape","id":"sh/tg7q9sr2","slide":7,"name":"타원 48","bbox":[456,426,26,26]}
+{"kind":"textbox","id":"sh/na9sz6tk","slide":7,"name":"사각형: 둥근 모서리 49","text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[456,426,26,26]}
+{"kind":"textbox","id":"sh/290bq1cz","slide":7,"name":"사각형: 둥근 모서리 50","text":"얼굴로 측정","textPreview":"얼굴로 측정","textChars":6,"textLines":1,"bbox":[494,410,112,58]}
+{"kind":"textbox","id":"sh/pcra1wba","slide":7,"name":"사각형: 둥근 모서리 51","text":"표시 조건 확인 후 20초 촬영·분석 상태 표시","textPreview":"표시 조건 확인 후 20초 촬영·분석 상태 표시","textChars":26,"textLines":1,"bbox":[634,410,154,58]}
+{"kind":"textbox","id":"sh/obitsrup","slide":7,"name":"사각형: 둥근 모서리 52","text":"NT-04 /\nNT-08","textPreview":"NT-04 / | NT-08","textChars":13,"textLines":2,"bbox":[816,410,110,58]}
+{"kind":"image","id":"im/07qh8rup","slide":7,"name":"그림 60","bbox":[42,130,122,271.11]}
+{"kind":"image","id":"im/l8zyhwba","slide":7,"name":"그림 61","bbox":[174,130,122,271.11]}
+{"kind":"image","id":"im/y58z6hcj","slide":7,"name":"그림 62","bbox":[306,130,122,271.11]}
+{"kind":"notes","id":"nt/gnmp4jqx","slide":7,"text":""}
+{"kind":"slide","id":"sl/fu1gfa1s","slide":8,"title":"파이프라인 2 — 알림·AUQ·대화","textShapes":26}
+{"kind":"textbox","id":"sh/18byd4zy","slide":8,"name":"Text 0","text":"파이프라인 2 — 알림·AUQ·대화","textPreview":"파이프라인 2 — 알림·AUQ·대화","textChars":19,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/g72x4zyd","slide":8,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/6h0fypgb","slide":8,"name":"Text 3","text":"8","textPreview":"8","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"textbox","id":"sh/tkby9kzm","slide":8,"name":"사각형: 둥근 모서리 5","text":"NT-05 · 갈망 알림","textPreview":"NT-05 · 갈망 알림","textChars":13,"textLines":1,"bbox":[42,106,122,18]}
+{"kind":"textbox","id":"sh/sjix0zy1","slide":8,"name":"사각형: 둥근 모서리 6","text":"NT-06 · AUQ","textPreview":"NT-06 · AUQ","textChars":11,"textLines":1,"bbox":[174,106,122,18]}
+{"kind":"textbox","id":"sh/je9g3ahk","slide":8,"name":"사각형: 둥근 모서리 7","text":"NT-07 · AI 챗봇","textPreview":"NT-07 · AI 챗봇","textChars":13,"textLines":1,"bbox":[306,106,122,18]}
+{"kind":"shape","id":"sh/n6pwfmd8","slide":8,"name":"사각형: 둥근 모서리 12","bbox":[42,416,386,58]}
+{"kind":"textbox","id":"sh/0jydkreh","slide":8,"name":"사각형: 둥근 모서리 13","text":"두 선택 경로","textPreview":"두 선택 경로","textChars":7,"textLines":1,"bbox":[50,423,370,26]}
+{"kind":"textbox","id":"sh/1k7edwv2","slide":8,"name":"사각형: 둥근 모서리 14","text":"나중에 → 현재 화면 유지 · 지금 대화하기 → AUQ 또는 자유대화","textPreview":"나중에 → 현재 화면 유지 · 지금 대화하기 → AUQ 또는 자유대화","textChars":38,"textLines":1,"bbox":[50,450,370,18]}
+{"kind":"textbox","id":"sh/ehgvihwr","slide":8,"name":"사각형: 둥근 모서리 15","text":"누르는 항목","textPreview":"누르는 항목","textChars":6,"textLines":1,"bbox":[494,118,112,18]}
+{"kind":"textbox","id":"sh/zipwbmdc","slide":8,"name":"사각형: 둥근 모서리 16","text":"앱 반응","textPreview":"앱 반응","textChars":4,"textLines":1,"bbox":[634,118,154,18]}
+{"kind":"textbox","id":"sh/kfixwbe1","slide":8,"name":"사각형: 둥근 모서리 17","text":"이동·유지 화면","textPreview":"이동·유지 화면","textChars":8,"textLines":1,"bbox":[816,118,110,18]}
+{"kind":"shape","id":"sh/lgbepgvm","slide":8,"name":"화살표: 오른쪽 18","bbox":[608,168,20,13]}
+{"kind":"shape","id":"sh/tw7e9gnq","slide":8,"name":"화살표: 오른쪽 19","bbox":[790,168,20,13]}
+{"kind":"shape","id":"sh/svydgb65","slide":8,"name":"타원 20","bbox":[456,162,26,26]}
+{"kind":"textbox","id":"sh/7u5w765k","slide":8,"name":"사각형: 둥근 모서리 21","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[456,162,26,26]}
+{"kind":"textbox","id":"sh/6twve1oz","slide":8,"name":"사각형: 둥근 모서리 22","text":"지금 대화하기","textPreview":"지금 대화하기","textChars":7,"textLines":1,"bbox":[494,146,112,58]}
+{"kind":"textbox","id":"sh/5sne5wne","slide":8,"name":"사각형: 둥근 모서리 23","text":"대화 시작 선택을 저장","textPreview":"대화 시작 선택을 저장","textChars":12,"textLines":1,"bbox":[634,146,154,58]}
+{"kind":"textbox","id":"sh/kredcr6t","slide":8,"name":"사각형: 둥근 모서리 24","text":"NT-06\nAUQ","textPreview":"NT-06 | AUQ","textChars":9,"textLines":2,"bbox":[816,146,110,58]}
+{"kind":"shape","id":"sh/jq5w365o","slide":8,"name":"화살표: 오른쪽 25","bbox":[608,248,20,13]}
+{"kind":"shape","id":"sh/i5wva1o3","slide":8,"name":"화살표: 오른쪽 26","bbox":[790,248,20,13]}
+{"kind":"shape","id":"sh/x4ne1wni","slide":8,"name":"타원 27","bbox":[456,242,26,26]}
+{"kind":"textbox","id":"sh/w3ed8r6x","slide":8,"name":"사각형: 둥근 모서리 28","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[456,242,26,26]}
+{"kind":"textbox","id":"sh/m9sb2x4v","slide":8,"name":"사각형: 둥근 모서리 29","text":"나중에","textPreview":"나중에","textChars":3,"textLines":1,"bbox":[494,226,112,58]}
+{"kind":"textbox","id":"sh/na1sb2lg","slide":8,"name":"사각형: 둥근 모서리 30","text":"알림을 닫고 현재 화면을 유지","textPreview":"알림을 닫고 현재 화면을 유지","textChars":16,"textLines":1,"bbox":[634,226,154,58]}
+{"kind":"textbox","id":"sh/8bat47ml","slide":8,"name":"사각형: 둥근 모서리 31","text":"NT-04\n홈","textPreview":"NT-04 | 홈","textChars":7,"textLines":2,"bbox":[816,226,110,58]}
+{"kind":"shape","id":"sh/9w3uds36","slide":8,"name":"화살표: 오른쪽 32","bbox":[608,328,20,13]}
+{"kind":"shape","id":"sh/y5sbed4j","slide":8,"name":"화살표: 오른쪽 33","bbox":[790,328,20,13]}
+{"kind":"shape","id":"sh/z61s7il4","slide":8,"name":"타원 34","bbox":[456,322,26,26]}
+{"kind":"textbox","id":"sh/07atgnmp","slide":8,"name":"사각형: 둥근 모서리 35","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[456,322,26,26]}
+{"kind":"textbox","id":"sh/l8ja9s3a","slide":8,"name":"사각형: 둥근 모서리 36","text":"7단계 문장 선택 → 다음","textPreview":"7단계 문장 선택 → 다음","textChars":14,"textLines":1,"bbox":[494,306,112,58]}
+{"kind":"textbox","id":"sh/q18bad4n","slide":8,"name":"사각형: 둥근 모서리 37","text":"1~7 값을 저장하고 다음 문항을 표시","textPreview":"1~7 값을 저장하고 다음 문항을 표시","textChars":21,"textLines":1,"bbox":[634,306,154,58]}
+{"kind":"textbox","id":"sh/b2hs3il8","slide":8,"name":"사각형: 둥근 모서리 38","text":"NT-06\n유지","textPreview":"NT-06 | 유지","textChars":8,"textLines":2,"bbox":[816,306,110,58]}
+{"kind":"shape","id":"sh/3u18fepo","slide":8,"name":"화살표: 오른쪽 39","bbox":[608,408,20,13]}
+{"kind":"shape","id":"sh/2ts769o3","slide":8,"name":"화살표: 오른쪽 40","bbox":[790,408,20,13]}
+{"kind":"shape","id":"sh/pwjqho7u","slide":8,"name":"타원 41","bbox":[456,402,26,26]}
+{"kind":"textbox","id":"sh/4vap8j69","slide":8,"name":"사각형: 둥근 모서리 42","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[456,402,26,26]}
+{"kind":"textbox","id":"sh/fq1obeps","slide":8,"name":"사각형: 둥근 모서리 43","text":"건너뛰기 / 마지막 완료","textPreview":"건너뛰기 / 마지막 완료","textChars":13,"textLines":1,"bbox":[494,386,112,58]}
+{"kind":"textbox","id":"sh/up872987","slide":8,"name":"사각형: 둥근 모서리 44","text":"AUQ 상태를 저장하고 자유대화를 열기","textPreview":"AUQ 상태를 저장하고 자유대화를 열기","textChars":21,"textLines":1,"bbox":[634,386,154,58]}
+{"kind":"textbox","id":"sh/hsjqd47y","slide":8,"name":"사각형: 둥근 모서리 45","text":"NT-07\nAI 챗봇","textPreview":"NT-07 | AI 챗봇","textChars":11,"textLines":2,"bbox":[816,386,110,58]}
+{"kind":"image","id":"im/vqd4ja5w","slide":8,"name":"그림 53","bbox":[42,130,122,271.11]}
+{"kind":"image","id":"im/4fmlwfmd","slide":8,"name":"그림 55","bbox":[306,130,122,271.11]}
+{"kind":"notes","id":"nt/fu1gfa1s","slide":8,"text":""}
+{"kind":"slide","id":"sl/udsvah03","slide":9,"title":"파이프라인 3 — 사용자 주도 대화와 기록","textShapes":30}
+{"kind":"textbox","id":"sh/1cfmhgne","slide":9,"name":"Text 0","text":"파이프라인 3 — 사용자 주도 대화와 기록","textPreview":"파이프라인 3 — 사용자 주도 대화와 기록","textChars":23,"textLines":1,"bbox":[0,1.92,960,57.6]}
+{"kind":"shape","id":"sh/0b65obm9","slide":9,"name":"Shape 1","bbox":[0,65.28,960,3.36]}
+{"kind":"textbox","id":"sh/mdonql4z","slide":9,"name":"Text 3","text":"9","textPreview":"9","textChars":1,"textLines":1,"bbox":[907.2,508.8,38.4,26.88]}
+{"kind":"textbox","id":"sh/9gzml0nq","slide":9,"name":"사각형: 둥근 모서리 5","text":"NT-07 · 텍스트·STT","textPreview":"NT-07 · 텍스트·STT","textChars":15,"textLines":1,"bbox":[42,106,122,18]}
+{"kind":"textbox","id":"sh/ofq5svm5","slide":9,"name":"사각형: 둥근 모서리 6","text":"NT-07 · TTS·재시도","textPreview":"NT-07 · TTS·재시도","textChars":15,"textLines":1,"bbox":[174,106,122,18]}
+{"kind":"textbox","id":"sh/bih4na5w","slide":9,"name":"사각형: 둥근 모서리 7","text":"NT-08 · 대시보드","textPreview":"NT-08 · 대시보드","textChars":12,"textLines":1,"bbox":[306,106,122,18]}
+{"kind":"shape","id":"sh/3y107axw","slide":9,"name":"사각형: 둥근 모서리 12","bbox":[42,416,386,58]}
+{"kind":"textbox","id":"sh/cnu1kzyd","slide":9,"name":"사각형: 둥근 모서리 13","text":"음성·텍스트에서 기록까지","textPreview":"음성·텍스트에서 기록까지","textChars":13,"textLines":1,"bbox":[50,423,370,26]}
+{"kind":"textbox","id":"sh/do3id4fy","slide":9,"name":"사각형: 둥근 모서리 14","text":"인식 문장은 편집 후 전송하고 AI 응답은 텍스트와 TTS로 제공합니다","textPreview":"인식 문장은 편집 후 전송하고 AI 응답은 텍스트와 TTS로 제공합니다","textChars":39,"textLines":1,"bbox":[50,450,370,18]}
+{"kind":"textbox","id":"sh/qlcjipgn","slide":9,"name":"사각형: 둥근 모서리 15","text":"누르는 항목","textPreview":"누르는 항목","textChars":6,"textLines":1,"bbox":[494,106,112,18]}
+{"kind":"textbox","id":"sh/bml0buxs","slide":9,"name":"사각형: 둥근 모서리 16","text":"앱 반응","textPreview":"앱 반응","textChars":4,"textLines":1,"bbox":[634,106,154,18]}
+{"kind":"textbox","id":"sh/0ru1ozyp","slide":9,"name":"사각형: 둥근 모서리 17","text":"이동·유지 화면","textPreview":"이동·유지 화면","textChars":8,"textLines":1,"bbox":[816,106,110,18]}
+{"kind":"shape","id":"sh/lsn2h4fa","slide":9,"name":"화살표: 오른쪽 18","bbox":[608,152,20,13]}
+{"kind":"shape","id":"sh/98ji147e","slide":9,"name":"화살표: 오른쪽 19","bbox":[790,152,20,13]}
+{"kind":"shape","id":"sh/87a18zqt","slide":9,"name":"타원 20","bbox":[456,146,26,26]}
+{"kind":"textbox","id":"sh/76h0zup8","slide":9,"name":"사각형: 둥근 모서리 21","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[456,146,26,26]}
+{"kind":"textbox","id":"sh/ml8j6p8n","slide":9,"name":"사각형: 둥근 모서리 22","text":"챗봇 탭","textPreview":"챗봇 탭","textChars":4,"textLines":1,"bbox":[494,130,112,58]}
+{"kind":"textbox","id":"sh/hcji5o7a","slide":9,"name":"사각형: 둥근 모서리 23","text":"진행 중 대화를 열거나 새 대화를 시작","textPreview":"진행 중 대화를 열거나 새 대화를 시작","textChars":21,"textLines":1,"bbox":[634,130,154,58]}
+{"kind":"textbox","id":"sh/wba1cjqp","slide":9,"name":"사각형: 둥근 모서리 24","text":"NT-07\nAI 챗봇","textPreview":"NT-07 | AI 챗봇","textChars":11,"textLines":2,"bbox":[816,130,110,58]}
+{"kind":"shape","id":"sh/va103ep4","slide":9,"name":"화살표: 오른쪽 25","bbox":[608,222,20,13]}
+{"kind":"shape","id":"sh/u9sja98z","slide":9,"name":"화살표: 오른쪽 26","bbox":[790,222,20,13]}
+{"kind":"shape","id":"sh/xgzitk76","slide":9,"name":"타원 27","bbox":[456,216,26,26]}
+{"kind":"textbox","id":"sh/cf6h0fql","slide":9,"name":"사각형: 둥근 모서리 28","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[456,216,26,26]}
+{"kind":"textbox","id":"sh/2l4faloj","slide":9,"name":"사각형: 둥근 모서리 29","text":"마이크 시작 → 정지","textPreview":"마이크 시작 → 정지","textChars":11,"textLines":1,"bbox":[494,200,112,58]}
+{"kind":"textbox","id":"sh/nmdg3q54","slide":9,"name":"사각형: 둥근 모서리 30","text":"인식 문장을 입력창에 채우고 편집 상태 유지","textPreview":"인식 문장을 입력창에 채우고 편집 상태 유지","textChars":24,"textLines":1,"bbox":[634,200,154,58]}
+{"kind":"textbox","id":"sh/onmxcv69","slide":9,"name":"사각형: 둥근 모서리 31","text":"NT-07\n입력","textPreview":"NT-07 | 입력","textChars":8,"textLines":2,"bbox":[816,200,110,58]}
+{"kind":"shape","id":"sh/pofy50nu","slide":9,"name":"화살표: 오른쪽 32","bbox":[608,292,20,13]}
+{"kind":"shape","id":"sh/apofe5of","slide":9,"name":"화살표: 오른쪽 33","bbox":[790,292,20,13]}
+{"kind":"shape","id":"sh/bqxg7q50","slide":9,"name":"타원 34","bbox":[456,286,26,26]}
+{"kind":"textbox","id":"sh/cr6xgv6l","slide":9,"name":"사각형: 둥근 모서리 35","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[456,286,26,26]}
+{"kind":"textbox","id":"sh/xcfy90n6","slide":9,"name":"사각형: 둥근 모서리 36","text":"전송","textPreview":"전송","textChars":2,"textLines":1,"bbox":[494,270,112,58]}
+{"kind":"textbox","id":"sh/qtkf21ob","slide":9,"name":"사각형: 둥근 모서리 37","text":"최종 문장을 저장하고 사용자 주도 AI 응답 요청","textPreview":"최종 문장을 저장하고 사용자 주도 AI 응답 요청","textChars":27,"textLines":1,"bbox":[634,270,154,58]}
+{"kind":"textbox","id":"sh/rutwv65w","slide":9,"name":"사각형: 둥근 모서리 38","text":"NT-07\n응답","textPreview":"NT-07 | 응답","textChars":8,"textLines":2,"bbox":[816,270,110,58]}
+{"kind":"shape","id":"sh/7y14jyd8","slide":9,"name":"화살표: 오른쪽 39","bbox":[608,362,20,13]}
+{"kind":"shape","id":"sh/mdsnatcn","slide":9,"name":"화살표: 오른쪽 40","bbox":[790,362,20,13]}
+{"kind":"shape","id":"sh/903ml8be","slide":9,"name":"타원 41","bbox":[456,356,26,26]}
+{"kind":"textbox","id":"sh/8zu5c3ut","slide":9,"name":"사각형: 둥근 모서리 42","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[456,356,26,26]}
+{"kind":"textbox","id":"sh/v2l4nitk","slide":9,"name":"사각형: 둥근 모서리 43","text":"듣기·정지 / 종료","textPreview":"듣기·정지 / 종료","textChars":10,"textLines":1,"bbox":[494,340,112,58]}
+{"kind":"textbox","id":"sh/u1cnedcz","slide":9,"name":"사각형: 둥근 모서리 44","text":"TTS를 제어하거나 대화를 마감해 기록 반영","textPreview":"TTS를 제어하거나 대화를 마감해 기록 반영","textChars":24,"textLines":1,"bbox":[634,340,154,58]}
+{"kind":"textbox","id":"sh/h43mp8ba","slide":9,"name":"사각형: 둥근 모서리 45","text":"NT-07 /\nNT-08","textPreview":"NT-07 / | NT-08","textChars":13,"textLines":2,"bbox":[816,340,110,58]}
+{"kind":"shape","id":"sh/w3u5g3u5","slide":9,"name":"화살표: 오른쪽 46","bbox":[608,432,20,13]}
+{"kind":"shape","id":"sh/j6l4ritg","slide":9,"name":"화살표: 오른쪽 47","bbox":[790,432,20,13]}
+{"kind":"shape","id":"sh/i5cnidcv","slide":9,"name":"타원 48","bbox":[456,426,26,26]}
+{"kind":"textbox","id":"sh/0bel8na9","slide":9,"name":"사각형: 둥근 모서리 49","text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[456,426,26,26]}
+{"kind":"textbox","id":"sh/1wnm1sru","slide":9,"name":"사각형: 둥근 모서리 50","text":"대시보드 막대","textPreview":"대시보드 막대","textChars":7,"textLines":1,"bbox":[494,410,112,58]}
+{"kind":"textbox","id":"sh/e9w36ds3","slide":9,"name":"사각형: 둥근 모서리 51","text":"갈망 4단계 중첩·AUQ X/56·이벤트 건수 표시","textPreview":"갈망 4단계 중첩·AUQ X/56·이벤트 건수 표시","textChars":28,"textLines":1,"bbox":[634,410,154,58]}
+{"kind":"textbox","id":"sh/fa54zi9o","slide":9,"name":"사각형: 둥근 모서리 52","text":"NT-08\n유지","textPreview":"NT-08 | 유지","textChars":8,"textLines":2,"bbox":[816,410,110,58]}
+{"kind":"image","id":"im/futg76lw","slide":9,"name":"그림 60","bbox":[42,130,122,271.11]}
+{"kind":"image","id":"im/utkzelkb","slide":9,"name":"그림 61","bbox":[174,130,122,271.11]}
+{"kind":"notes","id":"nt/udsvah03","slide":9,"text":""}
