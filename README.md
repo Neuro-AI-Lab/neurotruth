@@ -1,6 +1,6 @@
 # NeuroTruth
 
-Last updated: 2026-07-16
+Last updated: 2026-07-18
 
 NeuroTruth is an authenticated wearable-assisted supportive intervention research prototype. It is intended for people receiving CBT or willing to seek treatment who need ongoing records and dialogue support in craving situations; it is not a treatment, diagnostic, or emergency-response app. Patients register on Android, grant feature-specific consent, upload Watch sensor windows, receive possible-craving alerts, and choose whether to begin a safety-aware intervention conversation. The FastAPI backend owns patient identity, AES-256-GCM persistence, model/prompt traceability, state inference, reports, and audit records. The React web surface is administrator-only.
 
@@ -12,8 +12,8 @@ Patient signup/login on phone
   -> POST /api/sensor-windows (encrypted raw retention)
   -> GET /api/predictions/stream
   -> user chooses Talk now or Later
-  -> optional AUQ + safety check + deterministic first intervention
-  -> structured autonomous dialogue without slot completion targets
+  -> optional AUQ
+  -> retry-safe free dialogue by text or optional Korean STT
   -> evidence-linked state inference + async report status
   -> patient/admin dashboards
 ```
@@ -56,7 +56,7 @@ cd ../mobile
 
 ## Binary craving model deployment
 
-The active model is the two-class PyTorch `Conv1DNet`. It consumes a ten-second PPG/GSR window every second and stores/streams softmax `p(class 1)` as a research-use model craving likelihood. It is not a diagnosis, calibrated clinical severity, or treatment-effect measure. The final weights used all available training data and have no independent final-weight test evaluation.
+The active model is the two-class PyTorch `Conv1DNet`. After a 20-second warm-up, the phone submits the latest 20-second PPG/GSR window every 10 seconds. The backend resamples each channel to 1,024 points and stores/streams softmax `p(class 1)` as a research-use model likelihood. Patient UI maps the raw value to four descriptive display bands rather than showing an exact percentage. It is not a diagnosis, calibrated clinical severity, or treatment-effect measure.
 
 DGX Spark deployment prefers CUDA and falls back to CPU only when CUDA cannot complete a smoke inference. Start the normal Compose stack with the DGX GPU override and verify the model status reports `actualDevice=cuda:0` before device acceptance. The base Compose remains CPU-capable. No deployment port is changed by the model transition.
 
@@ -81,6 +81,8 @@ The command preserves raw sensors, users, consent, AUQ, sessions, messages, inte
 | `SENSOR_STORAGE_ROOT` | Backend-only encrypted sensor volume |
 | `APP_ENV` | `development`, `test`, or `production` |
 | `ALLOW_INSECURE_HTTP` | Explicit local/LAN HTTP override; forbidden in production |
+| `STT_ENABLED` | Optional internal Korean Whisper feature flag; defaults to `false` |
+| `STT_MODEL_PATH` | Host path to an externally mounted faster-whisper model |
 | `RPPG_ENABLED` | Optional camera-rPPG feature flag; defaults to `false` |
 | `RPPG_BASE_URL` | Backend-only DGX Spark service URL; never shipped to mobile |
 | `RPPG_STORAGE_ROOT` | Backend-only AES-256-GCM face-video storage |
@@ -93,6 +95,7 @@ Missing database, migration, or encryption configuration makes readiness fail. P
 - Patient profile/consent/dashboard: `GET/PATCH /api/me`, `POST /api/me/consents`, `GET /api/me/dashboard`.
 - Sensors: `POST /api/sensor-windows`, `GET /api/predictions/stream`.
 - Sessions: `POST /api/sessions`, then `GET`, `messages`, `assessments`, `finish`, and `reports` under `/api/sessions/{uuid}`.
+- Voice STT: authenticated `GET /api/stt/status` and `POST /api/sessions/{uuid}/transcriptions`; disabled by default. AI speech output uses Android-local TTS.
 - Administrator: patients/timeline, restricted patient dashboards, reason-gated reveal, temporary password, confirmed deletion, and global settings under `/api/admin`.
 - Camera rPPG (disabled by default): patient status/upload/job polling/manual retry under `/api/rppg`; administrator summary, reason-gated inline playback, and confirmed deletion under `/api/admin/rppg`.
 
@@ -101,7 +104,7 @@ The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and
 ## Boundaries
 
 - New sessions do not write the legacy 13 slots or expose `handoffReady`; pre-redesign slot sessions remain read-only history without backfill.
-- Voice/STT/TTS, self-event capture, wearable-absent AUQ automation, and model retraining experiments are deferred. Camera rPPG is an experimental, disabled-by-default extension and is not release-ready until the real-phone/DGX validation gate passes.
+- Korean STT is an optional, disabled-by-default DGX service and TTS runs locally through Android `TextToSpeech`; real-device acceptance is still required. Self-event capture, wearable-absent AUQ automation, and model retraining experiments remain deferred. Camera rPPG is an experimental, disabled-by-default extension and is not release-ready until the real-phone/DGX validation gate passes.
 - Binary low/high predictions and class-1 probability, AUQ, dialogue, and interventions are presented as separate evidence. The Phone alone shows the probability graph; administrator web and Watch do not. The UI never claims immediate craving reduction, CBT efficacy, diagnosis, treatment success, calibrated severity, or causal effect.
 - There is no bulk dataset-download endpoint.
 - Every accepted camera video, including quality and technical failures, is retained encrypted until audited administrator deletion. Inline playback has no download button, but a privileged viewer can technically preserve rendered bytes; least privilege, policy, and audit remain required.
@@ -112,7 +115,6 @@ See [backend operations](apps/backend/README.md), [database operations](apps/db/
 
 ## GitHub Upload and Review
 
-- [Cumulative GitHub upload changes](../260715/GITHUB_UPLOAD_CHANGES.md)
-- [Ready-to-paste pull request body](../260715/PULL_REQUEST_DESCRIPTION.md)
-- [Git commit and pull request guide](../260715/GIT_COMMIT_AND_PULL_REQUEST_GUIDE.md)
-- Korean: [업로드 변경사항](../260715/GITHUB_UPLOAD_CHANGES.ko.md), [PR 본문](../260715/PULL_REQUEST_DESCRIPTION.ko.md), [커밋·PR 가이드](../260715/GIT_COMMIT_AND_PULL_REQUEST_GUIDE.ko.md)
+- [Current GitHub upload changes](../deployment/GITHUB_UPLOAD_CHANGES.md)
+- [Ready-to-paste pull request body](../deployment/PULL_REQUEST_DESCRIPTION.md)
+- [Git commit and pull request guide](../deployment/GIT_COMMIT_AND_PULL_REQUEST_GUIDE.md)

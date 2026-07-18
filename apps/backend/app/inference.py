@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Realtime binary craving inference for ten-second PPG/GSR windows."""
+"""Realtime binary craving inference for twenty-second PPG/GSR windows."""
 
 import asyncio
 import hashlib
@@ -29,7 +29,7 @@ WATCH_PPG_FS = 25.0
 WATCH_EDA_FS = 1.0
 PPG_SENSORS = ("PPG_GREEN", "PPG_IR", "PPG_RED")
 GSR_SENSORS = ("EDA",)
-EXPECTED_WEIGHTS_SHA256 = "9fec80f7b2c42ba8a5bdb1d702a82eb5bd73542365c7ccb91db3d880b9f321c5"
+EXPECTED_WEIGHTS_SHA256 = "2493e5d75fcdc9b066b341deb47f81c9db49aac37c626619b7afe1a6b2fc354c"
 
 
 class ModelUnavailableError(RuntimeError):
@@ -93,12 +93,12 @@ class CravingModel:
         self.torch: Any | None = None
         self.metadata: dict[str, Any] = {}
         self.model_name = "Conv1DNet"
-        self.model_version = f"moving-average-k5-{self.expected_sha256[:12]}"
+        self.model_version = f"moving-average-high2p4-win20s-{self.expected_sha256[:12]}"
         self.class_labels = ["low", "high"]
         self.fs_raw = 51.2
         self.fs_gsr = 51.2
-        self.win_sec = 10.0
-        self.raw_win_len = 512
+        self.win_sec = 20.0
+        self.raw_win_len = 1024
         self.last_debug: dict[str, Any] | None = None
 
     @property
@@ -107,18 +107,20 @@ class CravingModel:
 
     @property
     def safe_artifact_uri(self) -> str:
-        return f"model/weights/final_moving_average_k5/{self.model_path.name}"
+        return f"model/weights/final_model_win20s_high2p4/{self.model_path.name}"
 
     @property
     def registration_config(self) -> dict[str, Any]:
         return {
             "window_sec": self.win_sec,
-            "stride_sec": 1.0,
+            "training_stride_sec": 1.0,
+            "operational_stride_sec": 10.0,
             "sampling_hz": self.fs_raw,
             "window_length": self.raw_win_len,
             "channels": ["PPG", "GSR"],
             "normalization": "per_channel_minmax",
             "filter": "none",
+            "source_metadata_filter": "ppg_lowpass_5hz_not_applied_by_user_decision",
             "artifact_sha256": self.actual_sha256 or self.expected_sha256,
             "torch_version": getattr(self.torch, "__version__", None),
             "requested_device": self.requested_device,
@@ -155,9 +157,11 @@ class CravingModel:
         architecture = self.metadata.get("architecture") or {}
         if (
             float(preprocessing.get("fs", 0)) != 51.2
-            or int(preprocessing.get("window_length", 0)) != 512
+            or float(preprocessing.get("window_seconds", 0)) != 20.0
+            or int(preprocessing.get("window_length", 0)) != 1024
+            or float(preprocessing.get("stride_seconds", 0)) != 1.0
             or list(preprocessing.get("channels") or []) != ["PPG", "GSR"]
-            or architecture.get("class") != "Conv1DNet"
+            or (architecture.get("class") or architecture.get("cls")) != "Conv1DNet"
             or int(architecture.get("out_dim", 0)) != 2
         ):
             raise ValueError("Craving model metadata is incompatible")
@@ -192,7 +196,7 @@ class CravingModel:
                     raise RuntimeError("cuda_unavailable")
                 candidate = self._new_loaded_model(model_class, state_dict, "cuda:0")
                 with self.torch.inference_mode():
-                    output = candidate(self.torch.zeros((1, 2, 512), dtype=self.torch.float32, device="cuda:0"))
+                    output = candidate(self.torch.zeros((1, 2, 1024), dtype=self.torch.float32, device="cuda:0"))
                 if tuple(output.shape) != (1, 2) or not bool(self.torch.isfinite(output).all().item()):
                     raise RuntimeError("cuda_smoke_invalid")
                 self.actual_device = "cuda:0"
@@ -207,7 +211,7 @@ class CravingModel:
                     pass
         model = self._new_loaded_model(model_class, state_dict, "cpu")
         with self.torch.inference_mode():
-            output = model(self.torch.zeros((1, 2, 512), dtype=self.torch.float32))
+            output = model(self.torch.zeros((1, 2, 1024), dtype=self.torch.float32))
         if tuple(output.shape) != (1, 2) or not bool(self.torch.isfinite(output).all().item()):
             raise RuntimeError("cpu_smoke_invalid")
         self.actual_device = "cpu"
@@ -259,7 +263,7 @@ class CravingModel:
         ppg, ppg_info = self._resample_channel(samples, PPG_SENSORS, target_ms, required=True)
         gsr, gsr_info = self._resample_channel(samples, GSR_SENSORS, target_ms, required=False)
         normalized = np.stack((_minmax(ppg), _minmax(gsr)), axis=0)[None, ...].astype(np.float32)
-        if normalized.shape != (1, 2, 512) or not np.all(np.isfinite(normalized)):
+        if normalized.shape != (1, 2, 1024) or not np.all(np.isfinite(normalized)):
             raise InvalidSensorWindow("Invalid model input")
         quality = {
             "ppgSensor": ppg_info["selectedSensor"],
@@ -458,12 +462,12 @@ class RealtimePredictionService:
 
 
 def _default_model_path(backend_dir: Path) -> Path:
-    return backend_dir / "model" / "weights" / "final_moving_average_k5" / "model_weights.pt"
+    return backend_dir / "model" / "weights" / "final_model_win20s_high2p4" / "model_weights.pt"
 
 
 def _minmax(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values, dtype=np.float32)
-    if values.size != 512 or not np.all(np.isfinite(values)):
+    if values.size != 1024 or not np.all(np.isfinite(values)):
         raise InvalidSensorWindow("Channel contains invalid values")
     low, high = float(values.min()), float(values.max())
     if high <= low:

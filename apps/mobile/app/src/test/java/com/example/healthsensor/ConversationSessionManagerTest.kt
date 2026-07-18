@@ -130,7 +130,13 @@ private class FakeSessionApi(private val id: String) : SessionApi {
         return getResponse ?: active(sessionId)
     }
 
-    override fun postMessage(sessionId: String, clientMessageId: String?, content: String, readTimeoutMs: Int) =
+    override fun postMessage(
+        sessionId: String,
+        clientMessageId: String?,
+        content: String,
+        readTimeoutMs: Int,
+        inputModality: String
+    ) =
         SessionMessageResponse(
             "77777777-7777-4777-8777-777777777777",
             "88888888-8888-4888-8888-888888888888",

@@ -39,7 +39,7 @@ class RppgApiClient(
         sessionId: String?
     ): RppgAcceptedJob {
         require(video.isFile) { "video missing" }
-        require(durationMs in 9_500L..10_500L) { "durationMs out of range" }
+        require(durationMs in 19_500L..20_500L) { "durationMs out of range" }
         UUID.fromString(clientCaptureId)
         sessionId?.let(UUID::fromString)
 

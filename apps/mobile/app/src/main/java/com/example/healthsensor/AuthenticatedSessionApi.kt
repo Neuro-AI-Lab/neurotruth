@@ -5,6 +5,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedOutputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.Instant
 import java.util.UUID
 
@@ -68,6 +72,13 @@ data class SessionMessageResponse(
     val terminal: Boolean get() = phase in setOf("completed", "abandoned")
 }
 
+data class SttTranscript(
+    val text: String,
+    val language: String,
+    val durationMs: Long,
+    val model: String
+)
+
 class DialogueRequestException(
     val code: String,
     val clientMessageId: String?,
@@ -94,7 +105,8 @@ interface SessionApi {
         sessionId: String,
         clientMessageId: String?,
         content: String,
-        readTimeoutMs: Int
+        readTimeoutMs: Int,
+        inputModality: String = "text"
     ): SessionMessageResponse
     fun postAssessment(sessionId: String, result: StateCheckResult)
     fun finish(sessionId: String): ConversationSession
@@ -124,9 +136,13 @@ class AuthenticatedSessionApi(private val client: AuthenticatedApiClient) : Sess
         sessionId: String,
         clientMessageId: String?,
         content: String,
-        readTimeoutMs: Int
+        readTimeoutMs: Int,
+        inputModality: String
     ): SessionMessageResponse {
-        val body = JSONObject().put("content", content)
+        require(inputModality in setOf("text", "voice")) { "unsupported input modality" }
+        val body = JSONObject()
+            .put("content", content)
+            .put("inputModality", inputModality)
         if (clientMessageId != null) {
             body.put("clientMessageId", UUID.fromString(clientMessageId).toString())
         }
@@ -142,6 +158,55 @@ class AuthenticatedSessionApi(private val client: AuthenticatedApiClient) : Sess
         )
         if (response.statusCode == 502) throw SessionResponseParser.parseDialogueError(response.body)
         return successful(response).let { SessionResponseParser.parseMessage(it.body) }
+    }
+
+    fun transcribe(sessionId: String, audio: File): SttTranscript {
+        require(audio.isFile) { "audio missing" }
+        return client.executeAuthenticatedStream { token ->
+            val boundary = "----NeuroTruth-${UUID.randomUUID()}"
+            val connection = (URL(client.endpoints.transcriptions(sessionId)).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 8_000
+                readTimeout = 120_000
+                doOutput = true
+                setChunkedStreamingMode(32 * 1024)
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            }
+            try {
+                BufferedOutputStream(connection.outputStream).use { output ->
+                    output.writeUtf8("--$boundary\r\n")
+                    output.writeUtf8("Content-Disposition: form-data; name=\"language\"\r\n\r\nko\r\n")
+                    output.writeUtf8("--$boundary\r\n")
+                    output.writeUtf8("Content-Disposition: form-data; name=\"audio\"; filename=\"voice.m4a\"\r\n")
+                    output.writeUtf8("Content-Type: audio/mp4\r\n\r\n")
+                    audio.inputStream().use { input -> input.copyTo(output, 32 * 1024) }
+                    output.writeUtf8("\r\n--$boundary--\r\n")
+                }
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (status == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                    throw HttpStatusException(status, "authentication required")
+                }
+                if (status !in 200..299) throw ApiHttpException(status)
+                val root = JSONObject(responseBody)
+                SttTranscript(
+                    text = root.optString("text").trim().takeIf(String::isNotEmpty)
+                        ?: throw IllegalArgumentException("transcript missing"),
+                    language = root.optString("language", "ko"),
+                    durationMs = root.optLong("durationMs", 0L),
+                    model = root.optString("model")
+                )
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    private fun BufferedOutputStream.writeUtf8(value: String) {
+        write(value.toByteArray(Charsets.UTF_8))
     }
 
     override fun postAssessment(sessionId: String, result: StateCheckResult) {
@@ -471,10 +536,11 @@ class ConversationSessionManager(
         ownerId: String,
         clientMessageId: String?,
         content: String,
-        readTimeoutMs: Int
+        readTimeoutMs: Int,
+        inputModality: String = "text"
     ): SessionMessageResponse {
         val session = ensure(ownerId)
-        val response = api.postMessage(session.id, clientMessageId, content, readTimeoutMs)
+        val response = api.postMessage(session.id, clientMessageId, content, readTimeoutMs, inputModality)
         val status = if (response.phase in setOf("completed", "abandoned")) response.phase else "in_progress"
         val updated = session.copy(
             status = status,

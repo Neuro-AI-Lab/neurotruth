@@ -1,0 +1,74 @@
+{
+  "window_seconds": 20,
+  "high_threshold": 2.4,
+  "kernel_size": 5,
+  "best_epoch": 2,
+  "max_epochs": 50,
+  "patience": 12,
+  "val_ratio": 0.2,
+  "seed": 42,
+  "n_windows": 37141,
+  "n_pos_windows": 20298,
+  "n_neg_windows": 16843,
+  "n_trials": 1360,
+  "n_subjects": 60,
+  "class_weights": {
+    "no_craving(0)": 1.1025648637416137,
+    "craving(high)": 0.9148930929155582
+  },
+  "architecture": {
+    "cls": "Conv1DNet",
+    "in_ch": 2,
+    "out_dim": 2,
+    "widths": [
+      128,
+      128,
+      128,
+      128,
+      128
+    ],
+    "n_pool": 3,
+    "dropout": 0.3
+  },
+  "preprocessing": {
+    "channels": [
+      "PPG",
+      "GSR"
+    ],
+    "fs": 51.2,
+    "window_seconds": 20,
+    "window_length": 1024,
+    "stride_seconds": 1.0,
+    "normalization": "minmax",
+    "ppg_lowcut_hz": 5.0,
+    "trial_aggregation": "mean_probability"
+  },
+  "label_definition": {
+    "negative": "control(대조군) 무갈망 전체",
+    "positive": "환자 moving-average(k=5) Q_mean >= 2.4",
+    "sequence_order": "low->mid->high; trial_idx ascending",
+    "edge_mode": "replicate"
+  },
+  "val_metrics": {
+    "BalancedAcc": 0.863697458455523,
+    "MacroF1": 0.8593599033816426,
+    "Acc": 0.8759124087591241,
+    "confusion": [
+      [
+        167,
+        19
+      ],
+      [
+        15,
+        73
+      ]
+    ],
+    "n": 274
+  },
+  "environment": {
+    "python": "3.12.3",
+    "torch": "2.12.0+cu130",
+    "numpy": "2.4.6",
+    "pandas": "2.3.3"
+  }
+}

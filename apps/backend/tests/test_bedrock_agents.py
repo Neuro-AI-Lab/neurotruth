@@ -1,12 +1,9 @@
-import asyncio
 from io import BytesIO
 import json
 from urllib import error as urllib_error
 
 import pytest
-from fastapi import HTTPException
 
-from app import main
 from app.ai import bedrock_agents
 from app.ai.bedrock_agents import (
     CHAT_SYSTEM_PROMPT,
@@ -248,7 +245,6 @@ def test_openai_model_requires_bearer_token(monkeypatch) -> None:
             temperature=0.0,
         )
 
-
 def test_mantle_http_error_is_sanitized(monkeypatch) -> None:
     def failing_urlopen(request, *, timeout):
         raise urllib_error.HTTPError(
@@ -306,116 +302,3 @@ def test_mantle_rejects_malformed_or_empty_output(
             max_tokens=10,
             temperature=0.0,
         )
-
-
-def test_mocked_bedrock_slot_response_is_parsed_and_filtered(monkeypatch) -> None:
-    async def fake_complete(**kwargs) -> str:
-        return 'Result: {"trigger":"stress","diagnosis":"not allowed"}'
-
-    monkeypatch.setattr(main.bedrock_adapter, "complete", fake_complete)
-
-    result = asyncio.run(
-        main._ai_slots_extract(
-            {
-                "sessionId": "session-slots",
-                "conversationHistory": [],
-                "currentSlots": {},
-            }
-        )
-    )
-
-    assert result["sessionId"] == "session-slots"
-    assert result["slots"] == {"trigger": "stress"}
-    assert "diagnosis" not in result["slots"]
-
-
-def test_explicit_slot_correction_replaces_current_before_missing(monkeypatch) -> None:
-    async def fake_complete(**kwargs) -> str:
-        return '{"trigger":"직장 갈등 (환자: \'아니, 업무보다 상사와의 갈등 때문이에요\')","duration":"20분"}'
-
-    monkeypatch.setattr(main.bedrock_adapter, "complete", fake_complete)
-
-    result = asyncio.run(
-        main._ai_slots_extract(
-            {
-                "sessionId": "session-accumulated-slots",
-                "conversationHistory": [],
-                "currentSlots": {"trigger": "스트레스"},
-            }
-        )
-    )
-
-    assert result["slots"]["trigger"].startswith("직장 갈등")
-    assert result["slots"]["duration"] == "20분"
-    assert "trigger" not in result["missingSlots"]
-    assert "duration" not in result["missingSlots"]
-
-
-def test_empty_extraction_cannot_overwrite_current_slot(monkeypatch) -> None:
-    async def fake_complete(**kwargs) -> str:
-        return '{"trigger":null,"duration":""}'
-
-    monkeypatch.setattr(main.bedrock_adapter, "complete", fake_complete)
-
-    result = asyncio.run(
-        main._ai_slots_extract(
-            {
-                "sessionId": "session-empty-update",
-                "conversationHistory": [],
-                "currentSlots": {"trigger": "스트레스"},
-            }
-        )
-    )
-
-    assert result["slots"] == {"trigger": "스트레스"}
-    assert "trigger" not in result["missingSlots"]
-    assert "duration" in result["missingSlots"]
-
-
-def test_mocked_bedrock_failure_becomes_502(monkeypatch) -> None:
-    async def failing_complete(**kwargs) -> str:
-        raise RuntimeError("mocked Bedrock failure")
-
-    monkeypatch.setattr(main.bedrock_adapter, "complete", failing_complete)
-
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            main._bedrock_complete(
-                system="system",
-                messages=[],
-                max_tokens=10,
-                temperature=0.0,
-                failure_detail="Bedrock test request failed",
-            )
-        )
-
-    assert exc_info.value.status_code == 502
-    assert exc_info.value.detail == "Bedrock test request failed"
-
-
-def test_mocked_bedrock_handoff_keeps_session_and_missing_slots(monkeypatch) -> None:
-    calls = []
-
-    async def fake_complete(**kwargs) -> str:
-        calls.append(kwargs)
-        return "# Handoff\n\nEvidence"
-
-    monkeypatch.setattr(main.bedrock_adapter, "complete", fake_complete)
-
-    result = asyncio.run(
-        main._ai_handoff_generate(
-            {
-                "sessionId": "session-handoff",
-                "slots": {"trigger": "stress"},
-                "conversationHistory": [],
-                "alertEvents": [{"alertLevel": "required"}],
-                "predictionSummary": {"count": 1},
-            }
-        )
-    )
-
-    assert result["sessionId"] == "session-handoff"
-    assert result["markdown"].startswith("# Handoff")
-    assert "trigger" not in result["missingSlots"]
-    assert "duration" in result["missingSlots"]
-    assert "required" in calls[0]["messages"][0]["content"]

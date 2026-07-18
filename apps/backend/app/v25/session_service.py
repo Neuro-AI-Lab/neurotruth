@@ -196,8 +196,11 @@ class SessionService:
         session_id: UUID,
         content: str,
         client_message_id: UUID | None = None,
+        input_modality: str = "text",
     ) -> dict[str, Any]:
         await self.auth_service.require_consent(patient.id, "ai_analysis")
+        if input_modality not in {"text", "voice"}:
+            raise ValueError("inputModality must be text or voice")
         row = await self._active_new(patient.id, session_id)
         state = self._dialogue_state(patient.id, row)
         if state.get("version") != 2:
@@ -214,7 +217,9 @@ class SessionService:
                 if client_message_id is not None else None
             )
             if existing is not None:
-                if self._decrypt_message(patient.id, existing) != content:
+                metadata = existing.get("generation_metadata") or {}
+                existing_modality = str(metadata.get("inputModality") or "text")
+                if self._decrypt_message(patient.id, existing) != content or existing_modality != input_modality:
                     raise ClientMessageConflict("clientMessageId was already used with different content")
                 user_message_id = existing["id"]
                 assistant_row = await self.repository.assistant_reply_for_user(
@@ -246,6 +251,7 @@ class SessionService:
                         **(existing.get("generation_metadata") or {}),
                         "clientMessageId": str(client_message_id),
                         "dialogueAttempts": attempt,
+                        "inputModality": input_modality,
                     },
                 )
             else:
@@ -259,7 +265,9 @@ class SessionService:
                     generation_metadata={
                         "clientMessageId": str(client_message_id) if client_message_id else None,
                         "dialogueAttempts": 1,
+                        "inputModality": input_modality,
                     },
+                    modality=input_modality,
                 )
 
             latest_question = state.get("latestQuestion")
@@ -326,6 +334,7 @@ class SessionService:
                             "clientMessageId": str(client_message_id),
                             "dialogueAttempts": attempt,
                             "dialogueLastErrorCode": code,
+                            "inputModality": input_modality,
                         },
                     )
                 await self.repository.audit(
@@ -634,7 +643,8 @@ class SessionService:
 
     async def _message(self, patient_id: UUID, session_id: UUID, role: str, content: str,
                        source_agent: str | None, model_id: UUID | None,
-                       generation_metadata: dict[str, Any] | None = None) -> UUID:
+                       generation_metadata: dict[str, Any] | None = None,
+                       modality: str = "text") -> UUID:
         message_id = uuid4()
         packed = self.keyring.encrypt(content.encode("utf-8"), aad=aad_for(
             table="messages", column="content_encrypted", patient_id=str(patient_id), record_id=str(message_id),
@@ -642,7 +652,7 @@ class SessionService:
         return await self.repository.append_message(
             message_id=message_id, session_id=session_id, role=role, content_encrypted=packed,
             key_version=self.keyring.current_key_id, source_agent=source_agent, model_version_id=model_id,
-            generation_metadata=generation_metadata or {},
+            generation_metadata=generation_metadata or {}, modality=modality,
         )
 
     async def _free_dialogue_response(

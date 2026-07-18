@@ -33,6 +33,8 @@ class RppgContractsTest {
               "heartRateBpm":72.4,
               "qualityScore":0.88,
               "processingMs":4200,
+              "rppgSampleCount":1024,
+              "rppgSamplingHz":51.2,
               "alertAction":"none"
             }""".trimIndent()
         )
@@ -40,6 +42,9 @@ class RppgContractsTest {
         assertTrue(result.terminal)
         assertEquals(1, result.classIndex)
         assertEquals(72.4f, result.heartRateBpm!!, 0.001f)
+        assertEquals(1024, result.rppgSampleCount)
+        assertEquals(51.2f, result.rppgSamplingHz!!, 0.001f)
+        assertEquals(0.91f, result.toPrediction()!!.cravingProbability!!, 0.001f)
         assertEquals("camera_rppg", org.json.JSONObject(result.toPrediction()!!.rawBody).getString("source"))
         assertEquals(AlertAction.NONE, AlertActionPolicy.resolve(result.toPrediction()!!))
     }

@@ -44,7 +44,7 @@ async def create_job(
     video: Annotated[UploadFile, File()],
     client_capture_id: Annotated[UUID, Form(alias="clientCaptureId")],
     captured_at_ms: Annotated[int, Form(alias="capturedAtMs", gt=0)],
-    duration_ms: Annotated[int, Form(alias="durationMs", ge=9500, le=10500)],
+    duration_ms: Annotated[int, Form(alias="durationMs", ge=19500, le=20500)],
     session_id: Annotated[UUID | None, Form(alias="sessionId")] = None,
 ) -> dict[str, Any]:
     if not service.enabled:

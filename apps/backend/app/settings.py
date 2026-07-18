@@ -28,7 +28,7 @@ class SecuritySettings(BaseSettings):
     rppg_base_url: str = Field(default="http://192.168.68.50:8000", alias="RPPG_BASE_URL")
     rppg_connect_timeout_seconds: float = Field(default=10, alias="RPPG_CONNECT_TIMEOUT_SECONDS", gt=0, le=60)
     rppg_read_timeout_seconds: float = Field(default=180, alias="RPPG_READ_TIMEOUT_SECONDS", gt=0, le=900)
-    rppg_max_upload_mib: int = Field(default=20, alias="RPPG_MAX_UPLOAD_MIB", ge=1, le=100)
+    rppg_max_upload_mib: int = Field(default=40, alias="RPPG_MAX_UPLOAD_MIB", ge=1, le=100)
     rppg_max_concurrency: int = Field(default=1, alias="RPPG_MAX_CONCURRENCY", ge=1, le=8)
     rppg_storage_root: Path | None = Field(default=None, alias="RPPG_STORAGE_ROOT")
     rppg_tmpfs_root: Path = Field(default=Path("/dev/shm/neurotruth-rppg"), alias="RPPG_TMPFS_ROOT")

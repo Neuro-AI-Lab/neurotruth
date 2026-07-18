@@ -68,6 +68,8 @@ data class RppgJobResult(
     val modelName: String? = null,
     val checkpoint: String? = null,
     val processingMs: Long? = null,
+    val rppgSampleCount: Int? = null,
+    val rppgSamplingHz: Float? = null,
     val alertAction: String? = null,
     val failureCode: String? = null,
     val retryAllowed: Boolean = false
@@ -75,6 +77,7 @@ data class RppgJobResult(
     val terminal: Boolean get() = status in setOf("completed", "retry_required", "failed")
 
     fun toPrediction(): CravingPrediction? = classIndex?.takeIf { it in 0..1 }?.let { value ->
+        val classOneProbability = confidence?.let { if (value == 1) it else 1f - it }
         CravingPrediction(
             cravingClass = value,
             timestampMs = capturedAtMs,
@@ -85,6 +88,10 @@ data class RppgJobResult(
                 .put("confidence", confidence)
                 .toString(),
             confidence = confidence,
+            cravingProbability = classOneProbability,
+            classProbabilities = classOneProbability?.let { probability ->
+                mapOf("low" to 1f - probability, "high" to probability)
+            }.orEmpty(),
             alert = AlertMetadata(
                 alertAction = alertAction,
                 isPresent = alertAction != null
@@ -104,6 +111,8 @@ data class RppgJobResult(
         .putNullable("modelName", modelName)
         .putNullable("checkpoint", checkpoint)
         .putNullable("processingMs", processingMs)
+        .putNullable("rppgSampleCount", rppgSampleCount)
+        .putNullable("rppgSamplingHz", rppgSamplingHz)
         .putNullable("alertAction", alertAction)
         .putNullable("failureCode", failureCode)
         .put("retryAllowed", retryAllowed)
@@ -123,6 +132,8 @@ data class RppgJobResult(
             modelName = root.optNullableString("modelName"),
             checkpoint = root.optNullableString("checkpoint"),
             processingMs = root.optLongOrNull("processingMs"),
+            rppgSampleCount = root.optIntOrNull("rppgSampleCount"),
+            rppgSamplingHz = root.optFloatOrNull("rppgSamplingHz"),
             alertAction = root.optNullableString("alertAction"),
             failureCode = root.optNullableString("failureCode"),
             retryAllowed = root.optBoolean("retryAllowed", false)

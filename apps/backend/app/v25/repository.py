@@ -201,6 +201,7 @@ class SqlAlchemyV25Repository(V25Repository):
         return ConsentRecord(
             id=row["id"], user_id=row["user_id"], tos=row["tos"],
             privacy=row["privacy"], sensitive=row["sensitive"], biosignal=row["biosignal"],
+            voice=row.get("voice", False),
             ai_analysis=row["ai_analysis"], notification=row["notification"],
             report_generation=row["report_generation"], tos_version=row["tos_version"],
             privacy_version=row["privacy_version"],
@@ -708,10 +709,11 @@ class SqlAlchemyV25Repository(V25Repository):
                 INSERT INTO messages
                   (id,session_id,sequence_no,role,content_encrypted,encryption_key_version,
                    modality,source_agent,model_version_id,generation_metadata)
-                VALUES (:id,:session,:sequence,:role,:content,:key,'text',:agent,:model,
+                VALUES (:id,:session,:sequence,:role,:content,:key,:modality,:agent,:model,
                         CAST(:generation_metadata AS jsonb))
             """), {"id": values["message_id"], "session": values["session_id"], "sequence": sequence,
                     "role": values["role"], "content": values["content_encrypted"], "key": values["key_version"],
+                    "modality": values.get("modality", "text"),
                     "agent": values.get("source_agent"), "model": values.get("model_version_id"),
                     "generation_metadata": json.dumps(values.get("generation_metadata") or {}, separators=(",", ":"))})
             await conn.execute(text("UPDATE sessions SET updated_at=now() WHERE id=:session"),
@@ -1172,7 +1174,15 @@ class SqlAlchemyV25Repository(V25Repository):
                        avg(p.continuous_value) AS average_probability,
                        min(p.continuous_value) AS minimum_probability,
                        max(p.continuous_value) AS maximum_probability,
-                       count(*) AS sample_count
+                       count(*) AS sample_count,
+                       count(*) FILTER (WHERE p.continuous_value < 0.25) AS low_count,
+                       count(*) FILTER (
+                         WHERE p.continuous_value >= 0.25 AND p.continuous_value < 0.50
+                       ) AS observe_count,
+                       count(*) FILTER (
+                         WHERE p.continuous_value >= 0.50 AND p.continuous_value < 0.75
+                       ) AS caution_count,
+                       count(*) FILTER (WHERE p.continuous_value >= 0.75) AS high_count
                 FROM craving_predictions p
                 JOIN model_versions m ON m.id=p.model_version_id
                 WHERE {prediction_filter}
@@ -1257,7 +1267,7 @@ class SqlAlchemyV25Repository(V25Repository):
             INSERT INTO consent_snapshots
               (user_id,tos,privacy,sensitive,biosignal,voice,ai_analysis,notification,
                report_generation,camera_rppg,face_video_retention,tos_version,privacy_version,consent_form_version)
-            VALUES (:user_id,:tos,:privacy,:sensitive,:biosignal,false,:ai_analysis,:notification,
+            VALUES (:user_id,:tos,:privacy,:sensitive,:biosignal,:voice,:ai_analysis,:notification,
                     :report_generation,:camera_rppg,:face_video_retention,:tos_version,:privacy_version,:consent_form_version)
             RETURNING *
         """), {"user_id": user_id, **values})).mappings().one()

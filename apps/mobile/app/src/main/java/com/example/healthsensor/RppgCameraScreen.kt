@@ -234,7 +234,12 @@ fun RppgResultCard(result: RppgJobResult, modifier: Modifier = Modifier) {
 private fun RppgCompactResult(result: RppgJobResult) {
     if (result.status == "completed") {
         Text("갈망 단계: ${result.classIndex?.let(::cameraCravingLabel) ?: "확인 불가"}")
-        Text("신뢰도: ${result.confidence?.let { "%.1f%%".format(it * 100f) } ?: "확인 불가"}")
+        val classOneProbability = when (result.classIndex) {
+            0 -> result.confidence?.let { 1f - it }
+            1 -> result.confidence
+            else -> null
+        }
+        Text("갈망 가능성: ${cravingProbabilityLabel(classOneProbability)}")
         Text("심박수: ${result.heartRateBpm?.let { "%.1f BPM".format(it) } ?: "측정 불가"}")
         Text("품질: ${result.qualityScore?.let { "%.2f".format(it) } ?: "확인 불가"}")
         Text("처리시간: ${result.processingMs?.let { "$it ms" } ?: "확인 불가"}")
@@ -247,7 +252,7 @@ private fun phaseLabel(phase: RppgCapturePhase): String = when (phase) {
     RppgCapturePhase.IDLE -> "측정 준비"
     RppgCapturePhase.FINDING_FACE -> "얼굴 찾는 중"
     RppgCapturePhase.STABILIZING -> "얼굴 안정화"
-    RppgCapturePhase.RECORDING -> "10초 촬영 중"
+    RppgCapturePhase.RECORDING -> "20초 촬영 중"
     RppgCapturePhase.UPLOADING -> "업로드 중"
     RppgCapturePhase.ANALYZING -> "분석 대기"
     RppgCapturePhase.COMPLETED -> "측정 완료"
@@ -403,7 +408,7 @@ private class RppgCameraController(
     }
 
     companion object {
-        private const val RECORDING_MS = 10_000L
+        private const val RECORDING_MS = 20_000L
         private val STOP_TOKEN = Any()
     }
 }

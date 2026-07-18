@@ -13,7 +13,12 @@ from fastapi import HTTPException
 from app.security.crypto import AesGcmKeyring
 from app.v25.models import UserRecord
 from app.v25.routes_sessions import _map
-from app.v25.session_agents import BedrockSessionAgent, initial_dialogue_state, validate_agent_output
+from app.v25.session_agents import (
+    DIALOGUE_PROMPT_VERSION,
+    BedrockSessionAgent,
+    initial_dialogue_state,
+    validate_agent_output,
+)
 from app.v25.session_service import (
     ClientMessageConflict,
     LegacySessionReadOnly,
@@ -119,6 +124,7 @@ class Repo:
             "role": values["role"],
             "content_encrypted": values["content_encrypted"],
             "generation_metadata": dict(values.get("generation_metadata") or {}),
+            "modality": values.get("modality", "text"),
             "sequence_no": len(self.messages) + 1,
             "created_at": datetime.now(timezone.utc),
         }
@@ -288,9 +294,34 @@ def test_free_dialogue_uses_bounded_history_and_never_persists_interventions() -
         assert len(agent.dialogue_contexts[-1]["history"]) == 20
         assert len(repo.messages) == 25
         assert not repo.interventions and not repo.inferences
+        assert DIALOGUE_PROMPT_VERSION == "free-dialogue-v3"
         state = service._dialogue_state(patient.id, repo.sessions[session_id])
         assert state["askedQuestions"] == []
         await service.shutdown()
+    asyncio.run(scenario())
+
+
+def test_voice_message_uses_same_idempotent_dialogue_path_and_is_recorded() -> None:
+    async def scenario():
+        service, repo, agent, patient, session_id, _ = await opened()
+        client_id = uuid4()
+        result = await service.message(
+            patient, session_id, "제가 확인한 음성 문장입니다.", client_id, "voice",
+        )
+        user = await repo.message_by_client_id(session_id, client_id)
+        assert user["modality"] == "voice"
+        assert user["generation_metadata"]["inputModality"] == "voice"
+        repeated = await service.message(
+            patient, session_id, "제가 확인한 음성 문장입니다.", client_id, "voice",
+        )
+        assert repeated["assistantMessageId"] == result["assistantMessageId"]
+        assert agent.dialogue_calls == 1
+        with pytest.raises(ClientMessageConflict):
+            await service.message(
+                patient, session_id, "제가 확인한 음성 문장입니다.", client_id, "text",
+            )
+        await service.shutdown()
+
     asyncio.run(scenario())
 
 
@@ -461,9 +492,11 @@ def test_bedrock_agent_repairs_one_repeated_question() -> None:
     class Adapter:
         model_id = "fake"
         calls = 0
+        systems = []
 
         async def complete(self, **kwargs):
             self.calls += 1
+            self.systems.append(kwargs["system"])
             if self.calls == 1:
                 return '{"assistantText":"지금 가장 필요한 도움은 무엇인가요?"}'
             return '{"assistantText":"편한 만큼 이어서 말씀해 주세요."}'
@@ -482,4 +515,7 @@ def test_bedrock_agent_repairs_one_repeated_question() -> None:
         })
         assert result["assistantText"] == "편한 만큼 이어서 말씀해 주세요."
         assert adapter.calls == 2
+        assert "TTS-friendly Korean" in adapter.systems[0]
+        assert "A question is optional" in adapter.systems[0]
+        assert "Markdown tables" in adapter.systems[0]
     asyncio.run(scenario())

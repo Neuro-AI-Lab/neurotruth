@@ -2,7 +2,7 @@
  * MainActivity.kt — 폰 앱 메인 화면
  *
  * HR, PPG Green/IR/Red, EDA, Accel X/Y/Z, SkinTemp 실시간 차트,
- * CSV 저장, 10초 윈도우 서버 전송 기능을 제공한다.
+ * CSV 저장과 최근 20초 센서 윈도우의 10초 주기 서버 전송 기능을 제공한다.
  * MPAndroidChart를 AndroidView로 임베드하여 고주파 데이터를 효율적으로 렌더링한다.
  */
 package com.example.healthsensor
@@ -17,10 +17,16 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -40,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,6 +76,10 @@ private val HealthWarning = Color(0xFFD48A1F)
 private val HealthDanger = Color(0xFFC83F4E)
 private val HealthDangerSoft = Color(0xFFF9E7EA)
 private val HealthIdle = Color(0xFF9AA4AC)
+
+private enum class PatientTab(val label: String) {
+    HOME("홈"), DASHBOARD("대시보드"), CHAT("챗봇")
+}
 
 private val healthColorScheme = lightColorScheme(
     primary = HealthPrimary,
@@ -132,7 +143,7 @@ class MainActivity : ComponentActivity() {
                             var showDeveloperMode by rememberSaveable { mutableStateOf(false) }
                             var showConsentSettings by rememberSaveable { mutableStateOf(false) }
                             var showRppgCamera by rememberSaveable { mutableStateOf(false) }
-                            var showDashboard by rememberSaveable { mutableStateOf(false) }
+                            var selectedTab by rememberSaveable { mutableStateOf(PatientTab.HOME) }
                             var showNotice by rememberSaveable { mutableStateOf(false) }
                             val noticePolicy = remember {
                                 InterventionNoticePolicy(KeystoreNoticeVersionStore(this@MainActivity))
@@ -152,6 +163,13 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(forceStateCheckLaunchCounter) {
                                 if (forceStateCheckLaunchCounter > 0) showDeveloperMode = false
                             }
+                            LaunchedEffect(selectedTab) {
+                                when (selectedTab) {
+                                    PatientTab.DASHBOARD -> dashboardViewModel.load()
+                                    PatientTab.CHAT -> viewModel.openChat()
+                                    PatientTab.HOME -> Unit
+                                }
+                            }
                             Column(modifier = Modifier.fillMaxSize()) {
                                 AuthenticatedAccountBar(
                                     user = state.user,
@@ -167,11 +185,11 @@ class MainActivity : ComponentActivity() {
                                             viewModel = rppgViewModel,
                                             onClose = { showRppgCamera = false }
                                         )
-                                    } else if (showDashboard) {
+                                    } else if (selectedTab == PatientTab.DASHBOARD) {
                                         PatientDashboardScreen(
                                             viewModel = dashboardViewModel,
                                             livePpg = livePpg,
-                                            onClose = { showDashboard = false }
+                                            onClose = { selectedTab = PatientTab.HOME }
                                         )
                                     } else if (showDeveloperMode) {
                                         HealthMonitorScreen(
@@ -189,11 +207,21 @@ class MainActivity : ComponentActivity() {
                                                 if (rppgViewModel.prepareCapture()) showRppgCamera = true
                                             },
                                             onOpenNotice = { showNotice = true },
-                                            onOpenDashboard = {
-                                                dashboardViewModel.load()
-                                                showDashboard = true
-                                            }
+                                            showChatTab = selectedTab == PatientTab.CHAT,
+                                            onChatClosed = { selectedTab = PatientTab.HOME }
                                         )
+                                    }
+                                }
+                                if (!showRppgCamera && !showDeveloperMode) {
+                                    NavigationBar(containerColor = HealthSurface) {
+                                        PatientTab.values().forEach { tab ->
+                                            NavigationBarItem(
+                                                selected = selectedTab == tab,
+                                                onClick = { selectedTab = tab },
+                                                icon = { Text(if (selectedTab == tab) "●" else "○") },
+                                                label = { Text(tab.label) }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -432,13 +460,10 @@ fun UserHomeScreen(
     onDeveloperUnlock: () -> Unit,
     onOpenRppgCamera: () -> Unit,
     onOpenNotice: () -> Unit,
-    onOpenDashboard: () -> Unit
+    showChatTab: Boolean,
+    onChatClosed: () -> Unit
 ) {
     val isReceiving by viewModel.isReceiving.collectAsState()
-    val isUploadEnabled by viewModel.isUploadEnabled.collectAsState()
-    val isPredictionReceiverEnabled by viewModel.isPredictionReceiverEnabled.collectAsState()
-    val uploadStatus by viewModel.uploadStatus.collectAsState()
-    val predictionStatus by viewModel.predictionStatus.collectAsState()
     val latestPrediction by viewModel.latestPrediction.collectAsState()
     val isStateCheckRequired by viewModel.isStateCheckRequired.collectAsState()
     val stateCheckResponses by viewModel.stateCheckResponses.collectAsState()
@@ -452,11 +477,12 @@ fun UserHomeScreen(
     val conversationPhase by viewModel.conversationPhase.collectAsState()
     val sessionReportStatus by viewModel.sessionReportStatus.collectAsState()
     val inactivityTimeoutSeconds by viewModel.sessionInactivityTimeoutSeconds.collectAsState()
-    val isBackgroundServiceRunning by viewModel.isBackgroundServiceRunning.collectAsState()
-    val backgroundServiceStatus by viewModel.backgroundServiceStatus.collectAsState()
+    val isVoiceRecording by viewModel.isVoiceRecording.collectAsState()
+    val isVoiceTranscribing by viewModel.isVoiceTranscribing.collectAsState()
+    val voiceDraft by viewModel.voiceDraft.collectAsState()
+    val voiceStatus by viewModel.voiceStatus.collectAsState()
     val cravingClass = latestPrediction?.cravingClass
     val cravingColor = cravingTone(cravingClass)
-    val communicationOn = isUploadEnabled || isPredictionReceiverEnabled
     val rppgStatus by rppgViewModel.serviceStatus.collectAsState()
     val rppgResult by rppgViewModel.latestResult.collectAsState()
     val canCaptureRppg = MobileAuthRuntime.state.collectAsState().value.canCaptureRppg
@@ -464,7 +490,10 @@ fun UserHomeScreen(
     when {
         isTalkChoiceRequired -> TalkChoiceScreen(
             onTalkNow = viewModel::chooseTalkNow,
-            onLater = viewModel::chooseTalkLater
+            onLater = {
+                viewModel.chooseTalkLater()
+                onChatClosed()
+            }
         )
         isAuqChoiceRequired -> OptionalAuqChoiceScreen(
             onComplete = viewModel::chooseAuqForm,
@@ -476,7 +505,7 @@ fun UserHomeScreen(
             onResponse = viewModel::updateStateCheckResponse,
             onSubmit = viewModel::submitStateCheckResponses
         )
-        isChatVisible -> CravingChatScreen(
+        isChatVisible && showChatTab -> CravingChatScreen(
             messages = chatMessages,
             chatStatus = chatStatus,
             isChatSending = isChatSending,
@@ -484,29 +513,34 @@ fun UserHomeScreen(
             phase = conversationPhase,
             reportStatus = sessionReportStatus,
             inactivityTimeoutSeconds = inactivityTimeoutSeconds,
+            isVoiceRecording = isVoiceRecording,
+            isVoiceTranscribing = isVoiceTranscribing,
+            voiceDraft = voiceDraft,
+            voiceStatus = voiceStatus,
             onSend = viewModel::sendChatMessage,
+            onStartRecording = viewModel::startVoiceRecording,
+            onStopRecording = viewModel::stopVoiceRecording,
+            onVoiceDraftConsumed = viewModel::consumeVoiceDraft,
             onRetry = viewModel::retryChatMessage,
-            onFinish = viewModel::finishConversationManually,
-            onClose = viewModel::closeChat
+            onFinish = {
+                viewModel.finishConversationManually()
+                onChatClosed()
+            },
+            onClose = {
+                viewModel.closeChat()
+                onChatClosed()
+            }
         )
         else -> UserDashboardScreen(
             isReceiving = isReceiving,
-            communicationOn = communicationOn,
-            predictionStatus = predictionStatus,
-            uploadStatus = uploadStatus,
-            isPredictionReceiverEnabled = isPredictionReceiverEnabled,
-            isUploadEnabled = isUploadEnabled,
-            isBackgroundServiceRunning = isBackgroundServiceRunning,
-            backgroundServiceStatus = backgroundServiceStatus,
             cravingClass = cravingClass,
+            cravingProbability = latestPrediction?.cravingProbability,
             cravingColor = cravingColor,
             rppgStatus = rppgStatus,
             rppgResult = rppgResult,
             canCaptureRppg = canCaptureRppg,
             onOpenRppgCamera = onOpenRppgCamera,
-            onOpenChat = viewModel::openChat,
             onOpenNotice = onOpenNotice,
-            onOpenDashboard = onOpenDashboard,
             onRequestPermissions = onRequestPermissions,
             onDeveloperUnlock = onDeveloperUnlock
         )
@@ -516,22 +550,14 @@ fun UserHomeScreen(
 @Composable
 private fun UserDashboardScreen(
     isReceiving: Boolean,
-    communicationOn: Boolean,
-    predictionStatus: String,
-    uploadStatus: String,
-    isPredictionReceiverEnabled: Boolean,
-    isUploadEnabled: Boolean,
-    isBackgroundServiceRunning: Boolean,
-    backgroundServiceStatus: String,
     cravingClass: Int?,
+    cravingProbability: Float?,
     cravingColor: Color,
     rppgStatus: RppgServiceStatus?,
     rppgResult: RppgJobResult?,
     canCaptureRppg: Boolean,
     onOpenRppgCamera: () -> Unit,
-    onOpenChat: () -> Unit,
     onOpenNotice: () -> Unit,
-    onOpenDashboard: () -> Unit,
     onRequestPermissions: () -> Unit,
     onDeveloperUnlock: () -> Unit
 ) {
@@ -578,7 +604,7 @@ private fun UserDashboardScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = cravingBadgeText(cravingClass),
+                        text = cravingProbabilityBadge(cravingProbability),
                         fontSize = 23.sp,
                         fontWeight = FontWeight.Bold,
                         color = cravingColor
@@ -588,33 +614,29 @@ private fun UserDashboardScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("갈망 level", fontSize = 12.sp, color = HealthMuted, fontWeight = FontWeight.SemiBold)
+                    Text("갈망 가능성", fontSize = 12.sp, color = HealthMuted, fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = cravingLevelText(cravingClass),
+                        text = cravingProbabilityLabel(cravingProbability),
                         fontSize = 27.sp,
                         fontWeight = FontWeight.Bold,
                         color = HealthText
                     )
                     Text(
-                        text = cravingLevelMessage(cravingClass),
+                        text = cravingProbabilityMessage(cravingProbability),
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         color = HealthMuted
                     )
+                    if (canCaptureRppg && rppgStatus?.canStart == true) {
+                        OutlinedButton(onClick = onOpenRppgCamera) {
+                            Text("얼굴로 측정", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (canCaptureRppg && rppgStatus?.canStart == true) {
-                Button(
-                    onClick = onOpenRppgCamera,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("카메라로 10초 측정", fontWeight = FontWeight.Bold)
-                }
-            }
             rppgResult?.let { RppgResultCard(it) }
             if (cravingClass == 1) {
                 CravingNoticeCard(
@@ -623,60 +645,19 @@ private fun UserDashboardScreen(
                     color = HealthWarning
                 )
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                UserStatusTile(
-                    label = "워치",
-                    value = if (isReceiving) "수신 중" else "대기",
-                    color = if (isReceiving) HealthPrimary else HealthIdle,
-                    modifier = Modifier.weight(1f)
-                )
-                UserStatusTile(
-                    label = "서버",
-                    value = if (communicationOn) "연결" else "대기",
-                    color = if (communicationOn) HealthAccent else HealthIdle,
-                    modifier = Modifier.weight(1f)
-                )
-                UserStatusTile(
-                    label = "백그라운드",
-                    value = if (isBackgroundServiceRunning) "유지" else "대기",
-                    color = if (isBackgroundServiceRunning) HealthPrimary else HealthIdle,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Text(
-                text = when {
-                    isPredictionReceiverEnabled -> predictionStatus
-                    isUploadEnabled -> uploadStatus
-                    isBackgroundServiceRunning -> backgroundServiceStatus
-                    else -> "측정과 서버 통신을 준비 중입니다"
-                },
-                fontSize = 12.sp,
-                color = HealthMuted,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+            UserStatusTile(
+                label = "Watch 연결",
+                value = if (isReceiving) "연결됨" else "연결 대기",
+                color = if (isReceiving) HealthPrimary else HealthIdle,
+                modifier = Modifier.fillMaxWidth()
             )
-            OutlinedButton(
-                onClick = onOpenChat,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, HealthPrimary),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = HealthPrimary)
-            ) {
-                Text("대화하기", fontWeight = FontWeight.Bold)
-            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenDashboard, modifier = Modifier.weight(1f)) {
-                    Text("내 상태 기록")
-                }
                 OutlinedButton(onClick = onOpenNotice, modifier = Modifier.weight(1f)) {
                     Text("사용 안내")
                 }
-            }
-            TextButton(
-                onClick = onRequestPermissions,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("권한 확인", fontSize = 13.sp, color = HealthMuted, fontWeight = FontWeight.SemiBold)
+                OutlinedButton(onClick = onRequestPermissions, modifier = Modifier.weight(1f)) {
+                    Text("권한 확인")
+                }
             }
         }
 
@@ -843,33 +824,26 @@ private fun StateCheckScreen(
                     fontWeight = FontWeight.SemiBold,
                     color = HealthText
                 )
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    (1..7).forEach { value ->
+                    AUQ_RESPONSE_LABELS.forEachIndexed { index, label ->
+                        val value = index + 1
                         val selected = responses[question.number] == value
                         OutlinedButton(
                             onClick = { onResponse(question.number, value) },
-                            modifier = Modifier.weight(1f).height(36.dp),
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = if (selected) HealthDanger else HealthSurface,
                                 contentColor = if (selected) Color.White else HealthMuted
                             ),
                             border = BorderStroke(1.dp, if (selected) HealthDanger else HealthLine)
                         ) {
-                            Text(value.toString(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("전혀 아님", fontSize = 10.sp, color = HealthMuted)
-                    Text("매우 그럼", fontSize = 10.sp, color = HealthMuted)
                 }
             }
         }
@@ -895,12 +869,72 @@ private fun CravingChatScreen(
     phase: String,
     reportStatus: String,
     inactivityTimeoutSeconds: Int?,
-    onSend: (String) -> Unit,
+    isVoiceRecording: Boolean,
+    isVoiceTranscribing: Boolean,
+    voiceDraft: String?,
+    voiceStatus: String,
+    onSend: (String, String) -> Unit,
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit,
+    onVoiceDraftConsumed: () -> Unit,
     onRetry: () -> Unit,
     onFinish: () -> Unit,
     onClose: () -> Unit
 ) {
     var draft by rememberSaveable { mutableStateOf("") }
+    var inputModality by rememberSaveable { mutableStateOf("text") }
+    var autoRead by rememberSaveable { mutableStateOf(false) }
+    var ttsReady by remember { mutableStateOf(false) }
+    var speakingMessageIndex by remember { mutableStateOf<Int?>(null) }
+    var ttsEngine by remember { mutableStateOf<TextToSpeech?>(null) }
+    val context = LocalContext.current
+    val microphoneLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) onStartRecording() }
+
+    DisposableEffect(context) {
+        val engine = TextToSpeech(context.applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                ttsReady = engineLanguageAvailable(ttsEngine)
+            }
+        }
+        ttsEngine = engine
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+            override fun onError(utteranceId: String?) {
+                Handler(Looper.getMainLooper()).post { speakingMessageIndex = null }
+            }
+            override fun onDone(utteranceId: String?) {
+                Handler(Looper.getMainLooper()).post { speakingMessageIndex = null }
+            }
+        })
+        onDispose {
+            engine.stop()
+            engine.shutdown()
+            ttsEngine = null
+        }
+    }
+
+    fun speak(index: Int, text: String) {
+        val engine = ttsEngine ?: return
+        if (!ttsReady) return
+        engine.stop()
+        speakingMessageIndex = index
+        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "assistant-$index")
+    }
+
+    LaunchedEffect(voiceDraft) {
+        voiceDraft?.let {
+            draft = it
+            inputModality = "voice"
+            onVoiceDraftConsumed()
+        }
+    }
+    LaunchedEffect(messages.size, autoRead, ttsReady) {
+        val index = messages.lastIndex
+        val latest = messages.getOrNull(index)
+        if (autoRead && ttsReady && latest?.sender == ChatSender.BOT) speak(index, latest.text)
+    }
 
     Column(
         modifier = Modifier
@@ -957,9 +991,31 @@ private fun CravingChatScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            messages.forEach { message ->
-                ChatBubble(message)
+            messages.forEachIndexed { index, message ->
+                ChatBubble(
+                    message = message,
+                    isSpeaking = speakingMessageIndex == index,
+                    onListen = if (message.sender == ChatSender.BOT && ttsReady) {
+                        {
+                            if (speakingMessageIndex == index) {
+                                ttsEngine?.stop()
+                                speakingMessageIndex = null
+                            } else {
+                                speak(index, message.text)
+                            }
+                        }
+                    } else null
+                )
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("AI 응답 자동 읽기", fontSize = 12.sp, color = HealthMuted)
+            Switch(checked = autoRead, onCheckedChange = { autoRead = it }, enabled = ttsReady)
         }
 
         Row(
@@ -976,16 +1032,40 @@ private fun CravingChatScreen(
                 shape = RoundedCornerShape(8.dp),
                 placeholder = { Text("현재 상태 입력") }
             )
+            OutlinedButton(
+                onClick = {
+                    if (isVoiceRecording) {
+                        onStopRecording()
+                    } else if (androidx.core.content.ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        onStartRecording()
+                    } else {
+                        microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                enabled = !isVoiceTranscribing && !isChatSending,
+                contentPadding = PaddingValues(horizontal = 10.dp)
+            ) {
+                Text(if (isVoiceRecording) "정지" else if (isVoiceTranscribing) "인식 중" else "마이크")
+            }
             Button(
                 onClick = {
-                    onSend(draft)
+                    onSend(draft, inputModality)
                     draft = ""
+                    inputModality = "text"
                 },
                 enabled = draft.isNotBlank() && !isChatSending,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(if (isChatSending) "대기" else "전송")
             }
+        }
+
+        if (voiceStatus.isNotBlank()) {
+            Text(voiceStatus, fontSize = 11.sp, color = HealthMuted)
         }
 
         if (pendingRetry != null) {
@@ -1015,13 +1095,17 @@ private fun timeoutDurationLabel(seconds: Int): String = when {
 }
 
 @Composable
-private fun ChatBubble(message: ChatMessage) {
+private fun ChatBubble(
+    message: ChatMessage,
+    isSpeaking: Boolean,
+    onListen: (() -> Unit)?
+) {
     val isUser = message.sender == ChatSender.USER
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth(0.82f)
                 .background(
@@ -1035,24 +1119,11 @@ private fun ChatBubble(message: ChatMessage) {
                 fontSize = 14.sp,
                 color = if (isUser) Color.White else HealthText
             )
-        }
-    }
-}
-
-@Composable
-private fun UserStatusRow(label: String, value: String, color: Color) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(HealthSurface, RoundedCornerShape(8.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 14.sp, color = HealthMuted)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
-            Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = HealthText)
+            if (onListen != null) {
+                TextButton(onClick = onListen, contentPadding = PaddingValues(0.dp)) {
+                    Text(if (isSpeaking) "정지" else "듣기", fontSize = 12.sp)
+                }
+            }
         }
     }
 }
@@ -1082,29 +1153,48 @@ private fun DeveloperHoldButton(onUnlock: () -> Unit) {
     }
 }
 
-private fun cravingLevelText(cravingClass: Int?): String =
-    when (cravingClass) {
-        0 -> "낮음"
-        1 -> "중간"
-        2 -> "높음"
-        else -> "측정 대기"
-    }
+internal val AUQ_RESPONSE_LABELS = listOf(
+    "매우 그렇지 않다",
+    "그렇지 않다",
+    "조금 그렇지 않다",
+    "보통이다",
+    "조금 그렇다",
+    "그렇다",
+    "매우 그렇다"
+)
 
-private fun cravingBadgeText(cravingClass: Int?): String =
-    when (cravingClass) {
-        0 -> "낮음"
-        1 -> "변화"
-        2 -> "확인"
-        else -> "--"
-    }
+internal fun cravingProbabilityLabel(probability: Float?): String = when {
+    probability == null || !probability.isFinite() -> "측정 대기"
+    probability < 0.25f -> "낮은 가능성"
+    probability < 0.50f -> "변화 관찰"
+    probability < 0.75f -> "주의 필요"
+    else -> "높은 가능성"
+}
 
-private fun cravingLevelMessage(cravingClass: Int?): String =
-    when (cravingClass) {
-        0 -> "현재 센서 기반 상태 지표가 낮게 기록되었습니다."
-        1 -> "평소와 다른 변화일 가능성이 있습니다. 원하면 상태를 확인해 보세요."
-        2 -> "갈망과 관련된 변화일 가능성이 있습니다. 원하면 지금 대화할 수 있어요."
-        else -> "워치 측정과 서버 예측을 기다리는 중입니다."
-    }
+private fun cravingProbabilityBadge(probability: Float?): String = when (cravingProbabilityLabel(probability)) {
+    "낮은 가능성" -> "낮음"
+    "변화 관찰" -> "관찰"
+    "주의 필요" -> "주의"
+    "높은 가능성" -> "높음"
+    else -> "--"
+}
+
+private fun cravingProbabilityMessage(probability: Float?): String = if (probability == null) {
+    "워치 측정과 서버 예측을 기다리는 중입니다."
+} else {
+    "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다."
+}
+
+private fun cravingClassLabel(cravingClass: Int?): String = when (cravingClass) {
+    0 -> "낮음"
+    1 -> "높음"
+    else -> "대기"
+}
+
+private fun engineLanguageAvailable(engine: TextToSpeech?): Boolean {
+    val result = engine?.setLanguage(Locale.KOREAN) ?: TextToSpeech.LANG_NOT_SUPPORTED
+    return result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+}
 
 private const val DEVELOPER_HOLD_MS = 2_500L
 
@@ -1191,7 +1281,7 @@ fun HealthMonitorScreen(
             )
             MetricTile(
                 label = "갈망",
-                value = cravingLevelText(cravingClass),
+                value = cravingClassLabel(cravingClass),
                 detail = "server prediction",
                 accentColor = cravingColor,
                 modifier = Modifier.weight(1f)
@@ -1202,7 +1292,7 @@ fun HealthMonitorScreen(
             MetricTile(
                 label = "전송",
                 value = if (isUploadEnabled) "ON" else "OFF",
-                detail = "10s window / 1s",
+                detail = "20s window / 10s",
                 accentColor = if (isUploadEnabled) HealthPrimary else HealthIdle,
                 modifier = Modifier.weight(1f)
             )
@@ -1606,7 +1696,7 @@ fun MonitorScreen(viewModel: SensorViewModel, onSaveCsv: () -> Unit) {
                         Text(if (isUploadEnabled) "전송 중지" else "1초 전송 시작")
                     }
                     Text(
-                        text = if (isUploadEnabled) "10초 윈도우" else "대기",
+                        text = if (isUploadEnabled) "20초 윈도우 · 10초 주기" else "대기",
                         fontSize = 12.sp,
                         color = if (isUploadEnabled) Color(0xFF4CAF50) else Color.Gray
                     )
@@ -1638,7 +1728,7 @@ fun MonitorScreen(viewModel: SensorViewModel, onSaveCsv: () -> Unit) {
                         Text(if (isPredictionReceiverEnabled) "수신 중지" else "예측 수신 시작")
                     }
                     Text(
-                        text = latestPrediction?.let { cravingLevelText(it.cravingClass) } ?: "대기",
+                        text = latestPrediction?.let { cravingClassLabel(it.cravingClass) } ?: "대기",
                         fontSize = 12.sp,
                         color = when (latestPrediction?.cravingClass) {
                             0 -> Color(0xFF4CAF50)

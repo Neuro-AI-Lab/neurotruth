@@ -28,6 +28,14 @@ class PatientDashboardParserTest {
                                 .put("minimumProbability", if (hour == 0) JSONObject.NULL else 0.2)
                                 .put("maximumProbability", if (hour == 0) JSONObject.NULL else 0.8)
                                 .put("sampleCount", if (hour == 0) 0 else 60)
+                                .put(
+                                    "stageCounts",
+                                    JSONObject()
+                                        .put("low", if (hour == 0) 0 else 6)
+                                        .put("observe", if (hour == 0) 0 else 12)
+                                        .put("caution", if (hour == 0) 0 else 18)
+                                        .put("high", if (hour == 0) 0 else 24)
+                                )
                         )
                     }
                 })
@@ -66,10 +74,42 @@ class PatientDashboardParserTest {
 
         assertEquals(24, parsed.hourlyCraving.size)
         assertNull(parsed.hourlyCraving.first().averageProbability)
+        assertEquals(0, parsed.hourlyCraving.first().stageCounts.total)
+        assertEquals(CravingStageCounts(6, 12, 18, 24), parsed.hourlyCraving[1].stageCounts)
         assertEquals(0.81f, parsed.currentCraving?.probability)
         assertTrue(parsed.dailyEvents.first().let { !it.hasPredictionData && it.totalCount == 0 })
         assertTrue(parsed.dailyEvents[1].let { it.hasPredictionData && it.totalCount == 0 })
         assertEquals(0.625f, parsed.auq[2].averageNormalizedScore)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun cravingDashboardRejectsStageCountsThatDoNotMatchSamples() {
+        val hourly = JSONArray().apply {
+            repeat(24) { hour ->
+                put(
+                    JSONObject()
+                        .put("localStart", "2026-07-16T${"%02d".format(hour)}:00:00+09:00")
+                        .put("averageProbability", 0.5)
+                        .put("minimumProbability", 0.2)
+                        .put("maximumProbability", 0.8)
+                        .put("sampleCount", 4)
+                        .put(
+                            "stageCounts",
+                            JSONObject().put("low", 1).put("observe", 1).put("caution", 1).put("high", 0)
+                        )
+                )
+            }
+        }
+        PatientDashboardParser.parseCravingDashboard(
+            JSONObject()
+                .put("timezone", "Asia/Seoul")
+                .put("generatedAt", "2026-07-16T03:00:00Z")
+                .put("currentCraving", JSONObject.NULL)
+                .put("hourlyCraving", JSONObject().put("buckets", hourly))
+                .put("dailyEvents", JSONObject().put("range", "7d").put("buckets", JSONArray()))
+                .put("auq", JSONObject().put("range", "today").put("bucketUnit", "hour").put("buckets", JSONArray()))
+                .toString()
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -135,6 +175,27 @@ class PatientDashboardParserTest {
         assertEquals(ProbabilityRange.MINUTES_10, parsed.range)
         assertEquals(2, parsed.points.size)
         assertEquals(0.75f, parsed.points.last().probability)
+    }
+
+    @Test
+    fun patientLabelsUseExactBandBoundariesWithoutPercentages() {
+        assertEquals("낮은 가능성", cravingProbabilityLabel(0f))
+        assertEquals("낮은 가능성", cravingProbabilityLabel(0.2499f))
+        assertEquals("변화 관찰", cravingProbabilityLabel(0.25f))
+        assertEquals("주의 필요", cravingProbabilityLabel(0.50f))
+        assertEquals("높은 가능성", cravingProbabilityLabel(0.75f))
+        assertEquals("높은 가능성", cravingProbabilityLabel(1f))
+        assertEquals("측정 대기", cravingProbabilityLabel(null))
+    }
+
+    @Test
+    fun auqUsesSevenVerbalChoicesAndRawEightToFiftySixScale() {
+        assertEquals(7, AUQ_RESPONSE_LABELS.size)
+        assertEquals("매우 그렇지 않다", AUQ_RESPONSE_LABELS.first())
+        assertEquals("매우 그렇다", AUQ_RESPONSE_LABELS.last())
+        assertEquals(8f, normalizedAuqToRaw(0f))
+        assertEquals(56f, normalizedAuqToRaw(1f))
+        assertEquals(38f, normalizedAuqToRaw(0.625f))
     }
 
     @Test

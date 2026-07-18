@@ -10,7 +10,7 @@ from app.ai.bedrock_agents import BedrockClaudeAdapter, parse_json_object
 
 
 QUESTION_BANK_VERSION = "niaaa-samhsa-who-ko-v1"
-DIALOGUE_PROMPT_VERSION = "free-dialogue-v2"
+DIALOGUE_PROMPT_VERSION = "free-dialogue-v3"
 STATE_PROMPT_VERSION = "state-summary-v1"
 STATE_RULE_VERSION = "state-rule-v1"
 
@@ -151,14 +151,16 @@ class BedrockSessionAgent:
                     ),
                 },
                 "requiredOutput": {
-                    "assistantText": "one concise Korean response with at most one question",
+                    "assistantText": "one short, TTS-friendly Korean response with zero or one question",
                 },
             }, ensure_ascii=False, default=str),
         }]
         system = (
             "You are the NeuroTruth research/demo supportive free-dialogue agent. Return one JSON object only. "
-            "Respond naturally in concise, nonjudgmental Korean and ask at most one question. "
+            "Respond in short, natural, TTS-friendly Korean. Start with empathy, reflection, or practical help. "
+            "A question is optional and allowed only when it materially helps; never ask more than one. "
             "Respect the prior and refused question-text ledger and do not repeat or paraphrase those questions. "
+            "Avoid Markdown tables, long lists, unnecessary headings, and unnecessary English. "
             "Do not select a structured intervention type. Never diagnose, prescribe, promise professional contact, "
             "claim certainty, immediate craving reduction, treatment success, or causal treatment effect. "
             "If you judge the supplied conversation to describe immediate danger, include appropriate 119 guidance and "

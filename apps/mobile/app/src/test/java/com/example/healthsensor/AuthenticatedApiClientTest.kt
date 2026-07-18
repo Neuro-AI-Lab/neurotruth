@@ -177,7 +177,7 @@ class AuthenticatedApiClientTest {
             assertEquals(
                 setOf(
                     "tos", "privacy", "sensitive", "biosignal", "aiAnalysis",
-                    "cameraRppg", "faceVideoRetention", "notification", "reportGeneration",
+                    "cameraRppg", "faceVideoRetention", "voice", "notification", "reportGeneration",
                     "tosVersion", "privacyVersion", "consentFormVersion"
                 ),
                 org.json.JSONObject(request.body!!).keys().asSequence().toSet()

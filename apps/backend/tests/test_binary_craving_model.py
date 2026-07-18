@@ -12,8 +12,8 @@ from app.inference import CravingModel, EXPECTED_WEIGHTS_SHA256, InvalidSensorWi
 
 
 BACKEND = Path(__file__).resolve().parents[1]
-MODEL_DIR = BACKEND / "model" / "weights" / "final_moving_average_k5"
-SHA256 = "9fec80f7b2c42ba8a5bdb1d702a82eb5bd73542365c7ccb91db3d880b9f321c5"
+MODEL_DIR = BACKEND / "model" / "weights" / "final_model_win20s_high2p4"
+SHA256 = "2493e5d75fcdc9b066b341deb47f81c9db49aac37c626619b7afe1a6b2fc354c"
 
 
 def test_copied_weights_match_runtime_checksum_constant() -> None:
@@ -24,27 +24,30 @@ def test_copied_weights_match_runtime_checksum_constant() -> None:
 def sensor_payload(*, include_gsr: bool = True) -> dict:
     start = 1_700_000_000_000
     samples = [
-        {"sensor": "PPG_GREEN", "timestampMs": start + round(index * 10_000 / 512),
-         "value": float(np.sin(index / 17.0) + index / 512.0)}
-        for index in range(512)
+        {"sensor": "PPG_GREEN", "timestampMs": start + round(index * 20_000 / 1024),
+         "value": float(np.sin(index / 17.0) + index / 1024.0)}
+        for index in range(1024)
     ]
     if include_gsr:
         samples.extend(
             {"sensor": "EDA", "timestampMs": start + index * 1000, "value": float(index)}
-            for index in range(10)
+            for index in range(20)
         )
-    return {"windowStartMs": start, "windowEndMs": start + 10_000, "samples": samples}
+    return {"windowStartMs": start, "windowEndMs": start + 20_000, "samples": samples}
 
 
-def test_preprocess_is_two_channels_512_minmax_without_filter() -> None:
+def test_preprocess_is_two_channels_1024_minmax_without_filter() -> None:
     model = CravingModel(MODEL_DIR / "model_weights.pt", requested_device="cpu")
     tensor, quality = model.preprocess(sensor_payload())
-    assert tensor.shape == (1, 2, 512)
+    assert tensor.shape == (1, 2, 1024)
     assert tensor.dtype == np.float32
     assert np.isclose(tensor[0, 0].min(), 0.0) and np.isclose(tensor[0, 0].max(), 1.0)
     assert np.isclose(tensor[0, 1].min(), 0.0) and np.isclose(tensor[0, 1].max(), 1.0)
     assert quality["ppgSensor"] == "PPG_GREEN"
     assert quality["gsrMissing"] is False
+    assert model.registration_config["training_stride_sec"] == 1.0
+    assert model.registration_config["operational_stride_sec"] == 10.0
+    assert model.registration_config["filter"] == "none"
 
 
 def test_missing_gsr_becomes_zero_channel_and_missing_ppg_is_rejected() -> None:
@@ -53,7 +56,17 @@ def test_missing_gsr_becomes_zero_channel_and_missing_ppg_is_rejected() -> None:
     assert np.count_nonzero(tensor[0, 1]) == 0
     assert quality["gsrMissing"] is True
     with pytest.raises(InvalidSensorWindow, match="PPG"):
-        model.preprocess({"windowStartMs": 0, "windowEndMs": 10_000, "samples": []})
+        model.preprocess({"windowStartMs": 0, "windowEndMs": 20_000, "samples": []})
+
+
+def test_constant_channels_become_zero_without_a_filter() -> None:
+    model = CravingModel(MODEL_DIR / "model_weights.pt", requested_device="cpu")
+    payload = sensor_payload()
+    for sample in payload["samples"]:
+        sample["value"] = 7.0
+    tensor, _ = model.preprocess(payload)
+    assert tensor.shape == (1, 2, 1024)
+    assert np.count_nonzero(tensor) == 0
 
 
 def test_service_logits_and_softmax_match_supplied_model_on_cpu() -> None:
@@ -84,6 +97,8 @@ def test_service_logits_and_softmax_match_supplied_model_on_cpu() -> None:
 
 
 def test_auto_device_falls_back_to_cpu_when_cuda_is_unavailable() -> None:
+    smoke_shapes = []
+
     class Truth:
         def all(self): return self
         def item(self): return True
@@ -103,7 +118,9 @@ def test_auto_device_falls_back_to_cpu_when_cuda_is_unavailable() -> None:
         @staticmethod
         def inference_mode(): return nullcontext()
         @staticmethod
-        def zeros(*args, **kwargs): return object()
+        def zeros(shape, **kwargs):
+            smoke_shapes.append(shape)
+            return object()
         @staticmethod
         def isfinite(value): return Truth()
 
@@ -120,3 +137,4 @@ def test_auto_device_falls_back_to_cpu_when_cuda_is_unavailable() -> None:
     assert model.actual_device == "cpu"
     assert model.fallback is True
     assert model.fallback_reason == "cuda_unavailable"
+    assert smoke_shapes == [(1, 2, 1024)]

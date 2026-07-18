@@ -116,7 +116,7 @@ class AuthService:
         return self._public_consent(row) if row else None
 
     async def require_consent(self, user_id: UUID, feature: str) -> None:
-        allowed = {"biosignal", "ai_analysis", "notification", "report_generation", "camera_rppg", "face_video_retention"}
+        allowed = {"biosignal", "voice", "ai_analysis", "notification", "report_generation", "camera_rppg", "face_video_retention"}
         if feature not in allowed:
             raise ValueError("Unknown consent feature")
         row = await self.repository.current_consent(user_id)
@@ -162,7 +162,7 @@ class AuthService:
         return {"id": str(row.id), "tos": row.tos, "privacy": row.privacy,
                 "sensitive": row.sensitive, "biosignal": row.biosignal,
                 "aiAnalysis": row.ai_analysis, "notification": row.notification,
-                "reportGeneration": row.report_generation, "voice": False,
+                "reportGeneration": row.report_generation, "voice": bool(getattr(row, "voice", False)),
                 "cameraRppg": row.camera_rppg,
                 "faceVideoRetention": row.face_video_retention,
                 "tosVersion": row.tos_version, "privacyVersion": row.privacy_version,

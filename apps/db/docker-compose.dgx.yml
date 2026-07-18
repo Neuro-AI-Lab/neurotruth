@@ -6,3 +6,7 @@ services:
     gpus: all
     environment:
       CRAVING_INFERENCE_DEVICE: auto
+  stt:
+    gpus: all
+    environment:
+      STT_DEVICE: auto

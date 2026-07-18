@@ -67,6 +67,7 @@ class ApiEndpoints(baseUrl: String) {
     val sensorWindows = "$base/api/sensor-windows"
     val predictionStream = "$base/api/predictions/stream"
     val sessions = "$base/api/sessions"
+    val sttStatus = "$base/api/stt/status"
     val rppgStatus = "$base/api/rppg/status"
     val rppgJobs = "$base/api/rppg/jobs"
     val patientDashboard = "$base/api/me/dashboard"
@@ -75,6 +76,7 @@ class ApiEndpoints(baseUrl: String) {
 
     fun session(sessionId: String): String = "$sessions/${requireUuid(sessionId)}"
     fun messages(sessionId: String): String = "${session(sessionId)}/messages"
+    fun transcriptions(sessionId: String): String = "${session(sessionId)}/transcriptions"
     fun assessments(sessionId: String): String = "${session(sessionId)}/assessments"
     fun finish(sessionId: String): String = "${session(sessionId)}/finish"
     fun reports(sessionId: String): String = "${session(sessionId)}/reports"

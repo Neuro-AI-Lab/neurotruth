@@ -172,6 +172,12 @@ class DashboardService:
         hourly_buckets = []
         for hour in range(24):
             row = hourly_by_hour.get(hour)
+            stage_counts = {
+                "low": int(row["low_count"]) if row else 0,
+                "observe": int(row["observe_count"]) if row else 0,
+                "caution": int(row["caution_count"]) if row else 0,
+                "high": int(row["high_count"]) if row else 0,
+            }
             hourly_buckets.append({
                 "localStart": datetime.combine(
                     local_today, time(hour=hour), tzinfo=local_zone,
@@ -180,6 +186,7 @@ class DashboardService:
                 "minimumProbability": self._probability(row, "minimum_probability"),
                 "maximumProbability": self._probability(row, "maximum_probability"),
                 "sampleCount": int(row["sample_count"]) if row else 0,
+                "stageCounts": stage_counts,
             })
 
         prediction_days = {
