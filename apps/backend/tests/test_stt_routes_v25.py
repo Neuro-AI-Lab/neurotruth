@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -245,3 +246,75 @@ def test_internal_service_uses_fixed_korean_fast_settings_and_cleans_tmpfs(workd
         "condition_on_previous_text": False,
     }
     assert not list(workdir.glob("nt-stt-*"))
+
+
+def _load_internal_stt_module():
+    service_path = Path(__file__).resolve().parents[2] / "stt-service" / "app.py"
+    spec = importlib.util.spec_from_file_location(f"neurotruth_test_stt_{uuid4().hex}", service_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_dgx_cuda_mode_fails_closed_without_cpu_fallback(workdir: Path, monkeypatch) -> None:
+    module = _load_internal_stt_module()
+    gpu_model = workdir / "pytorch"
+    cpu_model = workdir / "ctranslate2"
+    gpu_model.mkdir()
+    cpu_model.mkdir()
+    monkeypatch.setenv("STT_ENABLED", "true")
+    monkeypatch.setenv("STT_MODEL_PATH", str(gpu_model))
+    monkeypatch.setenv("STT_CPU_MODEL_PATH", str(cpu_model))
+    monkeypatch.setenv("STT_DEVICE", "cuda")
+    monkeypatch.setenv("STT_ALLOW_CPU_FALLBACK", "false")
+
+    class BrokenCuda:
+        def __init__(self, *_args, **_values):
+            raise RuntimeError("driver secret must not leak")
+
+    monkeypatch.setattr(module, "TorchWhisperModel", BrokenCuda)
+    runtime = module.WhisperRuntime()
+    runtime.load()
+
+    assert runtime.model is None
+    assert runtime.error_code == "stt_cuda_unavailable"
+    assert runtime.actual_device is None
+    assert runtime.fallback_reason == "RuntimeError"
+
+
+def test_auto_mode_uses_ctranslate2_only_as_cpu_fallback(workdir: Path, monkeypatch) -> None:
+    module = _load_internal_stt_module()
+    gpu_model = workdir / "pytorch"
+    cpu_model = workdir / "ctranslate2"
+    gpu_model.mkdir()
+    cpu_model.mkdir()
+    monkeypatch.setenv("STT_ENABLED", "true")
+    monkeypatch.setenv("STT_MODEL_PATH", str(gpu_model))
+    monkeypatch.setenv("STT_CPU_MODEL_PATH", str(cpu_model))
+    monkeypatch.setenv("STT_DEVICE", "auto")
+    monkeypatch.setenv("STT_ALLOW_CPU_FALLBACK", "true")
+
+    class BrokenCuda:
+        def __init__(self, *_args, **_values):
+            raise RuntimeError("cuda unavailable")
+
+    class CpuModel:
+        def __init__(self, path, **values):
+            assert Path(path) == cpu_model
+            assert values == {
+                "device": "cpu",
+                "compute_type": "int8",
+                "local_files_only": True,
+            }
+
+    monkeypatch.setattr(module, "TorchWhisperModel", BrokenCuda)
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=CpuModel))
+    runtime = module.WhisperRuntime()
+    runtime.load()
+
+    assert isinstance(runtime.model, CpuModel)
+    assert runtime.engine == "ctranslate2"
+    assert runtime.actual_device == "cpu"
+    assert runtime.fallback is True
+    assert runtime.error_code is None

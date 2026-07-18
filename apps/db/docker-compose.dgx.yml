@@ -7,6 +7,10 @@ services:
     environment:
       CRAVING_INFERENCE_DEVICE: auto
   stt:
+    build:
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
     gpus: all
     environment:
-      STT_DEVICE: auto
+      STT_DEVICE: cuda
+      STT_ALLOW_CPU_FALLBACK: "false"

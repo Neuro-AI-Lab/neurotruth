@@ -35,7 +35,9 @@ async def status(
             "model": "whisper-large-v3-turbo",
             "requestedDevice": None,
             "actualDevice": None,
+            "engine": None,
             "fallback": False,
+            "fallbackReason": None,
             "errorCode": "stt_unavailable",
         }
     return await runtime.stt_client.status()

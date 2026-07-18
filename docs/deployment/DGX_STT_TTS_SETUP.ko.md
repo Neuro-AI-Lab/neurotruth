@@ -2,6 +2,11 @@
 
 이 문서는 NeuroTruth의 음성 기능을 DGX Spark와 Android 휴대폰에 배포하는 절차를 설명합니다.
 
+> **2026-07-18 변경:** DGX Spark의 운영 STT는 PyTorch CUDA 방식으로
+> 전환되었습니다. GPU 설치와 재배포는
+> [`DGX_STT_PYTORCH_CUDA.ko.md`](./DGX_STT_PYTORCH_CUDA.ko.md)를 먼저
+> 따르세요. 아래 CTranslate2 절차는 로컬 CPU fallback과 이전 배포 참고용입니다.
+
 ## 1. 구성
 
 ```text

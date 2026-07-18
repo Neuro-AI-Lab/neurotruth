@@ -74,15 +74,20 @@ services:
     build:
       context: ../stt-service
       dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${STT_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
     container_name: neurotruth-stt
     restart: unless-stopped
     environment:
       STT_ENABLED: ${STT_ENABLED:-false}
-      STT_MODEL_PATH: /models/large-v3-turbo
-      STT_DEVICE: auto
+      STT_MODEL_PATH: /models/whisper-large-v3-turbo-pytorch
+      STT_CPU_MODEL_PATH: /models/large-v3-turbo
+      STT_DEVICE: ${STT_DEVICE:-auto}
+      STT_ALLOW_CPU_FALLBACK: ${STT_ALLOW_CPU_FALLBACK:-true}
       STT_MAX_UPLOAD_MIB: ${STT_MAX_UPLOAD_MIB:-10}
       STT_TMPFS_ROOT: /dev/shm/neurotruth-stt
     volumes:
+      - ${STT_PYTORCH_MODEL_PATH:-../../models/whisper-large-v3-turbo-pytorch}:/models/whisper-large-v3-turbo-pytorch:ro
       - ${STT_MODEL_PATH:-../../models/whisper-large-v3-turbo}:/models/large-v3-turbo:ro
     tmpfs:
       - /dev/shm/neurotruth-stt:size=64m,mode=0700
