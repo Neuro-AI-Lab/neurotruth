@@ -114,13 +114,13 @@ class PhoneMonitoringService : Service() {
 
     private fun scheduleAutoCommunicationStart() {
         if (autoCommunicationJob != null) return
-        PhoneMonitoringState.uploadStatus.value = "취득 시작 감지: 10초 후 자동 전송"
-        PhoneMonitoringState.predictionStatus.value = "취득 시작 감지: 10초 후 자동 수신"
+        PhoneMonitoringState.uploadStatus.value = "취득 시작 감지: 20초 후 자동 전송"
+        PhoneMonitoringState.predictionStatus.value = "취득 시작 감지: 20초 후 자동 수신"
         autoCommunicationJob = scope.launch {
             delay(AUTO_COMMUNICATION_DELAY_MS)
             if (PhoneMonitoringState.serverUrl.value.isNotBlank() && MobileAuthRuntime.canUpload()) {
                 PhoneMonitoringState.isUploadEnabled.value = true
-                PhoneMonitoringState.uploadStatus.value = "자동 전송 시작: 취득 10초 경과"
+                PhoneMonitoringState.uploadStatus.value = "자동 전송 시작: 취득 20초 경과"
             } else {
                 PhoneMonitoringState.uploadStatus.value = "자동 전송 보류: 서버 POST URL이 비어 있음"
             }
@@ -508,15 +508,15 @@ class PhoneMonitoringService : Service() {
     companion object {
         private const val CHANNEL_ID = "phone_monitoring"
         private const val NOTIFICATION_ID = 3001
-        private const val SERVER_WINDOW_MS = 10_000L
-        private const val SERVER_UPLOAD_INTERVAL_MS = 1_000L
-        private const val AUTO_COMMUNICATION_DELAY_MS = 10_000L
+        private const val SERVER_WINDOW_MS = 20_000L
+        private const val SERVER_UPLOAD_INTERVAL_MS = 10_000L
+        private const val AUTO_COMMUNICATION_DELAY_MS = 20_000L
         private const val PREDICTION_RECONNECT_DELAY_MS = 2_000L
         private const val RETAIN_RAW_MS = 60_000L
         private const val PPG_SAMPLE_INTERVAL_MS = 40L
-        private const val PPG_SAMPLE_COUNT = 250
+        private const val PPG_SAMPLE_COUNT = 500
         private const val EDA_SAMPLE_INTERVAL_MS = 1_000L
-        private const val EDA_SAMPLE_COUNT = 10
+        private const val EDA_SAMPLE_COUNT = 20
         fun start(context: Context) {
             if (!MobileAuthRuntime.canUpload()) return
             val appContext = context.applicationContext

@@ -74,7 +74,7 @@ class RppgViewModel(application: Application) : AndroidViewModel(application) {
                         _message.value = when {
                             !it.enabled -> "카메라 rPPG 기능이 서버에서 비활성화되어 있습니다"
                             !it.available || !it.modelLoaded -> "rPPG 분석 서버를 사용할 수 없습니다"
-                            else -> "카메라로 10초 측정할 수 있습니다"
+                            else -> "카메라로 20초 측정할 수 있습니다"
                         }
                     }
                 }
@@ -118,7 +118,7 @@ class RppgViewModel(application: Application) : AndroidViewModel(application) {
         _hasLocalVideo.value = true
         currentCapturedAtMs = capturedAtMs
         _phase.value = RppgCapturePhase.RECORDING
-        _message.value = "10초 동안 움직이지 말아 주세요"
+        _message.value = "20초 동안 움직이지 말아 주세요"
     }
 
     fun recordingCancelled(reason: String = "얼굴이 안내 영역을 벗어나 촬영을 취소했습니다") {

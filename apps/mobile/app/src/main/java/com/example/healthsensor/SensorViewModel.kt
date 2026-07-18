@@ -9,12 +9,13 @@
  *
  * timestamp 기반 공통 x축:
  *   모든 센서가 같은 워치 timestamp 기준으로 표시되도록 100ms 단위 x축을 쓴다.
- *   서버 전송은 최근 10초 원시 샘플을 1초마다 POST한다.
+ *   서버 전송은 최근 20초 원시 샘플을 10초마다 POST한다.
  */
 package com.example.healthsensor
 
 import android.app.Application
 import android.content.Context
+import android.media.MediaRecorder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.mikephil.charting.data.Entry
@@ -24,11 +25,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.SocketTimeoutException
+import java.io.File
 import java.util.UUID
 
 /** 차트 한 점: 시작 시각으로부터의 경과 시간(초, Float)을 x축으로 사용한다. */
@@ -108,6 +109,7 @@ enum class ChatSender {
 data class PendingChatRetry(
     val clientMessageId: String,
     val content: String,
+    val inputModality: String = "text",
     val attemptsRemaining: Int
 )
 
@@ -115,10 +117,11 @@ object ChatRetryPolicy {
     fun pending(
         error: Throwable,
         clientMessageId: String,
-        content: String
+        content: String,
+        inputModality: String = "text"
     ): PendingChatRetry? = (error as? DialogueRequestException)
         ?.takeIf { it.retryable && it.attemptsRemaining > 0 }
-        ?.let { PendingChatRetry(clientMessageId, content, it.attemptsRemaining) }
+        ?.let { PendingChatRetry(clientMessageId, content, inputModality, it.attemptsRemaining) }
 }
 
 object ChatReadTimeoutPolicy {
@@ -149,29 +152,13 @@ private const val PREF_CHAT_READ_TIMEOUT_MINUTES = "chat_read_timeout_minutes"
 class SensorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val MAX_POINTS = 500   // 차트에 표시할 최대 포인트 수
-    private val SERVER_WINDOW_MS = 10_000L
-    private val SERVER_UPLOAD_INTERVAL_MS = 1_000L
-
-    // 서버 모델 입력 계약: PPG는 25Hz fixed grid, EDA는 1Hz fixed grid로 맞춘다.
-    // timestamp를 맞추는 것이 목적이므로 샘플 gap이 있어도 전송을 멈추지 않고 값을 채운다.
-    private val PPG_SAMPLE_INTERVAL_MS = 40L
-    private val PPG_SAMPLE_COUNT = 250
-    private val EDA_SAMPLE_INTERVAL_MS = 1_000L
-    private val EDA_SAMPLE_COUNT = 10
-    private val AUTO_COMMUNICATION_DELAY_MS = 10_000L
-    private val PREDICTION_RECONNECT_DELAY_MS = 2_000L
+    private val AUTO_COMMUNICATION_DELAY_MS = 20_000L
     private val serverConfig = ServerConfig.load(application).also { PhoneMonitoringState.ensureConfig(it) }
-    private val serverUploader = ServerUploader()
     private val apiClient = MobileApiProvider.get(application)
-    private val windowIdStore = StableClientWindowIdStore.from(application)
     private val predictionSender = PhonePredictionSender(application)
     private val alertNotifier = CravingAlertNotifier(application)
-    private var uploadSequence = 0L
-    private var lastPayloadSkipReason = "수신 샘플 없음"
     private var autoCommunicationStarted = false
     private var autoCommunicationJob: Job? = null
-    private var predictionReceiverJob: Job? = null
-    private var pendingUpload: ServerWindowPayload? = null
     private var cravingSimulationJob: Job? = null
     private var observedPredictionKey: String? = null
     private var observedAlertActionVersion = 0L
@@ -317,8 +304,9 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     )
     val chatReadTimeoutMinutes: StateFlow<Int> = _chatReadTimeoutMinutes
 
+    private val sessionApi = AuthenticatedSessionApi(apiClient)
     private val conversationSessionManager = ConversationSessionManager(
-        api = AuthenticatedSessionApi(apiClient),
+        api = sessionApi,
         store = SharedPreferencesConversationSessionStore(application),
         timeoutMs = { ChatReadTimeoutPolicy.toMillis(_chatReadTimeoutMinutes.value).toLong() }
     )
@@ -334,6 +322,21 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _sessionInactivityTimeoutSeconds = MutableStateFlow<Int?>(null)
     val sessionInactivityTimeoutSeconds: StateFlow<Int?> = _sessionInactivityTimeoutSeconds
+
+    private val _isVoiceRecording = MutableStateFlow(false)
+    val isVoiceRecording: StateFlow<Boolean> = _isVoiceRecording
+
+    private val _isVoiceTranscribing = MutableStateFlow(false)
+    val isVoiceTranscribing: StateFlow<Boolean> = _isVoiceTranscribing
+
+    private val _voiceDraft = MutableStateFlow<String?>(null)
+    val voiceDraft: StateFlow<String?> = _voiceDraft
+
+    private val _voiceStatus = MutableStateFlow("")
+    val voiceStatus: StateFlow<String> = _voiceStatus
+
+    private var voiceRecorder: MediaRecorder? = null
+    private var voiceRecordingFile: File? = null
 
     private val _isCravingSimulationRunning = MutableStateFlow(false)
     val isCravingSimulationRunning: StateFlow<Boolean> = _isCravingSimulationRunning
@@ -524,8 +527,6 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 if (!state.canReceiveAiPrediction) {
                     _isPredictionReceiverEnabled.value = false
-                    predictionReceiverJob?.cancel()
-                    predictionReceiverJob = null
                     _predictionStatus.value = "AI 분석 동의가 없어 예측 수신이 중지되었습니다"
                 }
                 if (state.canUploadBiosignal) {
@@ -572,8 +573,6 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         allStateCheckResults.clear()
         _isReceiving.value = false
         startTimestamp = 0L
-        uploadSequence = 0L
-        pendingUpload = null
         _cravingClassPoints.value = emptyList()
         resetInterventionState()
         observedPredictionKey = null
@@ -638,8 +637,6 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             _predictionStatus.value = "백그라운드 수신 대기 중"
             PhoneMonitoringService.start(getApplication<Application>())
         } else {
-            predictionReceiverJob?.cancel()
-            predictionReceiverJob = null
             _predictionStatus.value = "예측 수신 중지됨"
         }
     }
@@ -787,25 +784,25 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         seenInterventionIds.clear()
     }
 
-    fun sendChatMessage(text: String) {
+    fun sendChatMessage(text: String, inputModality: String = "text") {
         val message = text.trim()
-        if (message.isBlank() || _isChatSending.value) return
+        if (message.isBlank() || _isChatSending.value || inputModality !in setOf("text", "voice")) return
         val clientMessageId = UUID.randomUUID().toString()
         _chatMessages.update {
             list -> list + ChatMessage(ChatSender.USER, message, clientMessageId = clientMessageId)
         }
         _pendingChatRetry.value = null
-        dispatchChatMessage(clientMessageId, message)
+        dispatchChatMessage(clientMessageId, message, inputModality)
     }
 
     fun retryChatMessage() {
         val pending = _pendingChatRetry.value ?: return
         if (_isChatSending.value || pending.attemptsRemaining <= 0) return
         _pendingChatRetry.value = null
-        dispatchChatMessage(pending.clientMessageId, pending.content)
+        dispatchChatMessage(pending.clientMessageId, pending.content, pending.inputModality)
     }
 
-    private fun dispatchChatMessage(clientMessageId: String, message: String) {
+    private fun dispatchChatMessage(clientMessageId: String, message: String, inputModality: String) {
         _isChatSending.value = true
         _chatStatus.value = "응답 요청 중"
 
@@ -817,6 +814,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                         ownerId = authenticatedOwnerId(),
                         clientMessageId = clientMessageId,
                         content = message,
+                        inputModality = inputModality,
                         readTimeoutMs = ChatReadTimeoutPolicy.toMillis(_chatReadTimeoutMinutes.value)
                     )
                 }
@@ -846,7 +844,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }.onFailure { error ->
                 val dialogueError = error as? DialogueRequestException
-                _pendingChatRetry.value = ChatRetryPolicy.pending(error, clientMessageId, message)
+                _pendingChatRetry.value = ChatRetryPolicy.pending(error, clientMessageId, message, inputModality)
                 _chatStatus.value = if (dialogueError != null) {
                     if (dialogueError.retryable) {
                         "응답 생성에 실패했습니다. 같은 메시지를 한 번 다시 시도할 수 있습니다"
@@ -865,6 +863,91 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             _isChatSending.value = false
             chatRequestJob = null
         }
+    }
+
+    fun startVoiceRecording() {
+        if (_isVoiceRecording.value || _isVoiceTranscribing.value) return
+        if (!MobileAuthRuntime.state.value.canUseVoice) {
+            _voiceStatus.value = "음성 입력 동의가 필요합니다"
+            return
+        }
+        val output = runCatching {
+            File.createTempFile("voice_", ".m4a", getApplication<Application>().cacheDir)
+        }.getOrElse {
+            _voiceStatus.value = "녹음 파일을 준비할 수 없습니다"
+            return
+        }
+        val recorder = MediaRecorder()
+        runCatching {
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioSamplingRate(16_000)
+            recorder.setAudioEncodingBitRate(64_000)
+            recorder.setMaxDuration(30_000)
+            recorder.setOutputFile(output.absolutePath)
+            recorder.setOnInfoListener { _, what, _ ->
+                if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) stopVoiceRecording()
+            }
+            recorder.prepare()
+            recorder.start()
+        }.onSuccess {
+            voiceRecorder = recorder
+            voiceRecordingFile = output
+            _isVoiceRecording.value = true
+            _voiceStatus.value = "녹음 중 · 최대 30초"
+        }.onFailure {
+            recorder.release()
+            output.delete()
+            _voiceStatus.value = "녹음을 시작할 수 없습니다"
+        }
+    }
+
+    fun stopVoiceRecording() {
+        val recorder = voiceRecorder ?: return
+        val audio = voiceRecordingFile
+        voiceRecorder = null
+        voiceRecordingFile = null
+        _isVoiceRecording.value = false
+        val stopped = runCatching { recorder.stop() }.isSuccess
+        recorder.release()
+        if (!stopped || audio == null || !audio.isFile || audio.length() == 0L) {
+            audio?.delete()
+            _voiceStatus.value = "음성이 녹음되지 않았습니다"
+            return
+        }
+        _isVoiceTranscribing.value = true
+        _voiceStatus.value = "음성을 글로 바꾸는 중"
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val session = conversationSessionManager.ensure(authenticatedOwnerId())
+                    sessionApi.transcribe(session.id, audio)
+                }
+            }.onSuccess { result ->
+                _voiceDraft.value = result.text
+                _voiceStatus.value = "인식 결과를 확인한 뒤 전송해 주세요"
+            }.onFailure { error ->
+                _voiceStatus.value = when (error) {
+                    is ApiHttpException -> when (error.statusCode) {
+                        403 -> "음성 입력 동의를 확인해 주세요"
+                        413 -> "녹음이 너무 큽니다"
+                        415 -> "지원하지 않는 음성 형식입니다"
+                        422 -> "말소리를 찾지 못했습니다"
+                        503 -> "현재 음성 인식을 사용할 수 없습니다"
+                        504 -> "음성 인식 시간이 초과되었습니다"
+                        else -> "음성 인식에 실패했습니다"
+                    }
+                    else -> "음성 인식에 실패했습니다"
+                }
+            }
+            audio.delete()
+            _isVoiceTranscribing.value = false
+        }
+    }
+
+    fun consumeVoiceDraft() {
+        _voiceDraft.value = null
     }
 
     fun finishConversationManually() {
@@ -930,24 +1013,24 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     fun predictionLatencySnapshot(): List<Pair<Long, Float>> = PhoneMonitoringState.predictionLatencySnapshot()
 
     /**
-     * 센서 취득이 시작된 뒤 10초가 지나면 통신을 자동으로 켠다.
+     * 센서 취득이 시작된 뒤 20초가 지나면 통신을 자동으로 켠다.
      *
-     * 첫 10초는 서버 모델에 필요한 window를 확보하는 준비 구간이다. URL이 비어 있으면
+     * 첫 20초는 서버 모델에 필요한 window를 확보하는 준비 구간이다. URL이 비어 있으면
      * 사용자가 나중에 입력할 수 있도록 상태만 보류로 바꾸고, updateServerUrl/updatePredictionUrl에서
      * 이어서 시작한다.
      */
     private fun scheduleAutoCommunicationStart() {
         if (autoCommunicationJob != null || autoCommunicationStarted) return
 
-        _uploadStatus.value = "취득 시작 감지: 10초 후 자동 전송"
-        _predictionStatus.value = "취득 시작 감지: 10초 후 자동 수신"
+        _uploadStatus.value = "취득 시작 감지: 20초 후 자동 전송"
+        _predictionStatus.value = "취득 시작 감지: 20초 후 자동 수신"
         autoCommunicationJob = viewModelScope.launch {
             delay(AUTO_COMMUNICATION_DELAY_MS)
             autoCommunicationStarted = true
 
             if (_serverUrl.value.isNotBlank()) {
                 if (!_isUploadEnabled.value) setUploadEnabled(true)
-                _uploadStatus.value = "자동 전송 시작: 취득 10초 경과"
+                _uploadStatus.value = "자동 전송 시작: 취득 20초 경과"
             } else {
                 _uploadStatus.value = "자동 전송 보류: 서버 POST URL이 비어 있음"
             }
@@ -1050,233 +1133,16 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         PhoneMonitoringState.activateIntervention()
     }
 
-    /** 1초마다 최신 10초 window를 만들어 서버에 POST한다. */
-    private fun startServerUploadLoop() {
-        viewModelScope.launch {
-            while (true) {
-                delay(SERVER_UPLOAD_INTERVAL_MS)
-                if (
-                    !_isUploadEnabled.value ||
-                    !MobileAuthRuntime.canUpload() ||
-                    PhoneMonitoringState.isCameraPauseActive.value
-                ) continue
-
-                val url = _serverUrl.value
-                val payload = pendingUpload ?: buildServerPayload()
-                if (payload == null) {
-                    _uploadStatus.value = "전송 대기: $lastPayloadSkipReason"
-                    continue
-                }
-
-                PhoneMonitoringState.rememberUpload(payload)
-                _uploadStatus.value = "전송 중: ${payload.samples.size} samples"
-                val attemptStartedAtMs = System.currentTimeMillis()
-                val result = runCatching {
-                    withContext(Dispatchers.IO) {
-                        serverUploader.postWindowAuthenticated(apiClient, url, payload)
-                    }
-                }.getOrElse { e ->
-                    val authenticationFailure =
-                        e is AuthenticationRequiredException ||
-                            (e is ApiHttpException && e.statusCode == 401)
-                    UploadResult(
-                        false,
-                        if (authenticationFailure) 401 else -1,
-                        e.message ?: "unknown error"
-                    )
-                }
-                PhoneMonitoringState.recordUploadLatency(
-                    sessionId = payload.sessionId,
-                    attemptStartedAtMs = attemptStartedAtMs
-                )
-
-                if (result.success) {
-                    windowIdStore.markCompleted(uploadKey(payload))
-                    pendingUpload = null
-                } else {
-                    when (UploadFailurePolicy.resolve(result.statusCode)) {
-                        UploadFailureAction.AUTHENTICATION_REQUIRED -> {
-                            handleAuthenticationFailure()
-                            pendingUpload = null
-                        }
-                        UploadFailureAction.DROP_AND_CONTINUE -> {
-                            windowIdStore.markCompleted(uploadKey(payload))
-                            pendingUpload = null
-                        }
-                        UploadFailureAction.PAUSE_AND_DROP -> {
-                            windowIdStore.markCompleted(uploadKey(payload))
-                            pendingUpload = null
-                            _isUploadEnabled.value = false
-                            PhoneMonitoringState.isUploadEnabled.value = false
-                        }
-                        UploadFailureAction.RETRY_SAME_PAYLOAD -> {
-                            pendingUpload = payload
-                        }
-                    }
-                }
-
-                _uploadStatus.value = if (result.success) {
-                    "전송 완료: #${payload.sequence}, ${payload.samples.size} samples"
-                } else {
-                    when (UploadFailurePolicy.resolve(result.statusCode)) {
-                        UploadFailureAction.DROP_AND_CONTINUE ->
-                            "전송 충돌 window 폐기: 다음 새 window로 계속합니다"
-                        UploadFailureAction.PAUSE_AND_DROP ->
-                            "전송 중지: 동의 또는 요청 설정을 확인해 주세요 (${result.statusCode})"
-                        UploadFailureAction.AUTHENTICATION_REQUIRED ->
-                            "전송 중지: 다시 로그인해 주세요"
-                        UploadFailureAction.RETRY_SAME_PAYLOAD ->
-                            "일시적 전송 실패: 동일 window 재시도 예정 (${result.statusCode})"
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * 서버 SSE stream을 장기 연결로 유지한다.
-     * stream이 닫히거나 timeout되면 2초 뒤 재연결하여 예측 수신을 계속한다.
-     */
-    private fun startPredictionReceiver() {
-        predictionReceiverJob?.cancel()
-        predictionReceiverJob = viewModelScope.launch {
-            while (isActive && _isPredictionReceiverEnabled.value) {
-                val url = _predictionUrl.value
-                val activeJob = coroutineContext[Job]
-                _predictionStatus.value = "SSE 연결 중"
-
-                val result = withContext(Dispatchers.IO) {
-                    runCatching {
-                        apiClient.executeAuthenticatedStream { token ->
-                            serverUploader.listenPredictions(
-                                url = url,
-                                accessToken = token,
-                                shouldContinue = {
-                                    _isPredictionReceiverEnabled.value &&
-                                        MobileAuthRuntime.canReceivePredictions() &&
-                                        activeJob?.isActive == true
-                                }
-                            ) { prediction ->
-                                if (PhoneMonitoringState.isCameraPauseActive.value) return@listenPredictions
-                                val receivedAtMs = System.currentTimeMillis()
-                                PhoneMonitoringState.recordPredictionLatency(prediction, receivedAtMs)
-                                handlePrediction(prediction, sourceLabel = "서버 예측")
-                            }
-                        }
-                    }
-                }
-
-                if (!_isPredictionReceiverEnabled.value) break
-
-                val failure = result.exceptionOrNull()
-                if (failure is AuthenticationRequiredException || (failure is ApiHttpException && failure.statusCode == 401)) {
-                    handleAuthenticationFailure()
-                    break
-                }
-                val error = failure?.message ?: "stream closed"
-                _predictionStatus.value = "SSE 재연결 대기: $error"
-                delay(PREDICTION_RECONNECT_DELAY_MS)
-            }
-        }
-    }
-
     override fun onCleared() {
+        runCatching { voiceRecorder?.stop() }
+        voiceRecorder?.release()
+        voiceRecorder = null
+        voiceRecordingFile?.delete()
+        voiceRecordingFile = null
         autoCommunicationJob?.cancel()
-        predictionReceiverJob?.cancel()
         cravingSimulationJob?.cancel()
         chatRequestJob?.cancel()
         super.onCleared()
-    }
-
-    /**
-     * 서버로 보낼 10초 payload를 만든다.
-     *
-     * PPG/EDA는 같은 windowStartMs 기준 grid에 맞춘다.
-     * - PPG_*: 40ms 간격, 채널당 250개
-     * - EDA: 1000ms 간격, 10개
-     *
-     * 원시 샘플이 target timestamp를 정확히 갖지 않아도 보간/hold로 채워 전송 주기를 유지한다.
-     */
-    private fun buildServerPayload(): ServerWindowPayload? {
-        val session = PhoneMonitoringState.currentSession()
-        val windowEndMs = synchronizedWindowEnd() ?: return null
-        val windowStartMs = windowEndMs - SERVER_WINDOW_MS
-        val ppgGreenSamples = resampleFixedGrid(
-            sensor = "PPG_GREEN",
-            source = allPpgRaw,
-            windowStartMs = windowStartMs,
-            intervalMs = PPG_SAMPLE_INTERVAL_MS,
-            count = PPG_SAMPLE_COUNT
-        )
-        val ppgIrSamples = resampleFixedGrid(
-            sensor = "PPG_IR",
-            source = allPpgIrRaw,
-            windowStartMs = windowStartMs,
-            intervalMs = PPG_SAMPLE_INTERVAL_MS,
-            count = PPG_SAMPLE_COUNT
-        )
-        val ppgRedSamples = resampleFixedGrid(
-            sensor = "PPG_RED",
-            source = allPpgRedRaw,
-            windowStartMs = windowStartMs,
-            intervalMs = PPG_SAMPLE_INTERVAL_MS,
-            count = PPG_SAMPLE_COUNT
-        )
-        val edaSamples = resampleFixedGrid(
-            sensor = "EDA",
-            source = allEdaRaw,
-            windowStartMs = windowStartMs,
-            intervalMs = EDA_SAMPLE_INTERVAL_MS,
-            count = EDA_SAMPLE_COUNT
-        )
-
-        val samples = buildList {
-            addWindowSamples("HR", allHrRaw, windowStartMs, windowEndMs)
-            addAll(ppgGreenSamples)
-            addAll(ppgIrSamples)
-            addAll(ppgRedSamples)
-            addAll(edaSamples)
-            addWindowSamples("ACCEL_X", allAccelXRaw, windowStartMs, windowEndMs)
-            addWindowSamples("ACCEL_Y", allAccelYRaw, windowStartMs, windowEndMs)
-            addWindowSamples("ACCEL_Z", allAccelZRaw, windowStartMs, windowEndMs)
-            addWindowSamples("SKIN_TEMP", allSkinTempRaw, windowStartMs, windowEndMs)
-        }.sortedBy { it.timestampMs }
-
-        if (samples.isEmpty()) return null
-        uploadSequence += 1
-        return ServerWindowPayload(
-            clientWindowId = windowIdStore.getOrCreate(uploadKey(session.sessionId, uploadSequence)),
-            sessionId = session.sessionId,
-            sessionStartedAtMs = session.startedAtMs,
-            sequence = uploadSequence,
-            sentAtMs = System.currentTimeMillis(),
-            windowStartMs = windowStartMs,
-            windowEndMs = windowEndMs,
-            windowMs = SERVER_WINDOW_MS,
-            samples = samples,
-            sync = ServerWindowSync(
-                mode = "fixed_grid_ppg_25hz_eda_1hz_continuous",
-                fillMode = "linear_interpolation_nearest_edge_hold",
-                ppgHz = 25,
-                ppgSamplesPerChannel = PPG_SAMPLE_COUNT,
-                edaHz = 1,
-                edaSamples = EDA_SAMPLE_COUNT
-            )
-        )
-    }
-
-    private fun uploadKey(payload: ServerWindowPayload): String =
-        uploadKey(payload.sessionId, payload.sequence)
-
-    private fun uploadKey(sessionId: String, sequence: Long): String =
-        "view-model:$sessionId:$sequence"
-
-    private fun handleAuthenticationFailure() {
-        MobileAuthRuntime.signOut()
-        apiClient.clearSession()
-        _isUploadEnabled.value = false
-        _isPredictionReceiverEnabled.value = false
-        PhoneMonitoringService.stop(getApplication())
     }
 
     private fun authenticatedOwnerId(): String =
@@ -1287,95 +1153,5 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         is AuthenticationRequiredException -> "로그인이 필요합니다"
         else -> error.message?.take(120) ?: "unknown error"
     }
-
-    /**
-     * fixed-grid payload의 windowEnd를 정한다.
-     * 여러 센서 중 최신 timestamp를 1초 경계로 내림해서 window가 안정적으로 전진하게 한다.
-     */
-    private fun synchronizedWindowEnd(): Long? {
-        if (allPpgRaw.isEmpty() || allPpgIrRaw.isEmpty() || allPpgRedRaw.isEmpty() || allEdaRaw.isEmpty()) {
-            lastPayloadSkipReason = "PPG/EDA 첫 샘플 대기 중"
-            return null
-        }
-
-        val latest = latestTimestamp() ?: return null
-        return latest - (latest % EDA_SAMPLE_INTERVAL_MS)
-    }
-
-    /**
-     * 원시 샘플을 target timestamp grid로 재샘플링한다.
-     *
-     * 양쪽 샘플이 가까우면 선형 보간하고, window 가장자리나 큰 gap에서는 가까운 값/마지막 값을
-     * 유지한다. 이 정책 덕분에 일시적인 센서 callback 지연이 있어도 POST가 끊기지 않는다.
-     */
-    private fun resampleFixedGrid(
-        sensor: String,
-        source: List<Pair<Long, Float>>,
-        windowStartMs: Long,
-        intervalMs: Long,
-        count: Int
-    ): List<ServerSensorSample> {
-        val sorted = source.asSequence()
-            .distinctBy { it.first }
-            .sortedBy { it.first }
-            .toList()
-        if (sorted.isEmpty()) return emptyList()
-
-        val samples = ArrayList<ServerSensorSample>(count)
-        var cursor = 0
-        repeat(count) { index ->
-            val targetTs = windowStartMs + index * intervalMs
-            while (cursor < sorted.lastIndex && sorted[cursor + 1].first <= targetTs) {
-                cursor += 1
-            }
-
-            val before = sorted[cursor]
-            val after = sorted.getOrNull(cursor + 1)
-            val value = when {
-                before.first == targetTs -> before.second
-                before.first > targetTs -> before.second
-                after == null -> before.second
-                after.first == before.first -> before.second
-                after.first - before.first > intervalMs * 3 -> {
-                    val beforeDistance = targetTs - before.first
-                    val afterDistance = after.first - targetTs
-                    if (beforeDistance <= afterDistance) before.second else after.second
-                }
-                else -> {
-                    val ratio = (targetTs - before.first).toFloat() / (after.first - before.first).toFloat()
-                    before.second + (after.second - before.second) * ratio
-                }
-            }
-            samples += ServerSensorSample(sensor, targetTs, value)
-        }
-        return samples
-    }
-
-    private fun MutableList<ServerSensorSample>.addWindowSamples(
-        sensor: String,
-        source: List<Pair<Long, Float>>,
-        windowStartMs: Long,
-        windowEndMs: Long
-    ) {
-        source.asReversed().asSequence()
-            .takeWhile { (ts, _) -> ts >= windowStartMs }
-            .filter { (ts, _) -> ts <= windowEndMs }
-            .toList()
-            .asReversed()
-            .forEach { (ts, value) -> add(ServerSensorSample(sensor, ts, value)) }
-    }
-
-    private fun latestTimestamp(): Long? =
-        listOfNotNull(
-            allHrRaw.lastOrNull()?.first,
-            allPpgRaw.lastOrNull()?.first,
-            allPpgIrRaw.lastOrNull()?.first,
-            allPpgRedRaw.lastOrNull()?.first,
-            allEdaRaw.lastOrNull()?.first,
-            allAccelXRaw.lastOrNull()?.first,
-            allAccelYRaw.lastOrNull()?.first,
-            allAccelZRaw.lastOrNull()?.first,
-            allSkinTempRaw.lastOrNull()?.first
-        ).maxOrNull()
 
 }

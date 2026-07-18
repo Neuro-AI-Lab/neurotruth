@@ -155,13 +155,14 @@ class RppgService:
         }
         if row["status"] == "completed":
             metadata = dict(row.get("output_metadata") or {})
+            sample_count = 1024 if int(row.get("duration_ms") or 0) >= 19_500 else 512
             common.update({
                 "source": "camera_rppg", "classIndex": row["predicted_class_index"],
                 "confidence": self._float(row["predicted_class_probability"]),
                 "heartRateBpm": self._float(row["heart_rate_bpm"]),
                 "qualityScore": self._float(row["quality_score"]), "modelName": row["model_name"],
                 "checkpoint": row["checkpoint"], "inferenceDevice": row["inference_device"],
-                "rppgSampleCount": 512, "rppgSamplingHz": 51.2,
+                "rppgSampleCount": sample_count, "rppgSamplingHz": 51.2,
                 "processingMs": row["processing_ms"],
                 "alertRequired": bool(metadata.get("alertRequired", False)),
                 "alertAction": metadata.get("alertAction", "none"),
@@ -277,9 +278,9 @@ class RppgService:
                                                  provider_encrypted=provider_encrypted, key_version=key_version)
             return
         start_ms = int(row["captured_at"].timestamp() * 1000)
-        timestamps = [start_ms + round(i * 1000 / 51.2) for i in range(512)]
+        timestamps = [start_ms + round(i * 1000 / 51.2) for i in range(1024)]
         payload = {
-            "windowStartMs": start_ms, "windowEndMs": start_ms + 10_000, "windowMs": 10_000,
+            "windowStartMs": start_ms, "windowEndMs": start_ms + 20_000, "windowMs": 20_000,
             "samples": ([{"sensor": "PPG_GREEN", "timestampMs": ts, "value": float(value)}
                          for ts, value in zip(timestamps, resampled)] +
                         [{"sensor": "EDA", "timestampMs": ts, "value": 0.0} for ts in timestamps]),
@@ -293,7 +294,7 @@ class RppgService:
         consent = await self.v25_repository.current_consent(patient_id)
         notify = bool(consent and consent.notification)
         alert = self.alert_decider(patient_id, prediction) if notify else {"alertRequired": False, "alertAction": "none"}
-        public_prediction = {**prediction, **alert, "source": "camera_rppg", "edaAdaptation": "zero_512"}
+        public_prediction = {**prediction, **alert, "source": "camera_rppg", "edaAdaptation": "zero_1024"}
         craving_model = await self.v25_repository.ensure_craving_model_version(
             model_name=self.predictor.model_name, model_version=self.predictor.model_version,
             artifact_uri=self.predictor.artifact_uri,
@@ -302,7 +303,7 @@ class RppgService:
                 "predictionSchema": "binary-craving-v1",
                 "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
             }),
-            config=getattr(self.predictor, "registration_config", {"window_sec": 10}),
+            config=getattr(self.predictor, "registration_config", {"window_sec": 20}),
         )
         rppg_model = await self.repository.ensure_rppg_model(
             name=common["model_name"] or "FactorizePhys", version=common["checkpoint"] or "unknown",
@@ -332,9 +333,9 @@ class RppgService:
         if float(np.ptp(values)) <= 0:
             raise ValueError("constant waveform")
         source = np.linspace(0.0, 1.0, values.size, endpoint=True)
-        target = np.linspace(0.0, 1.0, 512, endpoint=True)
+        target = np.linspace(0.0, 1.0, 1024, endpoint=True)
         output = np.interp(target, source, values)
-        if output.size != 512 or not np.all(np.isfinite(output)):
+        if output.size != 1024 or not np.all(np.isfinite(output)):
             raise ValueError("invalid interpolation")
         return values.astype(float).tolist(), output.astype(np.float64)
 

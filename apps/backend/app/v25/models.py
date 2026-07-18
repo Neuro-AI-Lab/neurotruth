@@ -22,6 +22,7 @@ class ConsentInput(ApiModel):
     privacy: bool
     sensitive: bool
     biosignal: bool = False
+    voice: bool = False
     ai_analysis: bool = False
     notification: bool = False
     report_generation: bool = False
@@ -93,6 +94,7 @@ class ConsentRecord:
     collected_at: datetime
     camera_rppg: bool = False
     face_video_retention: bool = False
+    voice: bool = False
 
 
 @dataclass(frozen=True)

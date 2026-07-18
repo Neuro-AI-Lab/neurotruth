@@ -52,6 +52,9 @@ sensor_*.csv
 *.sqlite
 *.sqlite3
 
+# Externally mounted runtime models
+models/whisper-large-v3-turbo/
+
 # Local assistant/tool state
 .claude/
 .codex/

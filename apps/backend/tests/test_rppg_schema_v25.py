@@ -16,11 +16,13 @@ def test_rppg_is_additive_0002_and_baseline_remains_parent() -> None:
     assert "uq_rppg_jobs_one_active_capture" in migration
 
 
-def test_runtime_requires_free_dialogue_head_after_intervention_revision() -> None:
+def test_runtime_requires_voice_rppg_20s_head_after_free_dialogue_revision() -> None:
     runtime = (ROOT / "app/v25/runtime.py").read_text(encoding="utf-8")
-    assert 'REQUIRED_REVISION = "20260716_0004"' in runtime
-    migration = (ROOT / "alembic/versions/20260716_0004_free_dialogue.py").read_text(encoding="utf-8")
-    assert 'down_revision = "20260715_0003"' in migration
+    assert 'REQUIRED_REVISION = "20260717_0005"' in runtime
+    migration = (ROOT / "alembic/versions/20260717_0005_voice_rppg_20s.py").read_text(encoding="utf-8")
+    assert 'down_revision = "20260716_0004"' in migration
+    assert "duration_ms BETWEEN 9500 AND 10500" in migration
+    assert "duration_ms BETWEEN 19500 AND 20500" in migration
 
 
 def test_quality_retry_jobs_persist_rppg_model_foreign_key() -> None:

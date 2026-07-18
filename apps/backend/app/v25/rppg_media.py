@@ -40,8 +40,8 @@ class FfprobeMediaInspector:
             )
         except (subprocess.SubprocessError, OSError, ValueError, KeyError, IndexError, json.JSONDecodeError, ZeroDivisionError) as exc:
             raise InvalidRppgMedia("Video cannot be decoded") from exc
-        if not 9.5 <= inspection.duration_seconds <= 10.5:
-            raise InvalidRppgMedia("Video duration must be 9.5 to 10.5 seconds")
+        if not 19.5 <= inspection.duration_seconds <= 20.5:
+            raise InvalidRppgMedia("Video duration must be 19.5 to 20.5 seconds")
         if not 27.0 <= inspection.fps <= 33.0:
             raise InvalidRppgMedia("Video frame rate must be approximately 30fps")
         if inspection.width <= 0 or inspection.height <= 0:

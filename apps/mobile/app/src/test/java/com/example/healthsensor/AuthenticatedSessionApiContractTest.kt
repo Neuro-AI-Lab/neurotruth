@@ -33,7 +33,7 @@ class AuthenticatedSessionApiContractTest {
         val api = AuthenticatedSessionApi(client)
 
         val created = api.create("alert_checkin", "33333333-3333-4333-8333-333333333333")
-        val message = api.postMessage(sessionId, clientMessageId, "지금 불안해요", 3_600_000)
+        val message = api.postMessage(sessionId, clientMessageId, "지금 불안해요", 3_600_000, "voice")
         val finished = api.finish(sessionId)
         val report = api.getReport(sessionId)
 
@@ -42,8 +42,10 @@ class AuthenticatedSessionApiContractTest {
         assertEquals("alert_checkin", createBody.getString("sessionType"))
         assertEquals("33333333-3333-4333-8333-333333333333", createBody.getString("triggerAlertId"))
         val messageBody = JSONObject(requests.single { it.url.endsWith("/messages") }.body!!)
-        assertEquals(setOf("clientMessageId", "content"), messageBody.keys().asSequence().toSet())
+        assertEquals(setOf("clientMessageId", "content", "inputModality"), messageBody.keys().asSequence().toSet())
         assertEquals(clientMessageId, messageBody.getString("clientMessageId"))
+        assertEquals("voice", messageBody.getString("inputModality"))
+        assertEquals("https://example.test/api/sessions/$sessionId/transcriptions", client.endpoints.transcriptions(sessionId))
 
         assertEquals("free_dialogue", created.interactionPhase)
         assertEquals(4_200, created.inactivityTimeoutSeconds)
@@ -77,7 +79,8 @@ class AuthenticatedSessionApiContractTest {
                 sessionId,
                 clientMessageId,
                 "같은 메시지",
-                3_600_000
+                3_600_000,
+                "text"
             )
         }.exceptionOrNull() as DialogueRequestException
 

@@ -26,6 +26,7 @@ class MessageBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     clientMessageId: UUID | None = None
     content: str = Field(min_length=1, max_length=10_000)
+    inputModality: Literal["text", "voice"] = "text"
 
 
 class AssessmentBody(BaseModel):
@@ -82,7 +83,7 @@ async def post_message(session_id: UUID, body: MessageBody,
     await _ai_consent(runtime, user)
     try:
         return await runtime.session_service.message(
-            user, session_id, body.content.strip(), body.clientMessageId,
+            user, session_id, body.content.strip(), body.clientMessageId, body.inputModality,
         )
     except SessionError as exc: _map(exc)
 

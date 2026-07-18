@@ -26,6 +26,7 @@ data class ConsentSelection(
     val aiAnalysis: Boolean,
     val cameraRppg: Boolean = false,
     val faceVideoRetention: Boolean = false,
+    val voice: Boolean = false,
     val notification: Boolean,
     val reportGeneration: Boolean,
     val tosVersion: String,
@@ -47,6 +48,7 @@ data class ConsentSelection(
         .put("aiAnalysis", aiAnalysis)
         .put("cameraRppg", cameraRppg)
         .put("faceVideoRetention", faceVideoRetention)
+        .put("voice", voice)
         .put("notification", notification)
         .put("reportGeneration", reportGeneration)
         .put("tosVersion", tosVersion)
@@ -65,6 +67,7 @@ data class ConsentSelection(
                     aiAnalysis = value.optBoolean("aiAnalysis", false),
                     cameraRppg = value.optBoolean("cameraRppg", false),
                     faceVideoRetention = value.optBoolean("faceVideoRetention", false),
+                    voice = value.optBoolean("voice", false),
                     notification = value.optBoolean("notification", false),
                     reportGeneration = value.optBoolean("reportGeneration", false),
                     tosVersion = value.optString("tosVersion"),

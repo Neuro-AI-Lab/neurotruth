@@ -37,17 +37,26 @@ services:
       SENSOR_STORAGE_ROOT: /var/lib/neurotruth/sensors
       RPPG_STORAGE_ROOT: /var/lib/neurotruth/rppg
       RPPG_TMPFS_ROOT: /dev/shm/neurotruth-rppg
+      RPPG_MAX_UPLOAD_MIB: ${RPPG_MAX_UPLOAD_MIB:-40}
       TMPDIR: /dev/shm/neurotruth-rppg
       NEUROTRUTH_SCHEMA_SQL: /app/schema/neurotruth_schema_v2_5.sql
-      CRAVING_MODEL_PATH: /app/model/weights/final_moving_average_k5/model_weights.pt
-      CRAVING_MODEL_METADATA_PATH: /app/model/weights/final_moving_average_k5/model_metadata.json
-      CRAVING_MODEL_SHA256: 9fec80f7b2c42ba8a5bdb1d702a82eb5bd73542365c7ccb91db3d880b9f321c5
+      CRAVING_MODEL_PATH: /app/model/weights/final_model_win20s_high2p4/model_weights.pt
+      CRAVING_MODEL_METADATA_PATH: /app/model/weights/final_model_win20s_high2p4/model_metadata.json
+      CRAVING_MODEL_SHA256: 2493e5d75fcdc9b066b341deb47f81c9db49aac37c626619b7afe1a6b2fc354c
       CRAVING_INFERENCE_DEVICE: ${CRAVING_INFERENCE_DEVICE:-auto}
+      STT_ENABLED: ${STT_ENABLED:-false}
+      STT_BASE_URL: http://stt:8001
+      STT_CONNECT_TIMEOUT_SECONDS: ${STT_CONNECT_TIMEOUT_SECONDS:-5}
+      STT_READ_TIMEOUT_SECONDS: ${STT_READ_TIMEOUT_SECONDS:-120}
+      STT_MAX_UPLOAD_MIB: ${STT_MAX_UPLOAD_MIB:-10}
+      STT_TMPFS_ROOT: /dev/shm/neurotruth-stt
     ports:
       - "${BACKEND_HOST_PORT:-25991}:25991"
     depends_on:
       db:
         condition: service_healthy
+      stt:
+        condition: service_started
     volumes:
       - encrypted_sensor_data:/var/lib/neurotruth/sensors
       - encrypted_rppg_data:/var/lib/neurotruth/rppg
@@ -56,7 +65,27 @@ services:
       - ../../neurotruth_schema_v2_5.sql:/app/schema/neurotruth_schema_v2_5.sql:ro
     tmpfs:
       - /dev/shm/neurotruth-rppg:size=256m,mode=0700
+      - /dev/shm/neurotruth-stt:size=64m,mode=0700
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 25991"]
+    networks:
+      - neurotruth-network
+
+  stt:
+    build:
+      context: ../stt-service
+      dockerfile: Dockerfile
+    container_name: neurotruth-stt
+    restart: unless-stopped
+    environment:
+      STT_ENABLED: ${STT_ENABLED:-false}
+      STT_MODEL_PATH: /models/large-v3-turbo
+      STT_DEVICE: auto
+      STT_MAX_UPLOAD_MIB: ${STT_MAX_UPLOAD_MIB:-10}
+      STT_TMPFS_ROOT: /dev/shm/neurotruth-stt
+    volumes:
+      - ${STT_MODEL_PATH:-../../models/whisper-large-v3-turbo}:/models/large-v3-turbo:ro
+    tmpfs:
+      - /dev/shm/neurotruth-stt:size=64m,mode=0700
     networks:
       - neurotruth-network
 

@@ -67,10 +67,10 @@ def test_dgx_client_uses_backend_job_id_and_requests_waveform(workdir: Path) -> 
     assert b'name="include_waveform"' in seen["body"] and b"true" in seen["body"]
 
 
-def test_waveform_is_exactly_512_finite_samples_and_rejects_bad_input() -> None:
+def test_waveform_is_exactly_1024_finite_samples_and_rejects_bad_input() -> None:
     original, output = RppgService.resample_waveform([0.0, 1.0, 0.2], 30)
     assert original == [0.0, 1.0, 0.2]
-    assert output.shape == (512,)
+    assert output.shape == (1024,)
     assert np.all(np.isfinite(output))
     for waveform, rate in (([1.0, 1.0], 30), ([0.0, float("nan")], 30),
                            ([0.0, 1.0], 0), ([0.0, 1.0], float("nan")),
@@ -84,7 +84,9 @@ class FakeRppgRepository:
         self.quality = None
         self.failure = None
         self.success = None
+        self.owned_job_row = None
         self.rppg_model_id = uuid4()
+    async def owned_job(self, patient_id, job_id): return self.owned_job_row
     async def finish_quality(self, job_id, **values): self.quality = (job_id, values)
     async def finish_failure(self, job_id, **values): self.failure = (job_id, values)
     async def ensure_rppg_model(self, **values): return self.rppg_model_id
@@ -142,7 +144,7 @@ def test_upload_storage_and_queue_failures_are_sanitized_and_cleanup_encrypted_f
                               camera_rppg=True, face_video_retention=True)
     source = workdir / "secret-face.mp4"
     source.write_bytes(b"face-video")
-    inspection = VideoInspection(10.0, 30.0, 1280, 720)
+    inspection = VideoInspection(20.0, 30.0, 1280, 720)
 
     class BrokenStorage:
         def store_path(self, **values):
@@ -159,7 +161,7 @@ def test_upload_storage_and_queue_failures_are_sanitized_and_cleanup_encrypted_f
     with pytest.raises(RppgUnavailable, match="^RPPG_STORAGE_UNAVAILABLE$"):
         asyncio.run(service.accept(
             patient_id=uuid4(), consent=consent, client_capture_id=uuid4(),
-            captured_at_ms=1_800_000_000_000, duration_ms=10_000, session_id=None,
+            captured_at_ms=1_800_000_000_000, duration_ms=20_000, session_id=None,
             plaintext_path=source, inspection=inspection,
         ))
 
@@ -178,16 +180,16 @@ def test_upload_storage_and_queue_failures_are_sanitized_and_cleanup_encrypted_f
     with pytest.raises(RppgUnavailable, match="^RPPG_QUEUE_UNAVAILABLE$"):
         asyncio.run(service.accept(
             patient_id=uuid4(), consent=consent, client_capture_id=uuid4(),
-            captured_at_ms=1_800_000_000_000, duration_ms=10_000, session_id=None,
+            captured_at_ms=1_800_000_000_000, duration_ms=20_000, session_id=None,
             plaintext_path=source, inspection=inspection,
         ))
     assert not list(encrypted_root.rglob("*.ntr"))
 
 
-def test_success_supplies_512_ppg_and_literal_zero_eda(workdir: Path) -> None:
+def test_success_supplies_1024_ppg_and_literal_zero_eda(workdir: Path) -> None:
     tmp_path = workdir
     service, repo, predictor = make_service(tmp_path)
-    row = {"id": uuid4(), "patient_id": uuid4(), "captured_at": datetime.now(timezone.utc), "duration_ms": 10_000}
+    row = {"id": uuid4(), "patient_id": uuid4(), "captured_at": datetime.now(timezone.utc), "duration_ms": 20_000}
     asyncio.run(service._apply_response(row, DgxResponse(200, {
         "measurement_id": "m1", "status": "success", "heart_rate_bpm": 72,
         "rppg_sample_rate_hz": 30, "waveform": [0, .5, 1, .2],
@@ -199,10 +201,40 @@ def test_success_supplies_512_ppg_and_literal_zero_eda(workdir: Path) -> None:
     samples = predictor.payload["samples"]
     ppg = [sample for sample in samples if sample["sensor"] == "PPG_GREEN"]
     eda = [sample for sample in samples if sample["sensor"] == "EDA"]
-    assert len(ppg) == len(eda) == 512
+    assert len(ppg) == len(eda) == 1024
     assert all(sample["value"] == 0.0 for sample in eda)
+    assert predictor.payload["windowMs"] == 20_000
+    assert predictor.payload["windowEndMs"] - predictor.payload["windowStartMs"] == 20_000
     assert repo.success["prediction"]["source"] == "camera_rppg"
+    assert repo.success["prediction"]["edaAdaptation"] == "zero_1024"
     assert repo.success["checkpoint"] == "PURE.pth"
+
+
+def test_legacy_ten_second_completed_job_remains_readable(workdir: Path) -> None:
+    service, repo, _ = make_service(workdir)
+    patient_id, job_id, capture_id = uuid4(), uuid4(), uuid4()
+    now = datetime.now(timezone.utc)
+    repo.owned_job_row = {
+        "id": job_id,
+        "capture_id": capture_id,
+        "status": "completed",
+        "captured_at": now,
+        "created_at": now,
+        "updated_at": now,
+        "duration_ms": 10_000,
+        "output_metadata": {},
+        "predicted_class_index": 0,
+        "predicted_class_probability": 0.8,
+        "heart_rate_bpm": 70,
+        "quality_score": 0.9,
+        "model_name": "FactorizePhys",
+        "checkpoint": "legacy.pth",
+        "inference_device": "cuda:0",
+        "processing_ms": 100,
+    }
+    result = asyncio.run(service.job(patient_id, job_id))
+    assert result["status"] == "completed"
+    assert result["rppgSampleCount"] == 512
 
 
 def test_provider_payload_encryption_is_aad_bound(workdir: Path) -> None:

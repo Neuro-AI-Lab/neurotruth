@@ -16,7 +16,7 @@ from .auth_service import AuthService
 from .repository import SqlAlchemyV25Repository
 
 
-REQUIRED_REVISION = "20260716_0004"
+REQUIRED_REVISION = "20260717_0005"
 
 
 @dataclass
@@ -31,6 +31,7 @@ class V25Runtime:
     rppg_service: Any | None = None
     rppg_repository: Any | None = None
     rppg_storage: Any | None = None
+    stt_client: Any | None = None
     timeout_sweep_task: asyncio.Task[None] | None = None
     timeout_sweep_stop: asyncio.Event | None = None
     error_code: str | None = "not_initialized"
@@ -84,6 +85,21 @@ async def initialize_v25_runtime(app: FastAPI) -> V25Runtime:
         runtime.settings = settings
         runtime.repository = repository
         runtime.service = service
+        stt_client = None
+        try:
+            from .stt_client import SttClient
+            stt_client = SttClient.from_env()
+            if stt_client.enabled:
+                stt_client.tmpfs_root.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    prefix=".readiness-", dir=stt_client.tmpfs_root, delete=True
+                ):
+                    pass
+            runtime.stt_client = stt_client
+        except Exception:
+            if stt_client is not None:
+                await stt_client.close()
+            runtime.stt_client = None
         from .rppg_repository import SqlAlchemyRppgRepository
         from .rppg_storage import EncryptedRppgStorage
         runtime.rppg_repository = SqlAlchemyRppgRepository(repository.engine)
@@ -141,6 +157,9 @@ async def shutdown_v25_runtime(app: FastAPI) -> None:
     rppg_service = getattr(runtime, "rppg_service", None)
     if rppg_service is not None and hasattr(rppg_service, "shutdown"):
         await rppg_service.shutdown()
+    stt_client = getattr(runtime, "stt_client", None)
+    if stt_client is not None and hasattr(stt_client, "close"):
+        await stt_client.close()
     repository = getattr(runtime, "repository", None)
     if repository is not None and hasattr(repository, "close"):
         await repository.close()

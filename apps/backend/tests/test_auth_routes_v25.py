@@ -78,7 +78,7 @@ class FakeService:
 
     async def append_consent(self, user_id: UUID, body: Any) -> dict[str, Any]:
         self.calls.append(("consent", user_id))
-        return {"id": str(uuid4()), "biosignal": body.biosignal}
+        return {"id": str(uuid4()), "biosignal": body.biosignal, "voice": body.voice}
 
     _public_user = staticmethod(AuthService._public_user)
 
@@ -102,7 +102,7 @@ def build_client(*, must_change_password: bool = False, session_active: bool = T
 
 CONSENT = {
     "tos": True, "privacy": True, "sensitive": True, "biosignal": True,
-    "aiAnalysis": True, "notification": False, "reportGeneration": True,
+    "voice": True, "aiAnalysis": True, "notification": False, "reportGeneration": True,
     "tosVersion": "1", "privacyVersion": "1", "consentFormVersion": "1",
 }
 
@@ -147,6 +147,7 @@ def test_bearer_me_consent_logout_and_change_password() -> None:
     added = client.post("/api/me/consents", headers=headers, json=CONSENT)
     assert added.status_code == 201
     assert added.json()["biosignal"] is True
+    assert added.json()["voice"] is True
     assert client.post("/api/auth/logout", headers=headers, json={"refreshToken": "refresh"}).status_code == 204
     assert client.post("/api/auth/change-password", headers=headers, json={
         "currentPassword": "current-password", "newPassword": "new correct horse battery staple",
@@ -184,6 +185,17 @@ def test_patch_me_rejects_unsupported_update_without_silent_drop() -> None:
     assert response.json()["detail"] == "Profile updates are not available yet"
 
 
+def test_public_consent_reports_persisted_voice_value() -> None:
+    row = SimpleNamespace(
+        id=uuid4(), tos=True, privacy=True, sensitive=True, biosignal=True, voice=True,
+        ai_analysis=True, notification=False, report_generation=True,
+        camera_rppg=False, face_video_retention=False,
+        tos_version="1", privacy_version="1", consent_form_version="1",
+        collected_at=datetime.now(timezone.utc),
+    )
+    assert AuthService._public_consent(row)["voice"] is True
+
+
 def test_main_exposes_readiness_and_removes_placeholder_users_route() -> None:
     from app import main
 
@@ -191,4 +203,6 @@ def test_main_exposes_readiness_and_removes_placeholder_users_route() -> None:
     assert "/ready" in paths
     assert "/api/auth/patient/signup" in paths
     assert "/api/me" in paths
+    assert "/api/stt/status" in paths
+    assert "/api/sessions/{session_id}/transcriptions" in paths
     assert "/api/users" not in paths

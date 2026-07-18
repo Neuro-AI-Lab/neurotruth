@@ -17,16 +17,16 @@ class AuthenticatedSensorContractTest {
             sequence = 1L,
             sentAtMs = 200L,
             windowStartMs = 100L,
-            windowEndMs = 200L,
-            windowMs = 100L,
+            windowEndMs = 20_100L,
+            windowMs = 20_000L,
             samples = listOf(ServerSensorSample("EDA", 100L, 0.5f)),
             sync = ServerWindowSync(
                 mode = "fixed_grid",
                 fillMode = "hold",
                 ppgHz = 25,
-                ppgSamplesPerChannel = 250,
-                edaHz = 4,
-                edaSamples = 40
+                ppgSamplesPerChannel = 500,
+                edaHz = 1,
+                edaSamples = 20
             )
         )
 
@@ -34,6 +34,9 @@ class AuthenticatedSensorContractTest {
         assertEquals(id, json.getString("clientWindowId"))
         assertFalse(json.has("sessionId"))
         assertEquals("fixed_grid", json.getJSONObject("sync").getString("mode"))
+        assertEquals(20_000L, json.getLong("windowMs"))
+        assertEquals(500, json.getJSONObject("sync").getInt("ppgSamplesPerChannel"))
+        assertEquals(20, json.getJSONObject("sync").getInt("edaSamples"))
     }
 
     @Test
@@ -66,6 +69,13 @@ class AuthenticatedSensorContractTest {
         assertTrue(allowedState.canNotify)
         assertTrue(NotificationPresentationPolicy.shouldPresent(allowedState.canNotify, alertClaimed = true))
         assertFalse(NotificationPresentationPolicy.suppressWatchPresentation(allowedState.canNotify, interventionActive = false))
+    }
+
+    @Test
+    fun voiceConsentGatesOnlyVoiceInput() {
+        val user = AuthUser("patient-1", "patient@example.com", "patient", "active", false)
+        assertFalse(MobileAuthState(user, consent(true, true)).canUseVoice)
+        assertTrue(MobileAuthState(user, consent(true, true).copy(voice = true)).canUseVoice)
     }
 
     @Test

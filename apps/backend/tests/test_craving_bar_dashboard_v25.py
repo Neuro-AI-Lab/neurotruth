@@ -4,6 +4,7 @@ import asyncio
 import base64
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from inspect import getsource
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from app.v25.dashboard_service import (
     DashboardService,
     DashboardTimezoneError,
 )
+from app.v25.repository import SqlAlchemyV25Repository
 
 
 class Repo:
@@ -47,6 +49,10 @@ def rows():
             "minimum_probability": Decimal("0.41"),
             "maximum_probability": Decimal("0.91"),
             "sample_count": 3590,
+            "low_count": 100,
+            "observe_count": 490,
+            "caution_count": 1000,
+            "high_count": 2000,
         }],
         "prediction_days": [
             {"local_date": date(2026, 7, 15), "prediction_count": 10},
@@ -79,8 +85,21 @@ def test_craving_dashboard_returns_complete_local_buckets_and_distinguishes_zero
         assert result["currentCraving"]["probability"] == pytest.approx(0.812345)
         assert len(result["hourlyCraving"]["buckets"]) == 24
         assert result["hourlyCraving"]["buckets"][10]["averageProbability"] == pytest.approx(0.72)
+        assert result["hourlyCraving"]["buckets"][10]["stageCounts"] == {
+            "low": 100,
+            "observe": 490,
+            "caution": 1000,
+            "high": 2000,
+        }
+        assert sum(result["hourlyCraving"]["buckets"][10]["stageCounts"].values()) == 3590
         assert result["hourlyCraving"]["buckets"][11]["averageProbability"] is None
         assert result["hourlyCraving"]["buckets"][11]["sampleCount"] == 0
+        assert result["hourlyCraving"]["buckets"][11]["stageCounts"] == {
+            "low": 0,
+            "observe": 0,
+            "caution": 0,
+            "high": 0,
+        }
         assert len(result["dailyEvents"]["buckets"]) == 7
         previous = next(
             item for item in result["dailyEvents"]["buckets"]
@@ -129,6 +148,10 @@ def test_dst_wall_clock_contract_always_returns_24_labels_and_merges_repository_
             "minimum_probability": Decimal("0.2"),
             "maximum_probability": Decimal("0.8"),
             "sample_count": 7200,
+            "low_count": 1000,
+            "observe_count": 2000,
+            "caution_count": 3000,
+            "high_count": 1200,
         }]
         result = await DashboardService(Repo(payload), ring(), Storage()).craving_dashboard(
             uuid4(),
@@ -142,6 +165,14 @@ def test_dst_wall_clock_contract_always_returns_24_labels_and_merges_repository_
         assert [datetime.fromisoformat(item["localStart"]).hour for item in buckets] == list(range(24))
         assert buckets[1]["sampleCount"] == 7200
     asyncio.run(scenario())
+
+
+def test_hourly_stage_sql_uses_exact_non_overlapping_boundaries() -> None:
+    source = getsource(SqlAlchemyV25Repository.craving_dashboard_rows)
+    assert "p.continuous_value < 0.25" in source
+    assert "p.continuous_value >= 0.25 AND p.continuous_value < 0.50" in source
+    assert "p.continuous_value >= 0.50 AND p.continuous_value < 0.75" in source
+    assert "p.continuous_value >= 0.75" in source
 
 
 def test_invalid_timezone_is_rejected() -> None:

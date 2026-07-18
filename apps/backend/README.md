@@ -1,6 +1,6 @@
 # NeuroTruth Backend
 
-Last updated: 2026-07-16
+Last updated: 2026-07-18
 
 FastAPI backend for the authenticated intervention-support platform. Readiness fails closed when PostgreSQL, the expected Alembic revision, required security settings, or the AES-256-GCM keyring are unavailable.
 
@@ -24,6 +24,7 @@ Use `ALLOW_INSECURE_HTTP=true` only with `APP_ENV=development|test`. Production 
 | Profile/consent | `GET/PATCH /api/me`, `POST /api/me/consents` |
 | Sensor/prediction | `POST /api/sensor-windows`, `GET /api/predictions/stream` (binary class plus class-1 probability) |
 | Session | `POST /api/sessions`, `GET /api/sessions/{id}`, retry-safe `POST .../messages`, `.../assessments`, `.../finish`, `POST/GET .../reports` |
+| Voice STT | `GET /api/stt/status`, `POST /api/sessions/{id}/transcriptions`; disabled by default |
 | Patient dashboard | `GET /api/me/dashboard?range=24h|7d|30d`, `GET /api/me/craving-dashboard?timezone={iana}&eventRange=7d|30d&auqRange=today|7d|30d`, `GET /api/me/craving-probability-series?range=10m|24h|7d|30d`, `GET /api/me/predictions/{predictionId}/ppg-preview` |
 | Administrator | Patients/timeline/dashboard, reason-gated reveal, temporary password, confirmed deletion, settings |
 | Camera rPPG | Patient status/job/poll/retry and administrator capture summary/reveal/delete; disabled by default |
@@ -36,6 +37,7 @@ The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and
 - `20260715_0002` adds `rppg_captures`, `rppg_analysis_jobs`, and camera-prediction linkage.
 - `20260715_0003` adds `state_inferences`, new session interaction state, and multi-intervention ordering/evidence.
 - `20260716_0004` adds the `free_dialogue` phase and retry-idempotency index for client message IDs.
+- `20260717_0005` allows retained 10-second and current 20-second rPPG capture durations. It intentionally refuses downgrade while 20-second captures may exist.
 - `apps/db/init.sql` installs PostgreSQL extensions only. Alembic is the only business-schema migration path.
 - The fresh schema uses `postgres_data_v25`. Back up and preserve legacy `postgres_data`; do not run the new migration against it.
 - Sensitive database payloads use AES-256-GCM with fresh nonces and table/column/patient/record AAD.
@@ -64,15 +66,16 @@ Safety interpretation for new free-dialogue sessions is LLM-only and intended fo
 - Deterministic state inference aggregates prediction, alert, AUQ, session, and intervention evidence IDs.
 - The LLM may summarize only supplied evidence. Failure leaves deterministic state intact and marks summary `unavailable`.
 - Reports use dialogue, AUQ, prediction, intervention, and state evidence. Public session/report APIs return status and metadata, not decrypted report body.
-- The mobile craving dashboard returns today's 24 local-hour probability bars, 7/30-day alert-event counts, and today/7/30-day AUQ bars. Missing data remains distinct from a valid zero-event bucket.
+- The mobile craving dashboard returns today's 24 local-hour four-stage stacked probability bars, 7/30-day alert-event counts, and today/7/30-day AUQ bars. Each populated hour exposes exact `low|observe|caution|high` counts while preserving average/minimum/maximum fields. Missing data remains distinct from a valid zero-event bucket.
 - Patient dashboard PPG preview is owner-only and capped at 512 points.
 - Administrator dashboard contains no raw PPG. Sensitive message/state/intervention/report reveal requires a reason, is audited, and returns `Cache-Control: no-store`.
 
 ## Binary Craving Model
 
-The active predictor is the supplied two-class PyTorch `Conv1DNet`. Each accepted
-ten-second PPG/GSR window is linearly resampled to 512 samples per channel,
-independently MinMax-normalized without filtering, and evaluated as `[PPG,GSR]`.
+The active predictor is the supplied two-class PyTorch `Conv1DNet`. The phone
+submits the latest 20-second PPG/GSR window every 10 seconds after warm-up. Each
+channel is linearly resampled to 1,024 samples, independently MinMax-normalized
+without filtering, and evaluated as a `(1,2,1024)` `[PPG,GSR]` tensor.
 Class 0 is `low`, class 1 is `high`, and `cravingProbability` is the class-1
 softmax output. It is a research model output, not a diagnosis or calibrated
 clinical severity; the final weights used all retained training data and have no
@@ -94,21 +97,23 @@ docker compose run --rm backend python -m app.maintenance.purge_legacy_predictio
 docker compose run --rm backend python -m app.maintenance.purge_legacy_predictions --confirm DELETE-LEGACY-3CLASS-PREDICTIONS
 ```
 
-## Optional DGX Spark rPPG
+## Optional STT and DGX Spark rPPG
 
-`RPPG_ENABLED=false` is the default. When explicitly enabled and ready, the backend accepts 10-second camera jobs, retains encrypted videos/provider data, calls DGX FactorizePhys, validates quality, resamples rPPG to 512 points at 51.2 Hz, adds 512 zero-valued EDA points, and calls the binary craving model. Mobile never receives the DGX address. The feature is not release-ready before controlled real-phone/DGX validation.
+`STT_ENABLED=false` is the default. When enabled, the backend proxies active-session Korean `.m4a|.wav` audio to the internal `faster-whisper` `large-v3-turbo` service. Audio exists only in tmpfs and is deleted after the request; only user-confirmed final text is retained by the normal encrypted message path. Android TTS is local and has no backend route.
+
+`RPPG_ENABLED=false` is also the default. When explicitly enabled and ready, the backend accepts current 20-second camera jobs, retains encrypted videos/provider data, calls DGX FactorizePhys, validates quality, resamples rPPG to 1,024 points at 51.2 Hz, adds 1,024 zero-valued EDA points, and calls the binary craving model. Legacy 10-second rows remain readable. Mobile never receives the DGX address. The feature is not release-ready before controlled real-phone/DGX validation.
 
 ## Required Configuration
 
-Required values include `DATABASE_URL`, `DATA_ENCRYPTION_KEYS_B64`, `DATA_ENCRYPTION_CURRENT_KEY_ID`, `JWT_SIGNING_KEY`, `ADMIN_SIGNUP_CODE`, `SENSOR_STORAGE_ROOT`, `APP_ENV`, transport policy, binary model configuration, and live Bedrock credentials/model settings. See the root `.env.example`.
+Required values include `DATABASE_URL`, `DATA_ENCRYPTION_KEYS_B64`, `DATA_ENCRYPTION_CURRENT_KEY_ID`, `JWT_SIGNING_KEY`, `ADMIN_SIGNUP_CODE`, `SENSOR_STORAGE_ROOT`, `APP_ENV`, transport policy, binary model configuration, and live Bedrock credentials/model settings. STT and rPPG settings are required only when their feature flag is enabled. See the root `.env.example`.
 
 ## Latest Validation
 
 | Check | Result |
 |---|---|
-| Full backend pytest | PASS, 150 tests; 1 model-parity test skips until PyTorch is installed locally |
-| Compileall | PASS |
-| Alembic head | `20260716_0004` |
-| Fresh PostgreSQL 0001→0004 | Pending local Docker verification |
-| Populated 0003→0004 | Pending local Docker verification; migration is additive |
-| Independent final review | No unresolved finding |
+| Full backend pytest | Feature baseline PASS: 166 passed, 1 skipped; rerun after cleanup |
+| Compileall | Feature baseline PASS; rerun after cleanup |
+| Alembic head | `20260717_0005` |
+| Docker runtime | Feature baseline `/health` and `/ready` PASS; rerun after rebuild |
+| Model smoke | Feature baseline PASS on CPU with 1,024-sample input and configured checksum |
+| STT/rPPG | Status routes validated with both features disabled by default; real DGX acceptance remains required |

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -85,12 +86,22 @@ enum class AuqRange(val wire: String, val label: String, val bucketCount: Int) {
 
 data class CurrentCraving(val probability: Float, val atMs: Long)
 
+data class CravingStageCounts(
+    val low: Int,
+    val observe: Int,
+    val caution: Int,
+    val high: Int
+) {
+    val total: Int get() = low + observe + caution + high
+}
+
 data class HourlyCravingBucket(
     val localStart: String,
     val averageProbability: Float?,
     val minimumProbability: Float?,
     val maximumProbability: Float?,
-    val sampleCount: Int
+    val sampleCount: Int,
+    val stageCounts: CravingStageCounts
 )
 
 data class DailyEventBucket(
@@ -320,13 +331,23 @@ object PatientDashboardParser {
             .objects()
             .map { item ->
                 val sampleCount = item.optInt("sampleCount", 0).also { require(it >= 0) }
+                val counts = item.getJSONObject("stageCounts").let { stages ->
+                    CravingStageCounts(
+                        low = stages.optInt("low", -1).also { require(it >= 0) },
+                        observe = stages.optInt("observe", -1).also { require(it >= 0) },
+                        caution = stages.optInt("caution", -1).also { require(it >= 0) },
+                        high = stages.optInt("high", -1).also { require(it >= 0) }
+                    )
+                }
                 HourlyCravingBucket(
                     localStart = item.getString("localStart").also { OffsetDateTime.parse(it) },
                     averageProbability = item.floatOrNull("averageProbability")?.requireProbability(),
                     minimumProbability = item.floatOrNull("minimumProbability")?.requireProbability(),
                     maximumProbability = item.floatOrNull("maximumProbability")?.requireProbability(),
-                    sampleCount = sampleCount
+                    sampleCount = sampleCount,
+                    stageCounts = counts
                 ).also { bucket ->
+                    require(bucket.stageCounts.total == sampleCount)
                     require(
                         sampleCount == 0 ||
                             listOf(
@@ -585,12 +606,12 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun loadPreview(predictionId: String) {
-        _status.value = "10초 PPG를 불러오는 중입니다"
+        _status.value = "PPG를 불러오는 중입니다"
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { api.getPpgPreview(predictionId) } }
                 .onSuccess {
                     _preview.value = it
-                    _status.value = "10초 PPG 미리보기"
+                    _status.value = "PPG 미리보기"
                 }
                 .onFailure {
                     _preview.value = null
@@ -643,7 +664,7 @@ fun PatientDashboardScreen(
         DashboardCard("갈망 가능성(모델)") {
             val latest = barDashboard?.currentCraving?.probability
             Text(
-                text = latest?.let { String.format(java.util.Locale.KOREA, "%.1f%%", it * 100f) } ?: "--.-%",
+                text = cravingProbabilityLabel(latest),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -657,7 +678,7 @@ fun PatientDashboardScreen(
 
             val predictions = data?.predictions.orEmpty()
             predictions.lastOrNull { it.ppgPreviewAvailable }?.let { prediction ->
-                OutlinedButton(onClick = { viewModel.loadPreview(prediction.id) }) { Text("10초 PPG 보기") }
+                OutlinedButton(onClick = { viewModel.loadPreview(prediction.id) }) { Text("PPG 보기") }
             }
             preview?.let { value ->
                 if (value.samples.isEmpty()) Text("PPG 미리보기를 사용할 수 없습니다")
@@ -721,25 +742,91 @@ private fun DashboardCard(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun HourlyCravingBarChart(buckets: List<HourlyCravingBucket>) {
     var selected by remember(buckets) { mutableIntStateOf(0) }
-    SelectableNormalizedBars(
-        values = buckets.map { it.averageProbability },
-        selected = selected,
-        onSelect = { selected = it },
-        accessibilityLabel = "오늘 시간별 갈망 가능성 막대 그래프"
+    val stages = listOf(
+        Triple("낮은 가능성", Color(0xFF267A73), { value: CravingStageCounts -> value.low }),
+        Triple("변화 관찰", Color(0xFF62A8A1), { value: CravingStageCounts -> value.observe }),
+        Triple("주의 필요", Color(0xFFD68A22), { value: CravingStageCounts -> value.caution }),
+        Triple("높은 가능성", Color(0xFFC94C5C), { value: CravingStageCounts -> value.high })
     )
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(130.dp)
+            .semantics { contentDescription = "오늘 시간별 갈망 가능성 단계 구성 막대 그래프" }
+            .pointerInput(buckets) {
+                detectTapGestures { point ->
+                    selected = barIndex(point.x, size.width.toFloat(), buckets.size)
+                }
+            }
+    ) {
+        if (buckets.isEmpty()) return@Canvas
+        val slot = size.width / buckets.size
+        val gap = minOf(slot * 0.25f, 5.dp.toPx())
+        buckets.forEachIndexed { index, bucket ->
+            val left = index * slot + gap / 2f
+            val width = (slot - gap).coerceAtLeast(1f)
+            if (bucket.sampleCount == 0) {
+                drawRect(
+                    Color(0xFFD5D9DE),
+                    Offset(left, size.height * 0.82f),
+                    androidx.compose.ui.geometry.Size(width, size.height * 0.18f)
+                )
+            } else {
+                var bottom = size.height
+                stages.forEach { (_, color, count) ->
+                    val height = size.height * count(bucket.stageCounts) / bucket.sampleCount.toFloat()
+                    bottom -= height
+                    drawRect(
+                        color,
+                        Offset(left, bottom),
+                        androidx.compose.ui.geometry.Size(width, height)
+                    )
+                }
+            }
+            if (index == selected) {
+                drawRect(
+                    Color(0xFF172A46),
+                    Offset(left, 0f),
+                    androidx.compose.ui.geometry.Size(width, size.height),
+                    style = Stroke(1.dp.toPx())
+                )
+            }
+        }
+    }
     FixedHourLabels()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        stages.chunked(2).forEach { rowStages ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                rowStages.forEach { (label, color, _) ->
+                    Row(
+                        modifier = Modifier.width(120.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(Modifier.width(10.dp).height(10.dp).background(color))
+                        Text(label, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
     val bucket = buckets.getOrNull(selected) ?: return
     if (bucket.sampleCount == 0) {
         Text("${"%02d".format(selected)}:00–${"%02d".format(selected)}:59 · 데이터 없음")
     } else {
         Text(
             "${"%02d".format(selected)}:00–${"%02d".format(selected)}:59 · " +
-                "평균 ${percent(bucket.averageProbability)} · " +
-                "최소 ${percent(bucket.minimumProbability)} · 최대 ${percent(bucket.maximumProbability)} · " +
-                "${bucket.sampleCount}개"
+                stages.joinToString(" · ") { (label, _, count) ->
+                    "$label ${stagePercentage(count(bucket.stageCounts), bucket.sampleCount)}"
+                } + " · 표본 ${bucket.sampleCount}개"
         )
     }
 }
+
+private fun stagePercentage(count: Int, total: Int): String =
+    if (total == 0) "--" else String.format(java.util.Locale.KOREA, "%.1f%%", count * 100f / total)
 
 @Composable
 private fun DailyEventBarChart(buckets: List<DailyEventBucket>) {
@@ -805,10 +892,12 @@ private fun DailyEventBarChart(buckets: List<DailyEventBucket>) {
 private fun AuqBarChart(buckets: List<AuqBucket>, range: AuqRange) {
     var selected by remember(buckets) { mutableIntStateOf(buckets.lastIndex.coerceAtLeast(0)) }
     SelectableNormalizedBars(
-        values = buckets.map { it.averageNormalizedScore },
+        values = buckets.map { bucket -> bucket.averageNormalizedScore?.let(::normalizedAuqToRaw) },
         selected = selected,
         onSelect = { selected = it },
-        accessibilityLabel = "AUQ 평균 막대 그래프"
+        accessibilityLabel = "AUQ 평균 막대 그래프",
+        maximum = 56f,
+        axisLabel = "세로축 8–56점 · 회색은 데이터 없음"
     )
     if (range == AuqRange.TODAY) FixedHourLabels()
     else DailyAxisLabels(buckets.map(AuqBucket::localLabel))
@@ -822,8 +911,13 @@ private fun AuqBarChart(buckets: List<AuqBucket>, range: AuqRange) {
         if (bucket.sampleCount == 0) {
             "$period · 데이터 없음"
         } else {
-            "$period · 평균 ${percent(bucket.averageNormalizedScore)} · 응답 ${bucket.sampleCount}회"
+            "$period · 총점 ${"%.1f".format(normalizedAuqToRaw(bucket.averageNormalizedScore ?: 0f))}/56 · " +
+                "응답 ${bucket.sampleCount}회"
         }
+    )
+    Text(
+        "점수가 높을수록 당시 음주 욕구 관련 응답이 높았습니다.",
+        style = MaterialTheme.typography.bodySmall
     )
 }
 
@@ -832,7 +926,9 @@ private fun SelectableNormalizedBars(
     values: List<Float?>,
     selected: Int,
     onSelect: (Int) -> Unit,
-    accessibilityLabel: String
+    accessibilityLabel: String,
+    maximum: Float = 1f,
+    axisLabel: String = "갈망 가능성 구간 · 회색은 데이터 없음"
 ) {
     Canvas(
         modifier = Modifier
@@ -851,7 +947,7 @@ private fun SelectableNormalizedBars(
         values.forEachIndexed { index, value ->
             val left = index * slot + gap / 2f
             val width = (slot - gap).coerceAtLeast(1f)
-            val normalized = value?.coerceIn(0f, 1f)
+            val normalized = value?.div(maximum)?.coerceIn(0f, 1f)
             if (normalized == null) {
                 drawRect(
                     Color(0xFFD5D9DE),
@@ -876,7 +972,7 @@ private fun SelectableNormalizedBars(
             }
         }
     }
-    Text("세로축 0–100% · 회색은 데이터 없음", style = MaterialTheme.typography.labelSmall)
+    Text(axisLabel, style = MaterialTheme.typography.labelSmall)
 }
 
 @Composable
@@ -901,38 +997,7 @@ private fun barIndex(x: Float, width: Float, count: Int): Int {
     return ((x / width) * count).toInt().coerceIn(0, count - 1)
 }
 
-private fun percent(value: Float?): String =
-    value?.let { String.format(java.util.Locale.KOREA, "%.1f%%", it * 100f) } ?: "--.-%"
-
-@Composable
-private fun ProbabilityLineChart(series: CravingProbabilitySeries) {
-    Canvas(modifier = Modifier.fillMaxWidth().height(130.dp)) {
-        val spanMs = (series.toMs - series.fromMs).coerceAtLeast(1L).toFloat()
-        drawLine(Color(0xFFE1E5EA), Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1f)
-        drawLine(Color(0xFFE1E5EA), Offset(0f, size.height / 2f), Offset(size.width, size.height / 2f), strokeWidth = 1f)
-        drawLine(Color(0xFFE1E5EA), Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1f)
-        CravingProbabilitySeriesState.segments(series).forEach { segment ->
-            if (segment.isEmpty()) return@forEach
-            val path = Path()
-            segment.forEachIndexed { index, point ->
-                val x = ((point.atMs - series.fromMs) / spanMs).coerceIn(0f, 1f) * size.width
-                val y = (1f - point.probability.coerceIn(0f, 1f)) * size.height
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
-            drawPath(path, Color(0xFF246B60), style = Stroke(width = 3f))
-        }
-    }
-    Text("세로축 0–100%", style = MaterialTheme.typography.labelSmall)
-}
-
-@Composable
-private fun AuqChart(values: List<DashboardAssessment>) {
-    val normalized = values.map { value ->
-        ((value.rawScore - value.scaleMin) / (value.scaleMax - value.scaleMin).coerceAtLeast(1f)).coerceIn(0f, 1f)
-    }
-    SignalLineChart(normalized)
-    Text("AUQ 원점수: ${values.last().rawScore} / ${values.last().scaleMax}")
-}
+internal fun normalizedAuqToRaw(value: Float): Float = 8f + value.coerceIn(0f, 1f) * 48f
 
 @Composable
 private fun SignalLineChart(values: List<Float>) {

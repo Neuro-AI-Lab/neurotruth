@@ -53,6 +53,7 @@ class AuthModelsTest {
                 sensitive = true,
                 biosignal = true,
                 aiAnalysis = true,
+                voice = true,
                 notification = false,
                 reportGeneration = true,
                 tosVersion = "tos-v1",
@@ -64,7 +65,7 @@ class AuthModelsTest {
         assertTrue(body.contains("patient@example.com"))
         assertTrue(body.contains("\"biosignal\":true"))
         assertTrue(body.contains("\"reportGeneration\":true"))
-        assertFalse(body.contains("voice"))
+        assertTrue(body.contains("\"voice\":true"))
     }
 
     private fun authResponse(access: String, refresh: String, mustChange: Boolean): String = """

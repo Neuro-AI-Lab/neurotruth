@@ -15,6 +15,7 @@ data class MobileAuthState(
     val canReceiveAiPrediction: Boolean get() = canUploadBiosignal && consent?.aiAnalysis == true
     val canCaptureRppg: Boolean get() = canReceiveAiPrediction &&
         consent?.cameraRppg == true && consent.faceVideoRetention
+    val canUseVoice: Boolean get() = authenticated && consent?.voice == true
     val canGenerateReport: Boolean get() = authenticated && consent?.reportGeneration == true
     val canNotify: Boolean get() = authenticated && consent?.notification == true
 }

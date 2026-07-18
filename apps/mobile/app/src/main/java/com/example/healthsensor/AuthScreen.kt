@@ -52,6 +52,7 @@ fun PatientAuthScreen(
     var aiAnalysis by rememberSaveable { mutableStateOf(false) }
     var cameraRppg by rememberSaveable { mutableStateOf(false) }
     var faceVideoRetention by rememberSaveable { mutableStateOf(false) }
+    var voice by rememberSaveable { mutableStateOf(false) }
     var notification by rememberSaveable { mutableStateOf(false) }
     var reportGeneration by rememberSaveable { mutableStateOf(false) }
 
@@ -112,7 +113,7 @@ fun PatientAuthScreen(
             )
             ConsentSwitch("알림 수신", notification, { notification = it })
             ConsentSwitch("보고서 생성", reportGeneration, { reportGeneration = it })
-            ConsentSwitch("음성 수집 (추후 제공)", false, {}, enabled = false)
+            ConsentSwitch("음성 입력(STT)", voice, { voice = it })
         }
 
         if (message.isNotBlank()) {
@@ -141,6 +142,7 @@ fun PatientAuthScreen(
                             aiAnalysis = aiAnalysis,
                             cameraRppg = cameraRppg,
                             faceVideoRetention = faceVideoRetention,
+                            voice = voice,
                             notification = notification,
                             reportGeneration = reportGeneration,
                             tosVersion = CONSENT_VERSION,
@@ -246,6 +248,7 @@ fun PatientConsentSettingsDialog(
         aiAnalysis = false,
         cameraRppg = false,
         faceVideoRetention = false,
+        voice = false,
         notification = false,
         reportGeneration = false,
         tosVersion = CONSENT_VERSION,
@@ -256,6 +259,7 @@ fun PatientConsentSettingsDialog(
     var aiAnalysis by remember(current) { mutableStateOf(base.aiAnalysis) }
     var cameraRppg by remember(current) { mutableStateOf(base.cameraRppg) }
     var faceVideoRetention by remember(current) { mutableStateOf(base.faceVideoRetention) }
+    var voice by remember(current) { mutableStateOf(base.voice) }
     var notification by remember(current) { mutableStateOf(base.notification) }
     var reportGeneration by remember(current) { mutableStateOf(base.reportGeneration) }
 
@@ -284,7 +288,7 @@ fun PatientConsentSettingsDialog(
                 )
                 ConsentSwitch("알림", notification, { notification = it }, enabled = !loading)
                 ConsentSwitch("보고서 생성", reportGeneration, { reportGeneration = it }, enabled = !loading)
-                ConsentSwitch("음성 수집 (현재 지원하지 않음)", false, {}, enabled = false)
+                ConsentSwitch("음성 입력(STT)", voice, { voice = it }, enabled = !loading)
                 Text(
                     "선택 동의를 철회하면 신규 수집·분석만 즉시 중지되며 기존 자료는 자동 삭제되지 않습니다.",
                     fontSize = 12.sp,
@@ -305,6 +309,7 @@ fun PatientConsentSettingsDialog(
                             aiAnalysis = aiAnalysis,
                             cameraRppg = cameraRppg,
                             faceVideoRetention = faceVideoRetention,
+                            voice = voice,
                             notification = notification,
                             reportGeneration = reportGeneration
                         )
