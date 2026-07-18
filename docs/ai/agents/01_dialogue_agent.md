@@ -1,26 +1,27 @@
 # Dialogue Agent
 
-Last updated: 2026-07-15
+Last updated: 2026-07-18
 
 ## Endpoint and Responsibility
 
-`POST /api/sessions/{sessionId}/messages` accepts one authenticated patient message, persists encrypted user/assistant turns, updates the encrypted conversation ledger, and returns `assistantText`, `phase`, `safety`, `activeInterventions`, `stateSnapshot`, and `reportStatus`. New sessions never write slots or return slot-coverage fields.
+`POST /api/sessions/{sessionId}/messages` accepts one authenticated patient message and persists encrypted user/assistant turns and the conversation ledger. New sessions run in `free_dialogue` and never write slots or return slot-coverage fields.
 
 ## Dialogue Policy
 
-- Use concise, supportive, nonjudgmental Korean.
-- Ask at most one short question. Topic order is optional guidance, not a questionnaire or completion target.
-- Do not repeat a topic already asked or declined, including by paraphrase, unless the patient explicitly corrects it. The encrypted topic ledger survives app restarts.
-- Acknowledge corrections and preserve explicit negatives, uncertainty, and refusal.
-- Do not diagnose, prescribe, shame, promise clinical outcomes, or infer drinking from prediction data.
-- Deterministic rules select the first intervention. Later LLM suggestions are limited to the approved intervention allowlist and every delivered suggestion is persisted with order and version evidence.
-- When `interventionsEnabled=false`, continue safety handling and state inference without ordinary intervention wording or rows.
-- Never claim immediate craving reduction, CBT efficacy, diagnosis, treatment success, certainty, or a causal effect. One validation repair is allowed before a deterministic supportive fallback.
+- `free-dialogue-v4-met-cbt-informed` uses MET and CBT principles as a non-clinical conversation stance, not as a treatment protocol.
+- Respect autonomy, free choice, and ambivalence; avoid persuasion, argument, lecturing, and labels.
+- Use only one mode per turn: reflection, neutral ambivalence exploration, a situation-thought-feeling/body-action-consequence link, permission-based support, or a user-owned next-step summary.
+- Ask zero or one question only when useful. There is no fixed assessment or topic-completion target, and asked or declined questions are not repeated by paraphrase.
+- Offer only one coping option, and only after the user asks for help or grants permission.
+- Do not frame a lapse as failure or invent motivation, strengths, or facts the user did not express.
+- Never diagnose, prescribe, shame, promise clinical outcomes, claim immediate craving reduction, treatment success, certainty, or causality.
+- Never suggest self-guided alcohol cue exposure, clinical contingency-management protocols, medication changes, or prescribed drinking amounts.
+- Generate two to five short, TTS-friendly Korean sentences. Invalid or repeated output receives one repair; a second failure becomes a provider error.
 
-The optional Korean question guide is versioned as `niaaa-samhsa-who-ko-v1`. It uses original, non-clinical paraphrases informed by [NIAAA brief intervention](https://www.niaaa.nih.gov/health-professionals-communities/core-resource-on-alcohol/conduct-brief-intervention-build-motivation-and-plan-change), [SAMHSA TIP 35](https://library.samhsa.gov/product/tip-35-enhancing-motivation-change-substance-use-disorder-treatment/pep19-02-01-003), and [WHO mhGAP alcohol guidance](https://www.who.int/teams/mental-health-and-substance-use/treatment-care/mental-health-gap-action-programme/evidence-centre/alcohol-use-disorders). It is not a clinical script.
+The dialogue stance adapts autonomy, empathy, ambivalence exploration, self-efficacy, functional analysis, and coping-skill principles summarized in Sang Kyu Lee's 2019 review, “Motivational Enhancement Therapy and Cognitive Behavioral Therapy for Alcohol Use Disorders.” The paper is neither a validated chatbot protocol nor evidence for treatment-effect claims. The optional Korean question guide `niaaa-samhsa-who-ko-v1` remains reference material only.
 
 ## Safety
 
-Immediate-risk content bypasses normal LLM sequencing so support is not delayed by provider failure. The response may direct the patient to 119 and Korean suicide-prevention line 109 and asks once whether to record requested administrator involvement. It explicitly states that the record does not guarantee live connection or immediate contact. Acceptance or refusal is audited and remaining dialogue continues.
+When the LLM judges immediate physical danger, it places 119 guidance before ordinary dialogue and includes 109 for suicide/self-harm context. It states that the system cannot contact responders or guarantee professional support. This is research/demo LLM output, not guaranteed emergency handling.
 
-Provider failures preserve the patient message and return a deterministic supportive response with no new question or unapproved intervention. Voice, rPPG, self-event capture, and wearable-absent AUQ automation are not dialogue inputs in this release.
+Provider failures preserve the user message for one retry with the same `clientMessageId` without duplicate storage. Confirmed STT text and directly typed text use the same dialogue policy.
