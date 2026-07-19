@@ -464,6 +464,7 @@ fun UserHomeScreen(
     onChatClosed: () -> Unit
 ) {
     val isReceiving by viewModel.isReceiving.collectAsState()
+    val watchConnectionState by viewModel.watchConnectionState.collectAsState()
     val latestPrediction by viewModel.latestPrediction.collectAsState()
     val isStateCheckRequired by viewModel.isStateCheckRequired.collectAsState()
     val stateCheckResponses by viewModel.stateCheckResponses.collectAsState()
@@ -533,6 +534,7 @@ fun UserHomeScreen(
         )
         else -> UserDashboardScreen(
             isReceiving = isReceiving,
+            watchConnectionState = watchConnectionState,
             cravingClass = cravingClass,
             cravingProbability = latestPrediction?.cravingProbability,
             cravingColor = cravingColor,
@@ -550,6 +552,7 @@ fun UserHomeScreen(
 @Composable
 private fun UserDashboardScreen(
     isReceiving: Boolean,
+    watchConnectionState: WatchConnectionState,
     cravingClass: Int?,
     cravingProbability: Float?,
     cravingColor: Color,
@@ -561,6 +564,11 @@ private fun UserDashboardScreen(
     onRequestPermissions: () -> Unit,
     onDeveloperUnlock: () -> Unit
 ) {
+    val rppgPresentation = WatchRppgPresentationPolicy.resolve(
+        watchState = watchConnectionState,
+        canCaptureRppg = canCaptureRppg,
+        serviceStatus = rppgStatus
+    )
 
     Column(
         modifier = Modifier
@@ -627,9 +635,26 @@ private fun UserDashboardScreen(
                         lineHeight = 18.sp,
                         color = HealthMuted
                     )
-                    if (canCaptureRppg && rppgStatus?.canStart == true) {
-                        OutlinedButton(onClick = onOpenRppgCamera) {
-                            Text("얼굴로 측정", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = rppgPresentation.guidance,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = HealthMuted
+                    )
+                    if (rppgPresentation.primaryAction) {
+                        Button(
+                            onClick = onOpenRppgCamera,
+                            enabled = rppgPresentation.actionEnabled,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(rppgPresentation.actionLabel, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onOpenRppgCamera,
+                            enabled = rppgPresentation.actionEnabled
+                        ) {
+                            Text(rppgPresentation.actionLabel, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -647,8 +672,12 @@ private fun UserDashboardScreen(
             }
             UserStatusTile(
                 label = "Watch 연결",
-                value = if (isReceiving) "연결됨" else "연결 대기",
-                color = if (isReceiving) HealthPrimary else HealthIdle,
+                value = rppgPresentation.watchLabel,
+                color = when (watchConnectionState) {
+                    WatchConnectionState.CONNECTED -> HealthPrimary
+                    WatchConnectionState.ERROR -> HealthWarning
+                    else -> HealthIdle
+                },
                 modifier = Modifier.fillMaxWidth()
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

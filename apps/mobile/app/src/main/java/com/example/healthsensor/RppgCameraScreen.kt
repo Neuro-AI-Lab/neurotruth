@@ -71,6 +71,8 @@ import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+internal const val RPPG_CAPTURE_SECONDS = 20
+
 @Composable
 fun RppgCameraScreen(
     viewModel: RppgViewModel,
@@ -89,7 +91,7 @@ fun RppgCameraScreen(
     var cameraGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
-    var countdown by remember { mutableIntStateOf(10) }
+    var countdown by remember { mutableIntStateOf(RPPG_CAPTURE_SECONDS) }
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
     val controller = remember {
         RppgCameraController(
@@ -119,8 +121,8 @@ fun RppgCameraScreen(
     }
     LaunchedEffect(phase) {
         if (phase == RppgCapturePhase.RECORDING) {
-            countdown = 10
-            repeat(10) {
+            countdown = RPPG_CAPTURE_SECONDS
+            repeat(RPPG_CAPTURE_SECONDS) {
                 kotlinx.coroutines.delay(1_000L)
                 countdown = (countdown - 1).coerceAtLeast(0)
             }
@@ -408,7 +410,7 @@ private class RppgCameraController(
     }
 
     companion object {
-        private const val RECORDING_MS = 20_000L
+        private const val RECORDING_MS = RPPG_CAPTURE_SECONDS * 1_000L
         private val STOP_TOKEN = Any()
     }
 }

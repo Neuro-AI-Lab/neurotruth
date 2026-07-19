@@ -1,10 +1,12 @@
 # NeuroTruth Phone–Backend API
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 This is the single human-readable API contract for the Android client. The
-running FastAPI application's `/openapi.json` is the machine-readable route
-authority; a generated snapshot is intentionally not committed.
+running FastAPI application's `/openapi.json` is the machine-readable authority
+for registered routes, methods, and request schemas. This document is the
+detailed response-payload authority because several generated OpenAPI response
+schemas remain intentionally generic; a generated snapshot is not committed.
 
 ## Conventions and authentication
 
@@ -97,13 +99,17 @@ Signup and login return the token pair and public user:
 |---|---|
 | Watch sensor retention | `biosignal` |
 | Model prediction/session dialogue | `aiAnalysis` |
-| Phone alert/AUQ/chat launch | `notification` |
+| Alert metadata/action presentation | `notification` |
 | Session report generation | `reportGeneration` |
 | Whisper transcription | `voice` plus an active owned session |
 | Camera rPPG | `biosignal`, `aiAnalysis`, `cameraRppg`, `faceVideoRetention` |
 
 Withdrawing optional consent blocks new use of that feature. It does not delete
 previously retained data.
+
+`notification=false` suppresses alert metadata/action presentation only; it
+does not block a patient from manually opening AUQ or chat. `aiAnalysis` gates
+model prediction and session/agent processing.
 
 ## Watch sensor upload and binary prediction
 
@@ -135,10 +141,14 @@ consent. The phone waits for a 20-second warm-up, then submits the latest
 }
 ```
 
-The same `(patient, clientWindowId)` is idempotent only when content is
-identical; conflicting reuse returns `409`. Raw payloads are stored as canonical
-JSON → gzip → AES-256-GCM. With `aiAnalysis` consent and a ready model, success
-also returns `recordingId`, `predictionId`, nullable `alertId`, and:
+`windowMs` must be `19500..20500`, must equal `windowEndMs-windowStartMs`, and
+must have a positive interval; invalid timing returns `422`. The same
+`(patient, clientWindowId)` is idempotent only when content is identical;
+conflicting reuse returns `409`. Identical concurrent retries are serialized and
+persist/predict once, then return the same stored result. Raw payloads are stored
+as canonical JSON → gzip → AES-256-GCM. Every successful accepted upload returns
+`recordingId`. With `aiAnalysis` consent and a ready model, the response also
+contains `predictionId`, nullable `alertId`, and:
 
 ```json
 {
@@ -194,6 +204,11 @@ They end by explicit finish or the configured inactivity timeout (3,600 seconds
 by default). Pre-redesign sessions remain readable with `legacy=true` and are
 mutation-protected.
 
+Current free-dialogue safety interpretation is LLM-only. Successful dialogue
+turns store messages and the question/refusal ledger but do not create
+intervention rows. The agent performs one output-repair attempt; provider failure
+or a second invalid output returns sanitized `502` without a fallback reply.
+
 ### Retry-safe message
 
 `POST /api/sessions/{sessionId}/messages`
@@ -206,7 +221,9 @@ mutation-protected.
 }
 ```
 
-`inputModality` is `text` or `voice`; both enter the same dialogue path. A
+`inputModality` is `text` or `voice`. Typed text and a user-confirmed STT
+transcript both enter this same endpoint, intervention agent, and
+`clientMessageId` idempotency flow; only the modality value differs. A
 successful response includes:
 
 ```json
@@ -218,10 +235,13 @@ successful response includes:
   "safety": {"status": "llm_only", "riskCodes": [], "supportResources": []},
   "activeInterventions": [],
   "stateSnapshot": null,
-  "reportStatus": "pending",
+  "reportStatus": "not_started",
   "inactivityTimeoutSeconds": 3600
 }
 ```
+
+`not_started` is the default while `REPORT_AI_ENABLED=false`; `pending` is used
+only when report AI is enabled and a report job has been queued.
 
 When the provider or output validation fails, the server returns `502` with
 `clientMessageId`, `userMessageId`, `retryable`, and `attemptsRemaining`. Retry
@@ -262,16 +282,29 @@ and may be skipped without a placeholder request. The UI does not assign
 unsupported low/medium/high AUQ cutoffs; a higher total only means more
 alcohol-urge-related responses at that time.
 
-- `POST /api/sessions/{sessionId}/finish` completes the session and triggers
-  final state inference/report processing.
-- `POST /api/sessions/{sessionId}/reports` queues a report for a finished
-  session and returns `202`; `GET` on the same path returns status/metadata.
-  Public APIs do not reveal decrypted report content.
+- `POST /api/sessions/{sessionId}/finish` completes the session and always
+  persists deterministic state and evidence. With the default
+  `STATE_SUMMARY_AI_ENABLED=false`, its state snapshot (and later state reads)
+  contains `"summaryStatus":"unavailable"` and `"summary":null`; no summary AI
+  call is made.
+- With the default `REPORT_AI_ENABLED=false`, finish skips automatic report
+  creation. `POST /api/sessions/{sessionId}/reports` remains a successful no-op
+  and returns HTTP `202` with exactly:
+
+```json
+{"reportId":null,"version":null,"status":"not_started"}
+```
+
+  `GET` on the same path preserves historical report status/metadata and returns
+  `[]` when no report exists. Public APIs do not reveal decrypted report
+  content. Setting either backend flag to `true` restores its preserved
+  Bedrock-backed behavior without changing these URLs or consent requirements.
 
 ## Speech-to-text and local TTS
 
-- `GET /api/stt/status` returns `enabled`, `available`, model, requested/actual
-  device, inference `engine`, fallback state/reason, and sanitized `errorCode`.
+- `GET /api/stt/status` requires a patient access bearer and returns `enabled`,
+  `available`, model, requested/actual device, inference `engine`, fallback
+  state/reason, and sanitized `errorCode`.
   DGX production should report `engine=pytorch`, `actualDevice=cuda:0`, and
   `fallback=false`.
 - `POST /api/sessions/{sessionId}/transcriptions` is multipart with `audio`
@@ -290,8 +323,9 @@ alcohol-urge-related responses at that time.
 Audio is handled in backend/DGX tmpfs and deleted after the request. The app
 places the transcript in an editable input field and sends only after explicit
 user confirmation. Only the final sent text is retained as an encrypted chat
-message. AI speech output uses Android `TextToSpeech`; there is no server TTS
-route.
+message through `POST /api/sessions/{sessionId}/messages` with
+`inputModality="voice"` and the normal retry/idempotency contract. AI speech
+output uses Android `TextToSpeech`; there is no server TTS route.
 
 ## Patient dashboards
 
@@ -333,14 +367,26 @@ phone normalizes them into a four-color 100% stack. Existing clients may ignore
 
 ## Camera rPPG
 
-rPPG is disabled by default and hidden unless explicitly enabled.
+rPPG is enabled by default through `RPPG_ENABLED=true`, while operators may set
+the flag to `false`. Capture still requires all four current consents
+(`biosignal`, `aiAnalysis`, `cameraRppg`, `faceVideoRetention`) and a ready
+`GET /api/rppg/status`; an unavailable service means no fallback measurement.
+
+Android chooses presentation client-side from the Wear Data Layer connected-node
+list. When there is no connected node, Android promotes a manual foreground
+20-second camera action; a connected Watch keeps Watch monitoring primary and
+rPPG optional. Checking or connection-error states are not treated as confirmed
+disconnection. This adds no API field or endpoint.
 
 - `GET /api/rppg/status` exposes feature/model/queue availability without the
   DGX URL.
 - `POST /api/rppg/jobs` is multipart: `video`, `clientCaptureId`,
   `capturedAtMs`, `durationMs`, and optional owned `sessionId`. Only MP4 around
   20 seconds (`19500..20500` ms) is accepted; the default maximum is 40 MiB.
-  Acceptance returns `202` with `jobId`, `captureId`, and `status="queued"`.
+  First acceptance returns `202` with `jobId`, `captureId`, and
+  `status="queued"`. An idempotent retry with the same `clientCaptureId` and
+  identical video returns HTTP `202` for the existing job with its current
+  status, which may already be `queued|running|completed|retry_required|failed`.
 - `GET /api/rppg/jobs/{jobId}` returns
   `queued|running|completed|retry_required|failed` and completed prediction
   metadata.
@@ -352,6 +398,14 @@ points at 51.2 Hz and paired with 1,024 zero-valued EDA points before binary
 prediction. Accepted videos and provider payloads are retained encrypted until
 audited administrator deletion. Legacy 10-second captures remain readable but
 the current upload API accepts only 20-second captures.
+
+rPPG is a user-initiated point-in-time measurement, not continuous/background
+monitoring. A successful result keeps source `camera_rppg`, remains Phone-only,
+and may later be replaced as latest by a successful Watch prediction. Public
+rPPG URLs, methods, payloads, database schema, and Alembic history are unchanged.
+The Android 16KB baseline is AGP 8.5.2, Gradle 8.7, CameraX 1.4.0, and ML Kit
+face detection 16.1.7, with APK zip and ELF alignment verification required for
+release.
 
 ## Administrator boundary
 
@@ -368,10 +422,12 @@ bulk dataset download route.
 
 ## Runtime status, errors, and boundaries
 
-- `/health` indicates process health; `/ready` fails closed when database,
-  Alembic, encryption, storage, or required model state is unavailable.
+- `/health` indicates process health; `/ready` covers core database, Alembic,
+  security/keyring, and required storage readiness. Craving-model readiness is
+  separate and does not make the otherwise usable core API unready.
 - `/model/status` exposes model/checksum/requested and actual device/fallback
-  metadata, never credentials or artifact paths.
+  metadata, never credentials or artifact paths. Sensor prediction returns
+  `503` when AI analysis is requested while that model is unavailable.
 
 | Status | Client meaning |
 |---:|---|

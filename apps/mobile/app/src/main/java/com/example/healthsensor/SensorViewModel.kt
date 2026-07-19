@@ -222,6 +222,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val _isReceiving = MutableStateFlow(false)
     val isReceiving: StateFlow<Boolean> = _isReceiving
 
+    private val watchConnectionMonitor = WatchConnectionMonitor(application) {
+        _isReceiving.value = false
+    }
+    val watchConnectionState: StateFlow<WatchConnectionState> = watchConnectionMonitor.state
+
     private val _serverUrl = PhoneMonitoringState.serverUrl
     val serverUrl: StateFlow<String> = _serverUrl
 
@@ -1134,6 +1139,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
+        watchConnectionMonitor.close()
         runCatching { voiceRecorder?.stop() }
         voiceRecorder?.release()
         voiceRecorder = null

@@ -1,12 +1,180 @@
 package com.example.healthsensor
 
+import java.io.Closeable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+private class FakeWatchNodeSource : WatchNodeSource {
+    private var onSuccess: ((Int) -> Unit)? = null
+    private var onFailure: ((Throwable) -> Unit)? = null
+    var queryCount = 0
+        private set
+
+    override fun query(onSuccess: (Int) -> Unit, onFailure: (Throwable) -> Unit) {
+        queryCount += 1
+        this.onSuccess = onSuccess
+        this.onFailure = onFailure
+    }
+
+    fun succeed(count: Int) = onSuccess!!.invoke(count)
+    fun fail() = onFailure!!.invoke(IllegalStateException("query failed"))
+}
+
+private class FakeWatchPeerEvents {
+    private var listener: (() -> Unit)? = null
+
+    fun subscribe(listener: () -> Unit): Closeable {
+        this.listener = listener
+        return Closeable {
+            this.listener = null
+        }
+    }
+
+    fun publish() = listener?.invoke()
+}
+
 class RppgContractsTest {
+    @Test
+    fun `camera countdown matches the 20 second recording contract`() {
+        assertEquals(20, RPPG_CAPTURE_SECONDS)
+    }
+
+    @Test
+    fun `zero connected nodes is the only disconnected result`() {
+        val nodes = FakeWatchNodeSource()
+        val peers = FakeWatchPeerEvents()
+        var disconnects = 0
+        val monitor = WatchConnectionMonitor(nodes, peers::subscribe) { disconnects += 1 }
+
+        assertEquals(WatchConnectionState.CHECKING, monitor.state.value)
+        nodes.succeed(0)
+
+        assertEquals(WatchConnectionState.DISCONNECTED, monitor.state.value)
+        assertEquals(1, disconnects)
+    }
+
+    @Test
+    fun `one or more connected nodes is connected`() {
+        val nodes = FakeWatchNodeSource()
+        val monitor = WatchConnectionMonitor(nodes, FakeWatchPeerEvents()::subscribe)
+
+        nodes.succeed(2)
+
+        assertEquals(WatchConnectionState.CONNECTED, monitor.state.value)
+    }
+
+    @Test
+    fun `connected node query failure is error rather than disconnected`() {
+        val nodes = FakeWatchNodeSource()
+        val monitor = WatchConnectionMonitor(nodes, FakeWatchPeerEvents()::subscribe)
+
+        nodes.fail()
+
+        assertEquals(WatchConnectionState.ERROR, monitor.state.value)
+    }
+
+    @Test
+    fun `peer event refreshes the authoritative connected node query`() {
+        val nodes = FakeWatchNodeSource()
+        val peers = FakeWatchPeerEvents()
+        val monitor = WatchConnectionMonitor(nodes, peers::subscribe)
+        nodes.succeed(1)
+
+        peers.publish()
+
+        assertEquals(2, nodes.queryCount)
+        assertEquals(WatchConnectionState.CHECKING, monitor.state.value)
+        nodes.succeed(0)
+        assertEquals(WatchConnectionState.DISCONNECTED, monitor.state.value)
+    }
+
+    @Test
+    fun `monitor close removes the app local peer subscription`() {
+        val nodes = FakeWatchNodeSource()
+        val monitor = WatchConnectionMonitor(nodes, WatchPeerConnectionEvents::subscribe)
+
+        monitor.close()
+        WatchPeerConnectionEvents.publish()
+
+        assertEquals(1, nodes.queryCount)
+    }
+
+    @Test
+    fun `watch state and rppg gates choose safe CTA presentation`() {
+        val ready = RppgServiceStatus(true, true, true)
+        val disconnected = WatchRppgPresentationPolicy.resolve(
+            WatchConnectionState.DISCONNECTED,
+            canCaptureRppg = true,
+            serviceStatus = ready
+        )
+        val connected = WatchRppgPresentationPolicy.resolve(
+            WatchConnectionState.CONNECTED,
+            canCaptureRppg = true,
+            serviceStatus = ready
+        )
+
+        assertTrue(disconnected.primaryAction)
+        assertTrue(disconnected.actionEnabled)
+        assertEquals("20초 얼굴 측정 시작", disconnected.actionLabel)
+        assertEquals("연결 안 됨", disconnected.watchLabel)
+        assertFalse(connected.primaryAction)
+        assertTrue(connected.actionEnabled)
+        assertEquals("20초 얼굴 측정", connected.actionLabel)
+        assertFalse(
+            WatchRppgPresentationPolicy.resolve(
+                WatchConnectionState.CHECKING,
+                true,
+                ready
+            ).primaryAction
+        )
+        assertFalse(
+            WatchRppgPresentationPolicy.resolve(
+                WatchConnectionState.ERROR,
+                true,
+                ready
+            ).primaryAction
+        )
+
+        val consentRequired = WatchRppgPresentationPolicy.resolve(
+            WatchConnectionState.DISCONNECTED,
+            false,
+            ready
+        )
+        assertFalse(consentRequired.actionEnabled)
+        assertEquals("동의 후 얼굴 측정", consentRequired.actionLabel)
+
+        listOf(
+            WatchRppgPresentationPolicy.resolve(
+                WatchConnectionState.DISCONNECTED,
+                true,
+                null
+            ),
+            WatchRppgPresentationPolicy.resolve(
+                WatchConnectionState.DISCONNECTED,
+                true,
+                RppgServiceStatus(false, false, false)
+            ),
+            WatchRppgPresentationPolicy.resolve(
+                WatchConnectionState.DISCONNECTED,
+                true,
+                RppgServiceStatus(true, false, false)
+            ),
+            WatchRppgPresentationPolicy.resolve(
+                WatchConnectionState.DISCONNECTED,
+                true,
+                RppgServiceStatus(true, true, false)
+            )
+        ).forEach { presentation ->
+            assertTrue(presentation.primaryAction)
+            assertTrue(presentation.actionEnabled)
+            assertEquals("상태 다시 확인", presentation.actionLabel)
+            assertTrue(presentation.guidance.isNotBlank())
+        }
+    }
+
     @Test
     fun `API endpoints point only at NeuroTruth backend`() {
         val endpoints = ApiEndpoints("https://neurotruth.internal")
