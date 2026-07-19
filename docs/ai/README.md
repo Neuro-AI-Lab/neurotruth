@@ -1,10 +1,10 @@
 # NeuroTruth AI Workspace
 
-Last updated: 2026-07-15
+Last updated: 2026-07-19
 
 ## Purpose
 
-This folder documents backend-owned AI behavior. Provider adapters live in `apps/backend/app/ai`; the authenticated intervention-first orchestration and versioned question/prompt policy live in `apps/backend/app/v25/session_agents.py` and `session_service.py`.
+This folder documents backend-owned AI behavior in the single layered FastAPI process. The Bedrock adapter lives in `apps/backend/app/agents/bedrock.py`; capability owners are `agents/{intervention,state_summary,report}.py`, versioned text is in `prompts/*.py`, and `services/session.py` orchestrates authenticated sessions.
 
 ## Provider
 
@@ -26,25 +26,30 @@ environment credentials remain available for non-OpenAI Converse models.
 
 ## Boundary
 
-- Backend deterministic code decides craving alert level, safety handling, the first intervention, and state class.
-- Backend AI helpers continue allowlisted intervention dialogue, summarize supplied evidence, and draft reports without changing deterministic classes.
+- Backend deterministic code decides craving alert level and state class. Current free-dialogue safety interpretation is LLM-only, does not guarantee detection or emergency contact, and successful turns do not create intervention rows.
+- The intervention agent performs one output-repair attempt. Provider failure or a second invalid output returns sanitized HTTP `502`; no fallback assistant message is stored.
+- State-summary and report agents are preserved behind `STATE_SUMMARY_AI_ENABLED=false` and `REPORT_AI_ENABLED=false` defaults and never change deterministic classes.
 - Android calls backend endpoints only.
 - Backend persists encrypted AI turns, dialogue ledger, interventions, state inferences, and reports under the UUID session linked to sensor predictions.
-- Mobile report generation/status is asynchronous; the LLM provider remains backend-only.
-- Dialogue prompts use a versioned optional question guide, avoid re-asking asked/refused topics, and perform one validation repair before a deterministic fallback.
+- With state-summary AI disabled, deterministic evidence still persists, snapshots return `summaryStatus="unavailable"` and `summary=null`, and no Bedrock call or state-summary model-version registration occurs.
+- With report AI disabled, automatic generation is skipped, `POST .../reports` returns HTTP `202` with `{"reportId":null,"version":null,"status":"not_started"}`, historical `GET` results remain readable, and a session without history returns `[]`. No report Bedrock call or model-version registration occurs.
+- Enabling either flag restores its preserved Bedrock-backed behavior. The LLM provider remains backend-only.
+- Dialogue prompts use a versioned optional question guide, avoid re-asking asked/refused topics, and perform one validation repair before returning an error.
 - New sessions never write legacy slots or memory. Historical 13-slot sessions and reports remain read-only without backfill.
 
 ## Prompt Location
 
-Current intervention-first prompt, rule, and question-bank versions are defined in:
+Current prompt and orchestration ownership is:
 
 ```text
-apps/backend/app/v25/session_agents.py
+apps/backend/app/agents/{intervention,state_summary,report}.py
+apps/backend/app/prompts/{intervention,state_summary,report}.py
+apps/backend/app/services/session.py
 ```
 
 | Constant | Role |
 |---|---|
-| `intervention-dialogue-v1` | Safety-aware intervention dialogue |
+| `free-dialogue-v4-met-cbt-informed` | Safety-aware free dialogue |
 | `state-summary-v1` | Evidence-only state summary |
 | `state-rule-v1` | Deterministic state inference version |
 | `niaaa-samhsa-who-ko-v1` | Optional Korean question guide |
@@ -78,3 +83,4 @@ The optional topic IDs are `safety`, `current_environment`, `alcohol_access`, `t
 - Network-free validation uses fake adapters for dialogue output validation, repeated-topic control, deterministic interventions/state inference, and asynchronous report failure isolation.
 - A minimal live GPT-5.5 Mantle Responses request passed in `us-east-1`. The earlier bearer-token chat/handoff pass with `us.anthropic.claude-sonnet-4-6` is retained as historical rollback validation.
 - No bearer token or credential value is written to documentation or test output.
+- Korean STT is an implemented optional/default-off capability; camera rPPG is implemented and default-on but remains consent- and readiness-gated. AI speech output is Android-local TTS. These are not deferred designs, although real-device/DGX acceptance remains outstanding.

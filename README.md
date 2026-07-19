@@ -1,8 +1,8 @@
 # NeuroTruth
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
-NeuroTruth is an authenticated wearable-assisted supportive intervention research prototype. It is intended for people receiving CBT or willing to seek treatment who need ongoing records and dialogue support in craving situations; it is not a treatment, diagnostic, or emergency-response app. Patients register on Android, grant feature-specific consent, upload Watch sensor windows, receive possible-craving alerts, and choose whether to begin a safety-aware intervention conversation. The FastAPI backend owns patient identity, AES-256-GCM persistence, model/prompt traceability, state inference, reports, and audit records. The React web surface is administrator-only.
+NeuroTruth is an authenticated wearable-assisted supportive intervention research prototype. It is intended for people receiving CBT or willing to seek treatment who need ongoing records and dialogue support in craving situations; it is not a treatment, diagnostic, or emergency-response app. A Watch is optional: Android checks connected Wear nodes client-side, uses Watch sensor windows when connected, and otherwise promotes a manual foreground 20-second camera-rPPG action. The FastAPI backend owns patient identity, AES-256-GCM persistence, model/prompt traceability, state inference, reports, and audit records. The React web surface is administrator-only.
 
 ## Intervention-First Flow
 
@@ -14,7 +14,7 @@ Patient signup/login on phone
   -> user chooses Talk now or Later
   -> optional AUQ
   -> retry-safe free dialogue by text or optional Korean STT
-  -> evidence-linked state inference + async report status
+  -> evidence-linked state inference + report status (`not_started` by default)
   -> patient/admin dashboards
 ```
 
@@ -23,7 +23,7 @@ Access tokens last 15 minutes by default. Opaque 30-day refresh tokens rotate on
 ## Repository Layout
 
 ```text
-apps/backend  FastAPI authenticated API, binary PyTorch prediction, Bedrock agents, encryption
+apps/backend  Single FastAPI process: api/v1, schemas, services, agents/prompts, ml, models, repositories, adapters, storage, core, maintenance
 apps/mobile   Android phone and Wear OS relay
 apps/web      Administrator-only React console
 apps/db       PostgreSQL 16 Compose stack and extension bootstrap
@@ -48,7 +48,9 @@ Backend and Android validation:
 
 ```powershell
 cd apps/backend
-python -m pytest
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q app tests
+.\.venv\Scripts\python.exe -m alembic upgrade head
 
 cd ../mobile
 .\gradlew.bat assembleDebug testDebugUnitTest lintDebug
@@ -81,9 +83,12 @@ The command preserves raw sensors, users, consent, AUQ, sessions, messages, inte
 | `SENSOR_STORAGE_ROOT` | Backend-only encrypted sensor volume |
 | `APP_ENV` | `development`, `test`, or `production` |
 | `ALLOW_INSECURE_HTTP` | Explicit local/LAN HTTP override; forbidden in production |
+| `STATE_SUMMARY_AI_ENABLED` | Optional state-summary Bedrock calls; defaults to `false` |
+| `REPORT_AI_ENABLED` | Optional report Bedrock calls; defaults to `false` |
 | `STT_ENABLED` | Optional internal Korean Whisper feature flag; defaults to `false` |
-| `STT_MODEL_PATH` | Host path to an externally mounted faster-whisper model |
-| `RPPG_ENABLED` | Optional camera-rPPG feature flag; defaults to `false` |
+| `STT_PYTORCH_MODEL_PATH` | Primary host path to the production PyTorch Whisper model |
+| `STT_MODEL_PATH` | Host path to the CTranslate2 CPU fallback model |
+| `RPPG_ENABLED` | Camera-rPPG feature flag; defaults to `true` and can be set to `false` |
 | `RPPG_BASE_URL` | Backend-only DGX Spark service URL; never shipped to mobile |
 | `RPPG_STORAGE_ROOT` | Backend-only AES-256-GCM face-video storage |
 
@@ -97,14 +102,15 @@ Missing database, migration, or encryption configuration makes readiness fail. P
 - Sessions: `POST /api/sessions`, then `GET`, `messages`, `assessments`, `finish`, and `reports` under `/api/sessions/{uuid}`.
 - Voice STT: authenticated `GET /api/stt/status` and `POST /api/sessions/{uuid}/transcriptions`; disabled by default. AI speech output uses Android-local TTS.
 - Administrator: patients/timeline, restricted patient dashboards, reason-gated reveal, temporary password, confirmed deletion, and global settings under `/api/admin`.
-- Camera rPPG (disabled by default): patient status/upload/job polling/manual retry under `/api/rppg`; administrator summary, reason-gated inline playback, and confirmed deletion under `/api/admin/rppg`.
+- Camera rPPG (enabled by default, readiness-gated): patient status/upload/job polling/manual retry under `/api/rppg`; administrator summary, reason-gated inline playback, and confirmed deletion under `/api/admin/rppg`.
 
 The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and `/api/intervention/*` contracts are not current APIs.
 
 ## Boundaries
 
 - New sessions do not write the legacy 13 slots or expose `handoffReady`; pre-redesign slot sessions remain read-only history without backfill.
-- Korean STT is an optional, disabled-by-default DGX service and TTS runs locally through Android `TextToSpeech`; real-device acceptance is still required. Self-event capture, wearable-absent AUQ automation, and model retraining experiments remain deferred. Camera rPPG is an experimental, disabled-by-default extension and is not release-ready until the real-phone/DGX validation gate passes.
+- Korean STT is an optional, disabled-by-default DGX service and TTS runs locally through Android `TextToSpeech`; real-device acceptance is still required. Self-event capture, wearable-absent AUQ automation, and model retraining experiments remain deferred. Camera rPPG is a user-started point-in-time measurement, never continuous/background monitoring. It requires the existing four consents and ready `/api/rppg/status`; unavailable service means no fallback measurement. `RPPG_ENABLED=false` remains the operational off switch, and real-phone/DGX acceptance is still required.
+- State-summary and report AI are disabled by default. Deterministic state evidence still persists; summaries return `unavailable`/`null`, report creation returns `not_started`, and enabling the corresponding flag restores the preserved Bedrock behavior.
 - Binary low/high predictions and class-1 probability, AUQ, dialogue, and interventions are presented as separate evidence. The Phone alone shows the probability graph; administrator web and Watch do not. The UI never claims immediate craving reduction, CBT efficacy, diagnosis, treatment success, calibrated severity, or causal effect.
 - There is no bulk dataset-download endpoint.
 - Every accepted camera video, including quality and technical failures, is retained encrypted until audited administrator deletion. Inline playback has no download button, but a privileged viewer can technically preserve rendered bytes; least privilege, policy, and audit remain required.

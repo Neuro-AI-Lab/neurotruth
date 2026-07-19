@@ -14,11 +14,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.v25.auth_service import AuthorizationError
-from app.v25.dependencies import get_runtime, patient_user
-from app.v25.models import UserRecord
-from app.v25.routes_stt import router
-from app.v25.stt_client import (
+from app.services.auth import AuthorizationError
+from app.api.v1.dependencies import get_runtime, patient_user
+from app.models.records import UserRecord
+from app.api.v1.routes.stt import router
+from app.adapters.stt_client import (
     SttAudioTooLarge,
     SttClient,
     SttNoSpeech,
@@ -92,7 +92,7 @@ def app_client(workdir: Path, *, consent: bool = True):
     )
     stt = FakeSttClient(workdir)
     runtime = SimpleNamespace(
-        stt_client=stt,
+        stt_service=stt,
         service=FakeAuth(consent),
         session_service=FakeSessionService(),
     )

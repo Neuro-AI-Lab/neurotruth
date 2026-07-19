@@ -42,6 +42,10 @@ captures/
 .DS_Store
 Thumbs.db
 
+# PowerPoint temporary and inspection artifacts
+~$*.pptx
+*.pptx.inspect.ndjson
+
 # Measurement exports and local logs
 sensor_*.csv
 *.csv

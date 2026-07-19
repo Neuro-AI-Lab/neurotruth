@@ -10,17 +10,17 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.security.crypto import AesGcmKeyring
-from app.v25.models import UserRecord
-from app.v25.routes_sessions import _map
-from app.v25.session_agents import (
+from app.core.security.crypto import AesGcmKeyring
+from app.models.records import UserRecord
+from app.api.v1.routes.session import _map
+from app.agents.intervention import (
     DIALOGUE_SYSTEM_PROMPT,
     DIALOGUE_PROMPT_VERSION,
-    BedrockSessionAgent,
+    InterventionAgent,
     initial_dialogue_state,
     validate_agent_output,
 )
-from app.v25.session_service import (
+from app.services.session import (
     ClientMessageConflict,
     LegacySessionReadOnly,
     MessageInProgress,
@@ -504,7 +504,7 @@ def test_bedrock_agent_repairs_one_repeated_question() -> None:
 
     async def scenario():
         adapter = Adapter()
-        result = await BedrockSessionAgent(adapter).dialogue({
+        result = await InterventionAgent(adapter).dialogue({
             "history": [],
             "dialogueState": {
                 "version": 2,

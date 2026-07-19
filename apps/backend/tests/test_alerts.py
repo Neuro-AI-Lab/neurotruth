@@ -1,6 +1,6 @@
 import pytest
 
-from app.alerts import MAX_ALERT_SESSIONS, AlertConfig, AlertEvaluator, AlertEvaluatorRegistry
+from app.ml.craving.pipeline import MAX_ALERT_SESSIONS, AlertConfig, AlertEvaluator, AlertEvaluatorRegistry
 
 
 def test_alert_config_reads_binary_env_overrides(monkeypatch) -> None:

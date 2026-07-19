@@ -12,11 +12,11 @@ import httpx
 import numpy as np
 import pytest
 
-from app.security.crypto import AesGcmKeyring, DecryptionError, EncryptedEnvelope, aad_for
-from app.v25.rppg_dgx import DgxClient, DgxResponse
-from app.v25.rppg_media import VideoInspection
-from app.v25.rppg_service import RppgService, RppgUnavailable
-from app.v25.rppg_storage import EncryptedRppgStorage
+from app.core.security.crypto import AesGcmKeyring, DecryptionError, EncryptedEnvelope, aad_for
+from app.adapters.rppg_dgx import DgxClient, DgxResponse
+from app.adapters.rppg_media import VideoInspection
+from app.services.rppg import RppgService, RppgUnavailable
+from app.storage.rppg import EncryptedRppgStorage
 
 
 def keyring() -> AesGcmKeyring:
@@ -111,6 +111,7 @@ class FakePredictor:
             "predictionSchema": "binary-craving-v1", "class": 1, "classCode": "high",
             "confidence": 0.9, "cravingProbability": 0.9,
             "classProbabilities": {"low": 0.1, "high": 0.9},
+            "_lat": {"server_ms": 5.0}, "_readyPerf": 123.0,
         }
 
 
@@ -207,6 +208,8 @@ def test_success_supplies_1024_ppg_and_literal_zero_eda(workdir: Path) -> None:
     assert predictor.payload["windowEndMs"] - predictor.payload["windowStartMs"] == 20_000
     assert repo.success["prediction"]["source"] == "camera_rppg"
     assert repo.success["prediction"]["edaAdaptation"] == "zero_1024"
+    assert repo.success["prediction"]["class"] == 1
+    assert not any(key.startswith("_") for key in repo.success["prediction"])
     assert repo.success["checkpoint"] == "PURE.pth"
 
 

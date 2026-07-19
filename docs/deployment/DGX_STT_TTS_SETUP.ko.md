@@ -13,14 +13,16 @@
 사용자 음성
   -> Android 앱에서 최대 30초 녹음
   -> NeuroTruth 백엔드 인증 API
-  -> DGX 내부 faster-whisper STT
+  -> DGX 내부 PyTorch Whisper CUDA STT
   -> 편집 가능한 입력창에 인식 결과 표시
   -> 사용자가 확인 후 전송
   -> 챗봇 텍스트 응답
   -> Android 로컬 TTS로 읽기
 ```
 
-- STT 모델은 DGX Spark에 설치합니다.
+- 운영 STT 모델은 DGX Spark에 `STT_PYTORCH_MODEL_PATH`로 설치합니다.
+- `apps/db/docker-compose.dgx.yml`은 `STT_DEVICE=cuda`와 `STT_ALLOW_CPU_FALLBACK=false`를 강제합니다. CUDA가 준비되지 않으면 CPU로 숨지 않고 실패합니다.
+- 운영 설치·빌드·검증은 [`DGX_STT_PYTORCH_CUDA.ko.md`](./DGX_STT_PYTORCH_CUDA.ko.md)를 따릅니다. 아래 3~7절은 base Compose에서만 사용하는 CTranslate2 CPU fallback 참고 절차입니다.
 - TTS는 Android `TextToSpeech`를 사용하므로 DGX에 TTS 모델을 설치하지 않습니다.
 - STT 컨테이너의 `8001` 포트는 Docker 내부에서만 사용하며 외부에 공개하지 않습니다.
 - 음성 원본은 백엔드와 STT 컨테이너의 tmpfs에서만 처리하고 요청 종료 후 삭제합니다.
@@ -52,14 +54,14 @@ sudo docker run --rm --gpus all \
 
 두 명령 모두 DGX GPU 정보를 표시해야 합니다.
 
-## 3. STT 모델 다운로드
+## 3. CTranslate2 CPU fallback 모델 다운로드
 
-NeuroTruth는 원본 Whisper PyTorch 체크포인트가 아니라 faster-whisper용 CTranslate2 모델을 사용합니다.
+이 절부터 7절까지는 DGX 운영 절차가 아닙니다. GPU를 사용할 수 없는 로컬 base Compose fallback에서 faster-whisper용 CTranslate2 모델을 사용합니다. DGX 운영 모델은 위의 PyTorch CUDA 전환 문서를 따르세요.
 
 - 모델: `large-v3-turbo`
 - Hugging Face 저장소: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`
 - 실행 설정: 한국어 고정, `beam_size=1`, VAD 활성화
-- 장치 설정: CUDA FP16 우선, 실패 시 CPU INT8 fallback
+- 장치 설정: CPU INT8 고정
 
 프로젝트 루트로 이동해 모델 폴더를 만듭니다.
 
@@ -89,7 +91,7 @@ test -s models/whisper-large-v3-turbo/config.json
 
 > `models/whisper-large-v3-turbo/`는 실행 환경에 별도로 설치하는 대용량 모델입니다. 모델 파일과 실제 `.env`는 GitHub에 커밋하지 마세요.
 
-## 4. `.env` 설정
+## 4. CPU fallback `.env` 설정
 
 모델 폴더의 절대 경로를 확인합니다.
 
@@ -103,6 +105,8 @@ realpath models/whisper-large-v3-turbo
 ```dotenv
 STT_ENABLED=true
 STT_MODEL_PATH=/home/사용자명/AI_Champion/neurotruth/models/whisper-large-v3-turbo
+STT_DEVICE=cpu
+STT_ALLOW_CPU_FALLBACK=true
 STT_CONNECT_TIMEOUT_SECONDS=5
 STT_READ_TIMEOUT_SECONDS=120
 STT_MAX_UPLOAD_MIB=10
@@ -110,7 +114,7 @@ STT_MAX_UPLOAD_MIB=10
 
 주의사항:
 
-- `STT_MODEL_PATH`에는 `realpath`가 출력한 값을 그대로 사용합니다.
+- `STT_MODEL_PATH`에는 CTranslate2 fallback 폴더의 `realpath` 결과를 그대로 사용합니다. 운영 DGX PyTorch 경로는 `STT_PYTORCH_MODEL_PATH`입니다.
 - `.env`에서 `~` 또는 `$HOME`을 사용하지 않습니다.
 - `.env`는 비밀값을 포함하므로 GitHub에 올리지 않습니다.
 - 컨테이너 내부에서는 모델이 `/models/large-v3-turbo`로 읽힙니다.
@@ -120,13 +124,12 @@ STT_MAX_UPLOAD_MIB=10
 ```bash
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   config
 ```
 
 출력에 실제 비밀값이 포함될 수 있으므로 이 결과를 GitHub 이슈나 채팅에 그대로 올리지 마세요.
 
-## 5. DGX 서비스 빌드 및 실행
+## 5. Base Compose CPU fallback 빌드 및 실행
 
 STT와 백엔드를 다시 빌드해 실행합니다.
 
@@ -135,7 +138,6 @@ cd ~/AI_Champion/neurotruth
 
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   up -d --build stt backend
 ```
 
@@ -144,7 +146,6 @@ sudo docker compose \
 ```bash
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   up -d --build
 ```
 
@@ -153,58 +154,55 @@ sudo docker compose \
 ```bash
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   ps
 
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   logs --tail=100 stt
 ```
 
-## 6. 모델 mount 확인
+## 6. CPU fallback 모델 mount 확인
 
 STT 컨테이너가 모델 파일을 읽을 수 있는지 확인합니다.
 
 ```bash
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   exec -T stt sh -lc \
   'ls -lah /models/large-v3-turbo && test -s /models/large-v3-turbo/model.bin'
 ```
 
 오류 없이 파일 목록이 표시되면 mount가 정상입니다.
 
-## 7. STT 상태 확인
+## 7. CPU fallback STT 상태 확인
 
 STT는 외부 포트를 열지 않으므로 백엔드 컨테이너를 통해 내부 상태를 확인합니다.
 
 ```bash
 sudo docker compose \
   -f apps/db/docker-compose.yml \
-  -f apps/db/docker-compose.dgx.yml \
   exec -T backend python -c \
 'import httpx, json; print(json.dumps(httpx.get("http://stt:8001/health", timeout=10).json(), ensure_ascii=False, indent=2))'
 ```
 
-GPU로 정상 로드된 경우의 예시입니다.
+CPU fallback으로 정상 로드된 경우의 예시입니다.
 
 ```json
 {
   "enabled": true,
   "available": true,
   "model": "whisper-large-v3-turbo",
-  "requestedDevice": "auto",
-  "actualDevice": "cuda",
+  "requestedDevice": "cpu",
+  "actualDevice": "cpu",
+  "engine": "ctranslate2",
   "fallback": false,
   "errorCode": null
 }
 ```
 
-`actualDevice`가 `cpu`이고 `fallback`이 `true`이면 CUDA 로딩에 실패해 CPU로 전환된 상태입니다. 기능은 동작하지만 응답이 느릴 수 있습니다.
+DGX 운영 상태는 이 예시와 달라야 합니다. 운영 검증에서는 `engine=pytorch`, `requestedDevice=cuda`, `actualDevice=cuda:0`, `fallback=false`를 요구합니다. `docker-compose.dgx.yml`과 CPU fallback 절차를 함께 사용하지 마세요.
 
-모바일 앱이 사용하는 환자 인증 상태 API도 확인할 수 있습니다. access token은 명령 기록에 직접 입력하지 않고 임시 환경변수로 전달합니다.
+모바일 앱이 사용하는 환자 인증 상태 API를 확인할 수 있습니다. Access token은 명령 기록에 직접 입력하지 않고 임시 환경변수로 전달합니다.
 
 ```bash
 read -rsp 'Patient access token: ' ACCESS_TOKEN
@@ -214,7 +212,7 @@ curl -H "Authorization: Bearer ${ACCESS_TOKEN}" \
 unset ACCESS_TOKEN
 ```
 
-유효한 환자 access token이 없으면 로그인된 모바일 앱에서 상태를 확인합니다. 이 API는 비로그인 상태에서 `401`을 반환하는 것이 정상입니다.
+`GET /api/stt/status`와 실제 transcription은 모두 환자 인증을 요구합니다. Status는 기능/모델 가용성만 반환하고 credential이나 모델 artifact 경로를 노출하지 않습니다. Transcription은 환자 인증에 더해 `voice` 동의와 active session을 요구합니다. 비로그인 status 요청이 `401`인 것은 정상입니다.
 
 ## 8. Android TTS 설정
 
@@ -278,9 +276,10 @@ sudo docker compose \
 | 증상 또는 코드 | 원인 | 확인 방법 |
 | --- | --- | --- |
 | `stt_disabled` | `STT_ENABLED=false` | DGX `.env` 수정 후 `stt`, `backend` 재생성 |
-| `stt_model_missing` | 모델 경로 또는 volume mount 오류 | `realpath`, Compose `config`, 컨테이너 `/models/large-v3-turbo` 확인 |
-| `stt_model_load_failed` | 모델 불완전, CTranslate2 형식 오류, CUDA 라이브러리 문제 | `model.bin`, `config.json`, STT 로그 확인 |
-| `actualDevice=cpu`, `fallback=true` | CUDA FP16 초기화 실패 | `nvidia-smi`, Docker GPU 확인, STT 로그 확인 |
+| `stt_cuda_unavailable` | DGX PyTorch CUDA 초기화 실패; 운영 override는 CPU fallback을 금지 | `DGX_STT_PYTORCH_CUDA.ko.md`, `nvidia-smi`, `model.safetensors`, `docker-compose.dgx.yml`, STT 로그 확인 |
+| `stt_model_missing` | PyTorch 또는 CTranslate2 model mount 오류 | DGX는 `STT_PYTORCH_MODEL_PATH`의 `config.json`/`model.safetensors`, CPU fallback은 `STT_MODEL_PATH`의 `model.bin`/`config.json` 확인 |
+| `stt_model_load_failed` | Base Compose CTranslate2 fallback 모델 불완전/로드 실패 | `STT_DEVICE=cpu`, `STT_ALLOW_CPU_FALLBACK=true`, `model.bin`, STT 로그 확인 |
+| `engine=ctranslate2`, `actualDevice=cpu` | 명시적으로 선택한 base-Compose CPU fallback | 운영 DGX라면 override 누락이므로 `docker-compose.dgx.yml`을 포함해 재배포 |
 | HTTP `403` | `voice` 동의 없음 | 앱의 동의 설정에서 음성 동의 활성화 |
 | HTTP `413` | 음성 파일이 10 MiB 초과 또는 녹음이 너무 김 | 최대 30초 이내로 다시 녹음 |
 | HTTP `415` | `.m4a`, `.wav` 이외 형식 | Android 녹음 형식 또는 multipart content type 확인 |
@@ -313,8 +312,9 @@ STT가 비활성화되어도 텍스트 챗봇과 Android 로컬 TTS는 계속 �
 GitHub에는 다음 코드와 문서를 올립니다.
 
 - `apps/stt-service/`
-- `apps/backend/app/v25/routes_stt.py`
-- `apps/backend/app/v25/stt_client.py`
+- `apps/backend/app/api/v1/routes/stt.py`
+- `apps/backend/app/services/stt.py`
+- `apps/backend/app/adapters/stt_client.py`
 - STT 관련 backend/mobile 변경 사항과 테스트
 - `apps/db/docker-compose.yml`
 - `apps/db/docker-compose.dgx.yml`

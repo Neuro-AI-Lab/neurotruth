@@ -1,6 +1,6 @@
 import asyncio
 
-from app.memory import DDL_STATEMENTS, PostgresMemory
+from app.repositories.legacy_memory import DDL_STATEMENTS, PostgresMemory
 
 
 def test_memory_schema_uses_idempotent_tables_and_expected_indexes() -> None:

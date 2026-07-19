@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from app.inference import CravingModel, EXPECTED_WEIGHTS_SHA256, InvalidSensorWindow
+from app.ml.craving.model import CravingModel, EXPECTED_WEIGHTS_SHA256, InvalidSensorWindow
 
 
 BACKEND = Path(__file__).resolve().parents[1]

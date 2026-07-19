@@ -31,12 +31,21 @@ package com.example.healthsensor
 
 import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.WearableListenerService
 import java.nio.ByteBuffer
 
 class WearDataListenerService : WearableListenerService() {
 
     private val TAG = "WearDataListener"
+
+    override fun onPeerConnected(peer: Node) {
+        WatchPeerConnectionEvents.publish()
+    }
+
+    override fun onPeerDisconnected(peer: Node) {
+        WatchPeerConnectionEvents.publish()
+    }
 
     override fun onMessageReceived(event: MessageEvent) {
         try {

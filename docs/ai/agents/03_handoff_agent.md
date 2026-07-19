@@ -1,6 +1,6 @@
 # Report Agent
 
-Last updated: 2026-07-15
+Last updated: 2026-07-19
 
 ## Endpoints
 
@@ -9,7 +9,9 @@ POST /api/sessions/{sessionId}/reports
 GET  /api/sessions/{sessionId}/reports
 ```
 
-Report creation is asynchronous and persistent. Manual finish or inactivity timeout automatically queues a consented report. `POST` is an idempotent retry for a missing/failed report. `GET` returns only `reportId`, `version`, `status`, `createdAt`, and `generatedAt`; current patient and administrator dashboards never render report bodies.
+`REPORT_AI_ENABLED=false` is the default. Manual finish and inactivity timeout then skip automatic report creation, and `POST` returns HTTP `202` with exactly `{"reportId":null,"version":null,"status":"not_started"}`. No report Bedrock call or report model-version registration occurs. `GET` preserves historical metadata and returns `[]` when no report exists. Current patient and administrator dashboards never render report bodies.
+
+When `REPORT_AI_ENABLED=true`, the preserved behavior is asynchronous and persistent: finish/timeout queues a consented report, and `POST` is an idempotent retry for a missing/failed report. `GET` returns only `reportId`, `version`, `status`, `createdAt`, and `generatedAt`.
 
 ## Rules
 
@@ -21,4 +23,4 @@ Report creation is asynchronous and persistent. Manual finish or inactivity time
 - Persist AES-256-GCM encrypted content with actual report model/prompt version. Expose only sanitized failure state.
 - No bulk report/dataset download API exists.
 
-The legacy synchronous handoff and process-local handoff-job endpoints are not current APIs. Legacy slot reports remain immutable history. Voice, rPPG, self-event capture, and craving-model experiments are deferred.
+The legacy synchronous handoff and process-local handoff-job endpoints are not current APIs. Legacy slot reports remain immutable history. Korean STT is optional/default-off, camera rPPG is default-on but consent- and readiness-gated, and TTS is Android-local. Self-event capture and craving-model experiments remain deferred.

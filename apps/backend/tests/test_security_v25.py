@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import base64
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from jose import jwt
 
-from app.security.crypto import (
+from app.core.security.crypto import (
     AesGcmKeyring,
     DecryptionError,
     EncryptionConfigurationError,
     aad_for,
 )
-from app.security.passwords import hash_password, verify_password
-from app.security.tokens import (
+from app.core.security.passwords import hash_password, verify_password
+from app.core.security.tokens import (
     InvalidAccessToken,
     create_access_token,
     hash_refresh_token,
@@ -23,7 +25,7 @@ from app.security.tokens import (
     refresh_token_matches,
     verify_access_token,
 )
-from app.settings import SecuritySettings
+from app.core.config import SecuritySettings
 
 
 def _encoded_key(byte: int) -> str:
@@ -106,27 +108,43 @@ def test_access_and_refresh_token_primitives() -> None:
 
 
 def test_settings_require_secure_material_and_guard_http() -> None:
-    settings = SecuritySettings(
-        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
-        DATA_ENCRYPTION_KEYS_B64=f"v1:{_encoded_key(7)}",
-        DATA_ENCRYPTION_CURRENT_KEY_ID="v1",
-        JWT_SIGNING_KEY="z" * 32,
-        ADMIN_SIGNUP_CODE="admin-signup-code-value",
-        SENSOR_STORAGE_ROOT=Path("sensor-data"),
-        APP_ENV="development",
-        ALLOW_INSECURE_HTTP=True,
-    )
-    settings.assert_request_transport("http://127.0.0.1:8000/health")
-    settings.assert_request_transport("https://example.invalid/health")
-
-    with pytest.raises(ValueError):
-        SecuritySettings(
-            DATABASE_URL="postgresql://user:pass@localhost/db",
-            DATA_ENCRYPTION_KEYS_B64=f"v1:{_encoded_key(7)}",
-            DATA_ENCRYPTION_CURRENT_KEY_ID="v1",
-            JWT_SIGNING_KEY="z" * 32,
-            ADMIN_SIGNUP_CODE="admin-signup-code-value",
-            SENSOR_STORAGE_ROOT=Path("sensor-data"),
-            APP_ENV="production",
+    required = {
+        "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/db",
+        "DATA_ENCRYPTION_KEYS_B64": f"v1:{_encoded_key(7)}",
+        "DATA_ENCRYPTION_CURRENT_KEY_ID": "v1",
+        "JWT_SIGNING_KEY": "z" * 32,
+        "ADMIN_SIGNUP_CODE": "admin-signup-code-value",
+        "SENSOR_STORAGE_ROOT": Path("sensor-data"),
+    }
+    with patch.dict(os.environ, {}, clear=True):
+        settings = SecuritySettings(
+            _env_file=None,
+            **required,
+            APP_ENV="development",
             ALLOW_INSECURE_HTTP=True,
+            RPPG_ENABLED=False,
         )
+        settings.assert_request_transport("http://127.0.0.1:8000/health")
+        settings.assert_request_transport("https://example.invalid/health")
+
+        default_rppg = SecuritySettings(
+            _env_file=None,
+            **required,
+            RPPG_STORAGE_ROOT=Path("rppg-data"),
+        )
+        assert default_rppg.rppg_enabled is True
+        explicitly_disabled_rppg = SecuritySettings(
+            _env_file=None,
+            **required,
+            RPPG_ENABLED=False,
+        )
+        assert explicitly_disabled_rppg.rppg_enabled is False
+
+        with pytest.raises(ValueError):
+            SecuritySettings(
+                _env_file=None,
+                **{**required, "DATABASE_URL": "postgresql://user:pass@localhost/db"},
+                APP_ENV="production",
+                ALLOW_INSECURE_HTTP=True,
+                RPPG_ENABLED=False,
+            )

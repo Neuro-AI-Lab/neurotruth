@@ -17,7 +17,7 @@ def test_rppg_is_additive_0002_and_baseline_remains_parent() -> None:
 
 
 def test_runtime_requires_voice_rppg_20s_head_after_free_dialogue_revision() -> None:
-    runtime = (ROOT / "app/v25/runtime.py").read_text(encoding="utf-8")
+    runtime = (ROOT / "app/core/runtime.py").read_text(encoding="utf-8")
     assert 'REQUIRED_REVISION = "20260717_0005"' in runtime
     migration = (ROOT / "alembic/versions/20260717_0005_voice_rppg_20s.py").read_text(encoding="utf-8")
     assert 'down_revision = "20260716_0004"' in migration
@@ -26,5 +26,5 @@ def test_runtime_requires_voice_rppg_20s_head_after_free_dialogue_revision() -> 
 
 
 def test_quality_retry_jobs_persist_rppg_model_foreign_key() -> None:
-    repository = (ROOT / "app/v25/rppg_repository.py").read_text(encoding="utf-8")
+    repository = (ROOT / "app/repositories/rppg.py").read_text(encoding="utf-8")
     assert "model_version_id=:rppg_model_version_id" in repository
