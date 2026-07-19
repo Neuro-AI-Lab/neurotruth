@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.security.crypto import AesGcmKeyring, aad_for
-from app.v25.dashboard_service import DashboardRangeError, DashboardService, PpgPreviewNotFound, class_from_schema
+from app.core.security.crypto import AesGcmKeyring, aad_for
+from app.services.dashboard import DashboardRangeError, DashboardService, PpgPreviewNotFound, class_from_schema
 
 
 class Repo:
@@ -52,16 +52,56 @@ def test_patient_and_admin_dashboard_have_distinct_sensitive_and_ppg_shapes() ->
             "summary_status": "ready", "summary_encrypted": encrypted, "created_at": now}]
         rows["assessments"] = [{"id": uuid4(), "session_id": uuid4(), "completed_at": now,
             "instrument_code": "AUQ", "raw_score": 12, "scale_min": 0, "scale_max": 56}]
-        service = DashboardService(Repo(rows), ring(), Storage({}))
+        service = DashboardService(
+            Repo(rows), ring(), Storage({}), state_summary_ai_enabled=True,
+        )
         patient_view = await service.dashboard(patient, "24h")
         admin_view = await service.dashboard(patient, "24h", admin=True)
         assert patient_view["predictions"][0]["ppgPreviewAvailable"] is True
+        assert patient_view["latestState"]["summaryStatus"] == "ready"
         assert patient_view["latestState"]["summary"] == "근거 기반 요약"
         assert any(event["type"] == "auq" for event in patient_view["events"])
         assert "ppgPreviewAvailable" not in admin_view["predictions"][0]
         assert "summary" not in admin_view["latestState"]
+        assert admin_view["latestState"]["summaryStatus"] == "ready"
         assert patient_view["from"].endswith("+00:00") and patient_view["to"].endswith("+00:00")
         with pytest.raises(DashboardRangeError): await service.dashboard(patient, "1y")
+    asyncio.run(scenario())
+
+
+def test_disabled_state_summary_is_masked_without_decryption_for_patient_and_admin() -> None:
+    class DecryptSpy:
+        def __init__(self) -> None:
+            self.decrypt_calls = 0
+
+        def decrypt(self, *_args, **_kwargs):
+            self.decrypt_calls += 1
+            raise AssertionError("disabled summaries must not be decrypted")
+
+    async def scenario() -> None:
+        patient, inference = uuid4(), uuid4()
+        rows = empty_rows()
+        rows["inferences"] = [{
+            "id": inference,
+            "inference_scope": "realtime",
+            "state_class": "high",
+            "confidence": .8,
+            "summary_status": "ready",
+            "summary_encrypted": b"stored-summary",
+            "created_at": datetime.now(timezone.utc),
+        }]
+        keyring = DecryptSpy()
+        service = DashboardService(Repo(rows), keyring, Storage({}))
+
+        patient_view = await service.dashboard(patient, "24h")
+        admin_view = await service.dashboard(patient, "24h", admin=True)
+
+        assert patient_view["latestState"]["summaryStatus"] == "unavailable"
+        assert patient_view["latestState"]["summary"] is None
+        assert admin_view["latestState"]["summaryStatus"] == "unavailable"
+        assert "summary" not in admin_view["latestState"]
+        assert keyring.decrypt_calls == 0
+
     asyncio.run(scenario())
 
 

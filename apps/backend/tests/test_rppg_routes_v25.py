@@ -10,11 +10,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.v25.dependencies import get_runtime, password_ready_user, patient_user
-from app.v25.models import UserRecord
-from app.v25.routes_admin import admin_user
-from app.v25.routes_rppg import get_rppg_service, router
-from app.v25.rppg_media import VideoInspection
+from app.api.v1.dependencies import get_runtime, password_ready_user, patient_user
+from app.models.records import UserRecord
+from app.api.v1.routes.admin import admin_user
+from app.api.v1.routes.rppg import get_rppg_service, router
+from app.adapters.rppg_media import VideoInspection
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ class FakeRppgService:
         self.accept_error = None
     def _require_enabled_and_consent(self, consent):
         if not (consent.biosignal and consent.ai_analysis and consent.camera_rppg and consent.face_video_retention):
-            from app.v25.rppg_service import RppgConsentRequired
+            from app.services.rppg import RppgConsentRequired
             raise RppgConsentRequired("RPPG_CONSENT_REQUIRED")
     async def status(self):
         return {"enabled": True, "available": True, "modelLoaded": True, "device": "cuda:0",
@@ -116,7 +116,7 @@ def test_upload_rejects_non_mp4_with_415(workdir: Path) -> None:
 
 @pytest.mark.parametrize("code", ["RPPG_STORAGE_UNAVAILABLE", "RPPG_QUEUE_UNAVAILABLE"])
 def test_upload_prerequisite_failures_are_sanitized_and_clean_plaintext(workdir: Path, code: str) -> None:
-    from app.v25.rppg_service import RppgUnavailable
+    from app.services.rppg import RppgUnavailable
 
     client, service, *_ = app_client(workdir)
     service.accept_error = RppgUnavailable(code)
@@ -129,11 +129,11 @@ def test_upload_prerequisite_failures_are_sanitized_and_clean_plaintext(workdir:
 
 
 def test_tmpfs_creation_failure_is_sanitized_without_path_leak(workdir: Path, monkeypatch) -> None:
-    from app.v25 import routes_rppg
+    from app.api.v1.routes import rppg
 
     client, *_ = app_client(workdir)
     private_path = workdir / "should-not-leak"
-    monkeypatch.setattr(routes_rppg.tempfile, "mkstemp", lambda **_: (_ for _ in ()).throw(
+    monkeypatch.setattr(rppg.tempfile, "mkstemp", lambda **_: (_ for _ in ()).throw(
         OSError(f"cannot create {private_path}")
     ))
     response = client.post("/api/rppg/jobs", data={

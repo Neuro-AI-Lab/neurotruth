@@ -9,23 +9,25 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.security.crypto import AesGcmKeyring, aad_for
-from app.security.passwords import hash_password
-from app.security.tokens import hash_refresh_token, verify_access_token
-from app.v25.auth_service import AuthenticationError, AuthorizationError, AuthService
-from app.v25.models import (
-    AdminSignupInput,
+from app.core.security.crypto import AesGcmKeyring, aad_for
+from app.core.security.passwords import hash_password
+from app.core.security.tokens import hash_refresh_token, verify_access_token
+from app.services.auth import AuthenticationError, AuthorizationError, AuthService
+from app.models.records import (
     AuthSessionRecord,
-    ChangePasswordInput,
-    ConsentInput,
     ConsentRecord,
-    LoginInput,
-    PatientSignupInput,
     RotationResult,
     SystemSettingsRecord,
     UserRecord,
 )
-from app.v25.repository import RepositoryConflictError, V25Repository
+from app.repositories.postgres import RepositoryConflictError, V25Repository
+from app.schemas.auth import (
+    AdminSignupInput,
+    ChangePasswordInput,
+    ConsentInput,
+    LoginInput,
+    PatientSignupInput,
+)
 
 
 NOW = datetime.now(timezone.utc)

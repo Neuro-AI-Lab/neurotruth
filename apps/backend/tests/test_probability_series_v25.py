@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
-from app.v25.dashboard_service import DashboardService
+from app.services.dashboard import DashboardService
 
 
 class ProbabilityRepository:

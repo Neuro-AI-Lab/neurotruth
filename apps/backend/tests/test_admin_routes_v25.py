@@ -10,12 +10,12 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.security.crypto import AesGcmKeyring, aad_for
-from app.security.tokens import create_access_token
-from app.v25.admin_service import AdminDeletionUnavailable, AdminService
-from app.v25.models import SystemSettingsRecord, UserRecord
-from app.v25.routes_admin import router
-from app.v25.runtime import V25Runtime
+from app.core.security.crypto import AesGcmKeyring, aad_for
+from app.core.security.tokens import create_access_token
+from app.services.admin import AdminDeletionUnavailable, AdminService
+from app.models.records import SystemSettingsRecord, UserRecord
+from app.api.v1.routes.admin import router
+from app.core.runtime import BackendRuntime
 
 
 class Settings:
@@ -46,7 +46,7 @@ def client_for(role: str) -> tuple[TestClient, FakeAdminService, str]:
     service = FakeAdminService()
     session_id = uuid4()
     app = FastAPI(); app.include_router(router)
-    app.state.v25_runtime = V25Runtime(ready=True, settings=Settings(), repository=UserRepo(user, session_id), service=object(), admin_service=service, error_code=None)
+    app.state.backend_runtime = BackendRuntime(ready=True, settings=Settings(), repository=UserRepo(user, session_id), service=object(), admin_service=service, error_code=None)
     token, _ = create_access_token(subject=user.id, session_id=session_id, role=role, signing_key="j" * 32)
     return TestClient(app), service, token
 

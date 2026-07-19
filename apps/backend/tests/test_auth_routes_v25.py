@@ -9,12 +9,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from app.security.tokens import create_access_token
-from app.v25.auth_service import AuthService, AuthenticationError
-from app.v25.models import UserRecord
-from app.v25.repository import RepositoryConflictError
-from app.v25.routes_auth import router
-from app.v25.runtime import V25Runtime
+from app.core.security.tokens import create_access_token
+from app.services.auth import AuthService, AuthenticationError
+from app.models.records import UserRecord
+from app.repositories.postgres import RepositoryConflictError
+from app.api.v1.routes.auth import router
+from app.core.runtime import BackendRuntime
 
 
 class FakeSettings:
@@ -93,7 +93,7 @@ def build_client(*, must_change_password: bool = False, session_active: bool = T
     session_id = uuid4()
     app = FastAPI()
     app.include_router(router)
-    app.state.v25_runtime = V25Runtime(
+    app.state.backend_runtime = BackendRuntime(
         ready=True, settings=FakeSettings(), repository=FakeRepository(user, session_id, active=session_active), service=service, error_code=None
     )
     token, _ = create_access_token(subject=user.id, session_id=session_id, role=user.role, signing_key="j" * 32)

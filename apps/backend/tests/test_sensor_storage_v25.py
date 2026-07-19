@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.security.crypto import AesGcmKeyring, DecryptionError
-from app.v25.sensor_storage import EncryptedSensorStorage, canonical_sensor_json
+from app.core.security.crypto import AesGcmKeyring, DecryptionError
+from app.storage.sensor import EncryptedSensorStorage, canonical_sensor_json
 
 
 def test_sensor_file_is_encrypted_atomic_and_tamper_evident() -> None:

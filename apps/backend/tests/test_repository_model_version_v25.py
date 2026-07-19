@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.v25.repository import SqlAlchemyV25Repository
+from app.repositories.postgres import SqlAlchemyV25Repository
 
 
 class _Result:

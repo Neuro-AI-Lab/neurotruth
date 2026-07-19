@@ -9,12 +9,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.security.crypto import AesGcmKeyring
-from app.v25.dashboard_service import (
+from app.core.security.crypto import AesGcmKeyring
+from app.services.dashboard import (
     DashboardService,
     DashboardTimezoneError,
 )
-from app.v25.repository import SqlAlchemyV25Repository
+from app.repositories.postgres import SqlAlchemyV25Repository
 
 
 class Repo:
