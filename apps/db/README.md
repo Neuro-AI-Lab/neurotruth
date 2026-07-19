@@ -1,6 +1,6 @@
 # NeuroTruth Database and Local Stack
 
-Last updated: 2026-07-16
+Last updated: 2026-07-19
 
 This directory owns the PostgreSQL extension bootstrap and Docker Compose stack. Alembic under `apps/backend/alembic` owns all business-schema changes.
 
@@ -9,10 +9,10 @@ This directory owns the PostgreSQL extension bootstrap and Docker Compose stack.
 | Item | Role |
 |---|---|
 | `init.sql` | Installs required PostgreSQL extensions only |
-| `docker-compose.yml` | Local `db`, `backend`, and `web` stack |
+| `docker-compose.yml` | Local `db`, `backend`, optional/default-off `stt`, and `web` stack |
 | `postgres_data_v25` | Fresh authenticated PostgreSQL data |
 | `encrypted_sensor_data` | AES-GCM raw sensor files |
-| rPPG storage volume | Optional AES-GCM camera videos and provider payloads |
+| `encrypted_rppg_data` | Optional AES-GCM camera videos and provider payloads |
 
 The legacy `postgres_data` volume is backup/rollback material. Do not attach it to the new migration path and do not expect backfill.
 
@@ -24,8 +24,9 @@ The legacy `postgres_data` volume is backup/rollback material. Do not attach it 
 | `20260715_0002` | DGX rPPG captures/jobs and prediction linkage |
 | `20260715_0003` | Intervention-first session state, `state_inferences`, multi-intervention evidence |
 | `20260716_0004` | `free_dialogue` session phase and unique client-message retry idempotency |
+| `20260717_0005` | Retained legacy 10-second and current 20-second rPPG duration rule; downgrade intentionally refused |
 
-`20260716_0004` is the current required head. `session_slots` remains for legacy
+`20260717_0005` is the current required head. `session_slots` remains for legacy
 read-only history. New sessions start in `free_dialogue`, do not write slots,
 and use `clientMessageId` metadata to retry a failed dialogue once without
 duplicating the user message.
@@ -86,7 +87,7 @@ deploy TLS before transmitting real participant data over the public internet.
 1. Stop writes to the legacy deployment.
 2. Back up the existing `postgres_data` volume.
 3. Create fresh database and encrypted-storage volumes.
-4. Run migrations through the current head, `20260716_0004`.
+4. Run migrations through the current head, `20260717_0005`.
 5. Deploy backend and Android together, then the administrator web.
 6. Keep the legacy image/volume for rollback; do not downgrade new-schema data.
 
@@ -96,9 +97,9 @@ Do not store plaintext exports, decrypted sensor files, keys, or database dumps 
 
 | Check | Result |
 |---|---|
-| Alembic application head | `20260716_0004` |
-| Fresh PostgreSQL 0001→0004 | Pending local Docker verification |
-| Populated fixture 0003→0004 | Pending local Docker verification; additive migration |
+| Existing Compose runtime head | PASS at `20260717_0005` in the prior restructured-backend smoke |
+| Fresh PostgreSQL 0001→0005 | Not rerun during this 2026-07-19 documentation refresh |
+| Populated upgrade through 0005 | Not rerun during this documentation refresh; `0005` is additive and refuses downgrade while 20-second captures may exist |
 | Legacy session interaction/dialogue state | Preserved as NULL/read-only |
 | Expected application tables | PASS |
 | Required unique indexes | PASS |

@@ -1,6 +1,6 @@
 # 보고서 에이전트
 
-최종 업데이트: 2026-07-15
+최종 업데이트: 2026-07-19
 
 ## Endpoint
 
@@ -9,7 +9,9 @@ POST /api/sessions/{sessionId}/reports
 GET  /api/sessions/{sessionId}/reports
 ```
 
-보고서 생성은 비동기이며 영구 저장됩니다. 수동 종료 또는 inactivity timeout은 동의한 report를 자동 queue합니다. `POST`는 누락/실패 report를 위한 idempotent retry입니다. `GET`은 `reportId`, `version`, `status`, `createdAt`, `generatedAt`만 반환하며 현재 patient/admin dashboard는 report body를 표시하지 않습니다.
+`REPORT_AI_ENABLED=false`가 기본값입니다. 이때 수동 종료와 inactivity timeout은 자동 report 생성을 건너뛰고 `POST`는 HTTP `202`와 정확히 `{"reportId":null,"version":null,"status":"not_started"}`를 반환합니다. Report Bedrock 호출과 model-version 등록은 없습니다. `GET`은 기존 이력 metadata를 보존하며 이력이 없으면 `[]`를 반환합니다. 현재 patient/admin dashboard는 report body를 표시하지 않습니다.
+
+`REPORT_AI_ENABLED=true`이면 보존된 비동기·영구 저장 동작을 사용합니다. 종료/timeout이 동의한 report를 queue하고 `POST`는 누락/실패 report를 위한 idempotent retry입니다. `GET`은 `reportId`, `version`, `status`, `createdAt`, `generatedAt`만 반환합니다.
 
 ## 규칙
 
@@ -21,4 +23,4 @@ GET  /api/sessions/{sessionId}/reports
 - 실제 report model/prompt version과 함께 AES-256-GCM 암호화 content를 저장하고 정제된 실패 상태만 노출합니다.
 - Bulk report/dataset download API는 없습니다.
 
-기존 synchronous handoff와 process-local handoff-job endpoint는 현재 API가 아닙니다. Legacy slot report는 immutable history로 남습니다. Voice, rPPG, self-event capture, craving-model experiment는 deferred입니다.
+기존 synchronous handoff와 process-local handoff-job endpoint는 현재 API가 아닙니다. Legacy slot report는 immutable history로 남습니다. 한국어 STT는 선택적·기본 OFF이고, 카메라 rPPG는 기본 ON이지만 동의와 준비 상태 gate를 유지하며, TTS는 Android 로컬입니다. Self-event capture와 craving-model experiment는 deferred입니다.
