@@ -83,6 +83,7 @@ class FakeRepository:
         self.recording_values: dict[str, Any] | None = None
         self.prediction_values: dict[str, Any] | None = None
         self.audits: list[dict[str, Any]] = []
+        self.window_results: dict[tuple[UUID, datetime, datetime, UUID], SensorResultRecord] = {}
         self.fail_recording = False
         self.fail_prediction = False
         self.recording_calls = 0
@@ -94,6 +95,12 @@ class FakeRepository:
     async def ensure_craving_model_version(self, **values: Any) -> UUID:
         assert values["model_name"] == "Conv1DNet"
         return UUID("00000000-0000-0000-0000-000000000001")
+
+    async def find_sensor_prediction(self, **values: Any) -> SensorResultRecord | None:
+        return self.window_results.get((
+            values["patient_id"], values["started_at"], values["ended_at"],
+            values["model_version_id"],
+        ))
 
     async def persist_sensor_recording(self, **values: Any) -> SensorResultRecord:
         self.recording_calls += 1
@@ -123,6 +130,10 @@ class FakeRepository:
             checksum_sha256=current.checksum_sha256, prediction=values["prediction"],
         )
         self.results[key] = result
+        self.window_results[(
+            values["patient_id"], values["started_at"], values["ended_at"],
+            values["model_version_id"],
+        )] = result
         return result
 
     async def audit(self, **values: Any) -> None:
@@ -208,6 +219,34 @@ def test_conflicting_id_is_audited_without_second_prediction() -> None:
                                      payload=payload(window_id, value=9.9))
             assert predictor.calls == 1
             assert repo.audits[-1]["action"] == "sensor.idempotency_conflict"
+
+    asyncio.run(scenario())
+
+
+def test_duplicate_time_window_with_new_client_id_reuses_prediction() -> None:
+    async def scenario() -> None:
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            service, repo, predictor = make_service(directory)
+            patient_id, consent_id = uuid4(), uuid4()
+            first = await service.ingest(
+                patient_id=patient_id,
+                consent_snapshot_id=consent_id,
+                ai_analysis_allowed=True,
+                notification_allowed=True,
+                payload=payload(uuid4()),
+            )
+            second = await service.ingest(
+                patient_id=patient_id,
+                consent_snapshot_id=consent_id,
+                ai_analysis_allowed=True,
+                notification_allowed=True,
+                payload=payload(uuid4()),
+            )
+
+            assert second["predictionId"] == first["predictionId"]
+            assert predictor.calls == 1
+            assert repo.prediction_calls == 1
+            assert repo.recording_calls == 2
 
     asyncio.run(scenario())
 

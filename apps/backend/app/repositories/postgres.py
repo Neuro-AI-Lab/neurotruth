@@ -103,6 +103,16 @@ class V25Repository(ABC):
     async def find_sensor_result(self, patient_id: UUID, client_window_id: UUID) -> SensorResultRecord | None:
         raise NotImplementedError
 
+    async def find_sensor_prediction(
+        self,
+        *,
+        patient_id: UUID,
+        started_at: datetime,
+        ended_at: datetime,
+        model_version_id: UUID,
+    ) -> SensorResultRecord | None:
+        raise NotImplementedError
+
     async def ensure_craving_model_version(
         self, *, model_name: str, model_version: str, artifact_uri: str | None,
         inference_task: str = "binary_classification",
@@ -394,6 +404,43 @@ class SqlAlchemyV25Repository(V25Repository):
             checksum_sha256=row["checksum_sha256"], prediction=dict(row["output_metadata"] or {}),
         )
 
+    async def find_sensor_prediction(
+        self,
+        *,
+        patient_id: UUID,
+        started_at: datetime,
+        ended_at: datetime,
+        model_version_id: UUID,
+    ) -> SensorResultRecord | None:
+        async with self.engine.connect() as conn:
+            row = (await conn.execute(text("""
+                SELECT p.id AS prediction_id,p.output_metadata,
+                       r.id AS recording_id,r.client_window_id,r.checksum_sha256,
+                       (SELECT a.id FROM craving_alerts a
+                        WHERE a.trigger_prediction_id=p.id
+                        ORDER BY a.triggered_at DESC LIMIT 1) AS alert_id
+                FROM craving_predictions p
+                JOIN sensor_recordings r ON r.id=p.sensor_recording_id
+                WHERE p.patient_id=:patient_id
+                  AND p.window_started_at=:started_at
+                  AND p.window_ended_at=:ended_at
+                  AND p.model_version_id=:model_version_id
+                LIMIT 1
+            """), {
+                "patient_id": patient_id,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "model_version_id": model_version_id,
+            })).mappings().one_or_none()
+        if row is None:
+            return None
+        return SensorResultRecord(
+            recording_id=row["recording_id"], prediction_id=row["prediction_id"],
+            alert_id=row["alert_id"], client_window_id=row["client_window_id"],
+            checksum_sha256=row["checksum_sha256"],
+            prediction=dict(row["output_metadata"] or {}),
+        )
+
     async def ensure_craving_model_version(
         self, *, model_name: str, model_version: str, artifact_uri: str | None,
         inference_task: str = "binary_classification",
@@ -487,7 +534,7 @@ class SqlAlchemyV25Repository(V25Repository):
                         checksum_sha256=recording["checksum_sha256"],
                         prediction=dict(existing["output_metadata"] or {}),
                     )
-                await conn.execute(text("""
+                inserted_prediction_id = (await conn.execute(text("""
                     INSERT INTO craving_predictions
                       (id,patient_id,sensor_recording_id,window_started_at,window_ended_at,
                        input_modalities,model_version_id,predicted_class_index,predicted_class_code,
@@ -499,6 +546,9 @@ class SqlAlchemyV25Repository(V25Repository):
                        CAST(:probabilities AS jsonb),:continuous_value,0.0,1.0,
                        CAST(:signal_quality AS jsonb),'{}'::jsonb,true,
                        CAST(:prediction_json AS jsonb),:predicted_at)
+                    ON CONFLICT ON CONSTRAINT uq_craving_predictions_window_model
+                    DO NOTHING
+                    RETURNING id
                 """), {
                     **values,
                     "class_code": values.get("class_code") or ("high" if int(values["class_index"]) == 1 else "low"),
@@ -506,7 +556,32 @@ class SqlAlchemyV25Repository(V25Repository):
                     "continuous_value": values.get("continuous_value"),
                     "signal_quality": json.dumps((values.get("prediction") or {}).get("inputQuality") or {}, separators=(",", ":")),
                     "prediction_json": json.dumps(values["prediction"], separators=(",", ":")),
-                })
+                })).scalar_one_or_none()
+                if inserted_prediction_id is None:
+                    duplicate = (await conn.execute(text("""
+                        SELECT p.id AS prediction_id,p.output_metadata,
+                               r.id AS recording_id,r.client_window_id,r.checksum_sha256,
+                               (SELECT a.id FROM craving_alerts a
+                                WHERE a.trigger_prediction_id=p.id
+                                ORDER BY a.triggered_at DESC LIMIT 1) AS alert_id
+                        FROM craving_predictions p
+                        JOIN sensor_recordings r ON r.id=p.sensor_recording_id
+                        WHERE p.patient_id=:patient_id
+                          AND p.window_started_at=:started_at
+                          AND p.window_ended_at=:ended_at
+                          AND p.model_version_id=:model_version_id
+                        LIMIT 1
+                    """), values)).mappings().one_or_none()
+                    if duplicate is None:
+                        raise RepositoryConflictError("Sensor prediction already exists")
+                    return SensorResultRecord(
+                        recording_id=duplicate["recording_id"],
+                        prediction_id=duplicate["prediction_id"],
+                        alert_id=duplicate["alert_id"],
+                        client_window_id=duplicate["client_window_id"],
+                        checksum_sha256=duplicate["checksum_sha256"],
+                        prediction=dict(duplicate["output_metadata"] or {}),
+                    )
                 if values.get("alert_id") is not None:
                     alert = values.get("alert") or {}
                     await conn.execute(text("""
