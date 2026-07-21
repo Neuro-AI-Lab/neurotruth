@@ -53,7 +53,7 @@ class SensorService:
         self.hub = hub
         self.latency = latency
         self._ingest_locks: WeakValueDictionary[
-            tuple[UUID, UUID], asyncio.Lock
+            tuple[UUID, datetime, datetime], asyncio.Lock
         ] = WeakValueDictionary()
 
     async def ingest(
@@ -65,15 +65,16 @@ class SensorService:
         notification_allowed: bool,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        self._timestamp(payload.get("windowStartMs"))
-        self._timestamp(payload.get("windowEndMs"))
+        started_at = self._timestamp(payload.get("windowStartMs"))
+        ended_at = self._timestamp(payload.get("windowEndMs"))
         client_window_id = UUID(str(payload["clientWindowId"]))
         canonical = canonical_sensor_json(payload)
         checksum = hashlib.sha256(canonical).hexdigest()
-        lock = self._ingest_locks.get((patient_id, client_window_id))
+        lock_key = (patient_id, started_at, ended_at)
+        lock = self._ingest_locks.get(lock_key)
         if lock is None:
             lock = asyncio.Lock()
-            self._ingest_locks[(patient_id, client_window_id)] = lock
+            self._ingest_locks[lock_key] = lock
         async with lock:
             return await self._ingest_locked(
                 patient_id=patient_id,
@@ -82,6 +83,8 @@ class SensorService:
                 notification_allowed=notification_allowed,
                 payload=payload,
                 client_window_id=client_window_id,
+                started_at=started_at,
+                ended_at=ended_at,
                 canonical=canonical,
                 checksum=checksum,
             )
@@ -95,6 +98,8 @@ class SensorService:
         notification_allowed: bool,
         payload: dict[str, Any],
         client_window_id: UUID,
+        started_at: datetime,
+        ended_at: datetime,
         canonical: bytes,
         checksum: str,
     ) -> dict[str, Any]:
@@ -117,8 +122,8 @@ class SensorService:
                     modalities=self._modalities(payload),
                     device_info=payload.get("deviceInfo") or {},
                     sample_rates=payload.get("sampleRates") or {},
-                    started_at=self._timestamp(payload.get("windowStartMs")),
-                    ended_at=self._timestamp(payload.get("windowEndMs")),
+                    started_at=started_at,
+                    ended_at=ended_at,
                     bytes=stored.byte_size,
                     checksum=stored.checksum_sha256,
                     key_version=stored.key_id,
@@ -142,6 +147,29 @@ class SensorService:
         if not self.predictor.ready:
             raise SensorModelUnavailable("Prediction model is unavailable")
 
+        model_version_id = await self.repository.ensure_craving_model_version(
+            model_name=self.predictor.model_name,
+            model_version=self.predictor.model_version,
+            artifact_uri=self.predictor.artifact_uri,
+            inference_task=getattr(self.predictor, "inference_task", "binary_classification"),
+            output_schema=getattr(self.predictor, "output_schema", {
+                "predictionSchema": "binary-craving-v1",
+                "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
+            }),
+            config=getattr(self.predictor, "registration_config", {"window_sec": 10}),
+        )
+        existing_prediction = await self.repository.find_sensor_prediction(
+            patient_id=patient_id,
+            started_at=started_at,
+            ended_at=ended_at,
+            model_version_id=model_version_id,
+        )
+        if existing_prediction is not None:
+            return self._response(
+                existing_prediction,
+                notification_allowed=notification_allowed,
+            )
+
         try:
             prediction = await self.predictor.predict(payload)
         except Exception as exc:
@@ -157,17 +185,6 @@ class SensorService:
             }.items()
             if not str(key).startswith("_")
         }
-        model_version_id = await self.repository.ensure_craving_model_version(
-            model_name=self.predictor.model_name,
-            model_version=self.predictor.model_version,
-            artifact_uri=self.predictor.artifact_uri,
-            inference_task=getattr(self.predictor, "inference_task", "binary_classification"),
-            output_schema=getattr(self.predictor, "output_schema", {
-                "predictionSchema": "binary-craving-v1",
-                "classes": [{"index": 0, "code": "low"}, {"index": 1, "code": "high"}],
-            }),
-            config=getattr(self.predictor, "registration_config", {"window_sec": 10}),
-        )
         alert_id = uuid4() if notification_allowed and (
             bool(alert.get("alertRequired")) or alert.get("alertAction") not in (None, "none")
         ) else None
@@ -178,8 +195,8 @@ class SensorService:
             patient_id=patient_id,
             model_version_id=model_version_id,
             modalities=self._modalities(payload),
-            started_at=self._timestamp(payload.get("windowStartMs")),
-            ended_at=self._timestamp(payload.get("windowEndMs")),
+            started_at=started_at,
+            ended_at=ended_at,
             class_index=int(prediction["class"]),
             class_code=str(prediction.get("classCode") or ("high" if int(prediction["class"]) == 1 else "low")),
             confidence=prediction.get("confidence"),
