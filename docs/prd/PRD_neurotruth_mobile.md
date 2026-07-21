@@ -812,6 +812,7 @@ Logs and crash reports must not contain conversation bodies, transcripts, email 
 | O-006 | Battery | Drain from continuous Watch collection plus a held SSE connection is unmeasured | Measure over 8 hours of real use at P0 completion, then revisit cadence | Needs measurement |
 | O-007 | Offline queue | Cap for accumulated offline sensor windows | **Decided (provisional):** 60 windows, oldest-first eviction (§5.6). Revisit in P1 with field data | Decided |
 | O-008 | rPPG upload size copy | The reference app's error copy says "20MiB 초과" while the server default maximum is 40 MiB | Use the server value (40 MiB) and read the limit from the 413 response where possible; do not port the stale string | Decided |
+| O-010 | AGP vs compileSdk | AGP 8.5.2 is only tested against compileSdk 34, so `compileSdk 35` emits a compatibility warning on every build. 8.5.2 is the pinned 16 KB alignment baseline from the API spec; 35 was chosen here for Android 15 FGS rules | Either bump AGP to 8.6+ (still satisfies 16 KB alignment) or drop to compileSdk 34 and lose the Android 15 FGS coverage. Builds succeed either way today | Needs decision |
 | O-009 | `GET /api/me/dashboard` | Listed in §11 as "NT-08 history" but all five NT-08 sections are served by `craving-dashboard`, `craving-probability-series`, and `ppg-preview` | Not used by this app. Kept in §11 for completeness only | Decided |
 
 ---
