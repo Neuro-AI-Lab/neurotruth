@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.AlertActionPolicy
 import com.neurotruth.mobile.core.CameraActionPolicy
-import com.neurotruth.mobile.core.CameraAvailability
 import com.neurotruth.mobile.core.ConsentGates
 import com.neurotruth.mobile.core.CravingPrediction
 import com.neurotruth.mobile.core.CravingStage
@@ -18,19 +17,25 @@ import com.neurotruth.mobile.core.MeasurementOriginLabel
 import com.neurotruth.mobile.core.SOURCE_WATCH
 import com.neurotruth.mobile.core.WatchConnectionState
 import com.neurotruth.mobile.core.WatchConnectionTracker
-import com.neurotruth.mobile.core.net.ApiRequest
+import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.Wearable
 import com.neurotruth.mobile.data.ProfileRepository
+import com.neurotruth.mobile.data.RppgJobStore
+import com.neurotruth.mobile.data.RppgRepository
+import com.neurotruth.mobile.service.MonitoringBlocker
+import com.neurotruth.mobile.service.MonitoringState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import org.json.JSONObject
 
 data class HomeUiState(
     // Region 1 — profile summary
@@ -46,7 +51,14 @@ data class HomeUiState(
 
     // Region 3 — watch state and camera measurement
     val watchState: WatchConnectionState = WatchConnectionState.CHECKING,
-    val cameraBlockedReason: String? = CameraActionPolicy.REASON_WATCH_UNKNOWN,
+    val cameraEnabled: Boolean = false,
+
+    /** The blocking reason, or the note that the capture screen will ask for the permission. */
+    val cameraNotice: String? = CameraActionPolicy.REASON_WATCH_UNKNOWN,
+
+    /** Why measurement is paused, published by the services layer. Never a craving value. */
+    val monitoringNotice: String? = null,
+    val droppedNotice: String? = null,
 
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
@@ -57,8 +69,6 @@ data class HomeUiState(
     /** Never 0% and never "낮음" — an absent measurement is its own state. */
     val stageLabel: String get() = stage?.label ?: CravingStage.NO_DATA_LABEL
 
-    val cameraEnabled: Boolean get() = cameraBlockedReason == null
-
     val watchStateLabel: String
         get() = when (watchState) {
             WatchConnectionState.CONNECTED -> "연결됨"
@@ -66,6 +76,23 @@ data class HomeUiState(
             WatchConnectionState.CHECKING -> "확인 중"
             WatchConnectionState.ERROR -> "상태를 확인할 수 없어요"
         }
+}
+
+/**
+ * Home copy for a paused measurement.
+ *
+ * A revoked notification permission means the foreground service cannot show its notification and
+ * therefore cannot run at all, so it is stated plainly instead of failing silently. None of these
+ * strings carries a craving value.
+ */
+internal fun MonitoringBlocker.notice(): String? = when (this) {
+    MonitoringBlocker.NONE -> null
+    MonitoringBlocker.NOTIFICATION_PERMISSION_REVOKED ->
+        "알림 권한이 꺼져 있어 측정이 멈췄어요. 설정에서 알림을 허용하면 다시 시작해요."
+    MonitoringBlocker.WATCH_DISCONNECTED -> "Watch 연결이 끊겨 측정이 멈췄어요."
+    MonitoringBlocker.CONSENT_WITHDRAWN -> "동의가 철회되어 측정이 멈췄어요."
+    MonitoringBlocker.UPLOAD_PAUSED -> "네트워크 문제로 전송이 잠시 멈췄어요."
+    MonitoringBlocker.AUTHENTICATION_REQUIRED -> "다시 로그인하면 측정을 이어갑니다."
 }
 
 /**
@@ -85,6 +112,7 @@ class HomeViewModel(
 ) : ViewModel() {
 
     private val profileRepository = ProfileRepository(app.apiClient, app.endpoints)
+    private val rppgRepository = RppgRepository(app.apiClient, app.endpoints, RppgJobStore(app))
     private val watchTracker = WatchConnectionTracker()
 
     private var latest: CravingPrediction? = null
@@ -96,6 +124,62 @@ class HomeViewModel(
 
     init {
         refresh()
+        observeMonitoring()
+        pollWatchConnection()
+    }
+
+    /**
+     * The services layer owns the SSE stream and the foreground-service state; Home only renders
+     * what it publishes. Predictions still go through [onPrediction] so a camera result and a Watch
+     * result are ordered by the same policy no matter which arrives first.
+     */
+    private fun observeMonitoring() {
+        viewModelScope.launch {
+            MonitoringState.latestPrediction.collect { prediction ->
+                prediction?.let(::onPrediction)
+            }
+        }
+        viewModelScope.launch {
+            MonitoringState.blocker.collect { blocker ->
+                _state.update { it.copy(monitoringNotice = blocker.notice()) }
+            }
+        }
+        viewModelScope.launch {
+            MonitoringState.droppedNotice.collect { notice ->
+                _state.update { it.copy(droppedNotice = notice) }
+            }
+        }
+    }
+
+    /**
+     * Connection is read from the Wear Data Layer connected-node list and nowhere else — no API
+     * field or endpoint carries it. [WatchConnectionTracker] converts the raw counts into the Home
+     * state, so a failed query lands on `ERROR` rather than being mistaken for a disconnection.
+     */
+    private fun pollWatchConnection() {
+        viewModelScope.launch {
+            while (isActive) {
+                queryWatchNodes()
+                delay(WATCH_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private suspend fun queryWatchNodes() {
+        withContext(Dispatchers.IO) {
+            runCatching { Tasks.await(Wearable.getNodeClient(app).connectedNodes).size }
+        }
+            .onSuccess { onWatchNodesQueried(it) }
+            .onFailure { onWatchQueryFailed() }
+    }
+
+    /** Returning to the foreground re-confirms the connection before the camera action reopens. */
+    fun onResumed() {
+        onWatchPeerEvent()
+        // Consent and service readiness can have changed while the app was away; the initial load
+        // is already in flight on the first resume, so it is not repeated.
+        if (!_state.value.isLoading) refresh()
+        viewModelScope.launch { queryWatchNodes() }
     }
 
     fun refresh() {
@@ -105,12 +189,14 @@ class HomeViewModel(
                 runCatching {
                     val snapshot = profileRepository.me()
                     gates = ConsentGates(snapshot.consent)
-                    rppgServiceReady = queryRppgReady()
-                    snapshot
+                    rppgServiceReady = rppgRepository.isReady()
+                    // The stored camera result is offered, not imposed: LatestPredictionPolicy
+                    // keeps a newer Watch result in front of it.
+                    snapshot to rppgRepository.latestResult(snapshot.userId)?.toPrediction()
                 }
             }
             outcome
-                .onSuccess { snapshot ->
+                .onSuccess { (snapshot, cameraPrediction) ->
                     _state.update {
                         it.copy(
                             displayName = snapshot.displayName,
@@ -119,6 +205,7 @@ class HomeViewModel(
                             errorMessage = null,
                         )
                     }
+                    cameraPrediction?.let(::onPrediction)
                     recompute()
                 }
                 .onFailure {
@@ -171,11 +258,13 @@ class HomeViewModel(
         val watchState = watchTracker.current()
         val cameraPermission = ContextCompat.checkSelfPermission(app, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
-        val availability = CameraActionPolicy.resolve(
-            watchState = watchState,
-            gates = gates,
-            cameraPermissionGranted = cameraPermission,
-            rppgServiceReady = rppgServiceReady,
+        val entry = HomeCameraEntryPolicy.resolve(
+            CameraActionPolicy.resolve(
+                watchState = watchState,
+                gates = gates,
+                cameraPermissionGranted = cameraPermission,
+                rppgServiceReady = rppgServiceReady,
+            ),
         )
         val current = latest
         val showCraving = gates.canReceiveAiPrediction || gates.consent == null
@@ -194,7 +283,8 @@ class HomeViewModel(
                     "설정에서 AI 분석 동의를 켜면 갈망 상태를 볼 수 있어요."
                 },
                 watchState = watchState,
-                cameraBlockedReason = (availability as? CameraAvailability.Blocked)?.reason,
+                cameraEnabled = entry.enabled,
+                cameraNotice = entry.notice,
             )
         }
     }
@@ -210,16 +300,12 @@ class HomeViewModel(
         )
     }
 
-    /** All three flags together are the only reading of `ready`. */
-    private fun queryRppgReady(): Boolean = runCatching {
-        val response = app.apiClient.execute(ApiRequest("GET", app.endpoints.rppgStatus))
-        if (!response.isSuccessful) return false
-        val json = JSONObject(response.body)
-        json.optBoolean("enabled") && json.optBoolean("available") && json.optBoolean("modelLoaded")
-    }.getOrDefault(false)
-
     companion object {
         private const val LIVE_WINDOW_MS = 30_000L
+
+        /** Matches the confirmation window [WatchConnectionTracker] needs to leave CHECKING. */
+        private const val WATCH_POLL_INTERVAL_MS = 3_000L
+
         private val TIMESTAMP_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.KOREA)
 
         fun factory(app: NeuroTruthApp): ViewModelProvider.Factory =

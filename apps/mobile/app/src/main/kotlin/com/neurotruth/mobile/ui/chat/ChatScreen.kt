@@ -1,5 +1,9 @@
 package com.neurotruth.mobile.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +18,16 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -36,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
@@ -53,17 +63,48 @@ import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
 @Composable
 fun ChatScreen(
     onFinished: () -> Unit,
+    onRequiresAuq: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ChatViewModel = viewModel(
         factory = ChatViewModel.factory(NeuroTruthApp.from(LocalContext.current)),
     ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
 
-    // Leaving the screen stops playback.
+    // A newly created session offers NT-06 before dialogue; a resumed one goes straight back to it.
+    LaunchedEffect(state.requiresAuq) {
+        if (state.requiresAuq) {
+            viewModel.onAuqNavigated()
+            onRequiresAuq()
+        }
+    }
+    val listState = rememberLazyListState()
+    val context = LocalContext.current
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            viewModel.onMicPermissionChanged(true)
+            viewModel.onMicToggled()
+        } else {
+            viewModel.onMicPermissionDenied()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.onMicPermissionChanged(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+
+    // Leaving the screen stops playback and deletes any temporary recording.
     DisposableEffect(Unit) {
-        onDispose { viewModel.stopPlaybackForNavigation() }
+        onDispose {
+            viewModel.stopPlaybackForNavigation()
+            viewModel.releaseRecording()
+        }
     }
 
     LaunchedEffect(state.messages.size) {
@@ -172,6 +213,41 @@ fun ChatScreen(
             )
         }
 
+        if (state.isRecording) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "녹음 중 · 최대 30초",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { contentDescription = "녹음 중, 최대 30초" },
+                )
+                TextButton(
+                    onClick = viewModel::cancelRecording,
+                    modifier = Modifier
+                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                        .semantics { contentDescription = "녹음 취소" },
+                ) {
+                    Text("취소")
+                }
+            }
+        }
+
+        // STT status sits above the field it writes into. It never blocks typing.
+        state.voiceNotice?.let { notice ->
+            Text(
+                text = notice,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+                    .semantics { contentDescription = "음성 입력 안내: $notice" },
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -179,6 +255,21 @@ fun ChatScreen(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (state.voiceConsentGranted) {
+                MicButton(
+                    recording = state.isRecording,
+                    transcribing = state.isTranscribing,
+                    enabled = state.micEnabled || state.isRecording,
+                    onClick = {
+                        when {
+                            state.isRecording || state.micPermissionGranted ->
+                                viewModel.onMicToggled()
+
+                            else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                )
+            }
             OutlinedTextField(
                 value = state.draft,
                 onValueChange = viewModel::onDraftChanged,
@@ -207,6 +298,41 @@ fun ChatScreen(
                     Text("전송", style = MaterialTheme.typography.labelLarge)
                 }
             }
+        }
+    }
+}
+
+/**
+ * The microphone never replaces the keyboard. It is absent without `voice` consent, and a denied
+ * permission or a failed transcription only produces a notice — the field beside it stays usable.
+ */
+@Composable
+private fun MicButton(
+    recording: Boolean,
+    transcribing: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        enabled = enabled && !transcribing,
+        modifier = Modifier
+            .size(NeuroTruthSpacing.minTouchTarget)
+            .semantics {
+                contentDescription = when {
+                    transcribing -> "음성을 문자로 바꾸는 중"
+                    recording -> "녹음 중지하고 문자로 바꾸기"
+                    else -> "음성으로 입력하기, 최대 30초"
+                }
+            },
+    ) {
+        if (transcribing) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(
+                imageVector = if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
+                contentDescription = null,
+            )
         }
     }
 }

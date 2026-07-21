@@ -29,7 +29,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.neurotruth.mobile.ui.auth.AuthScreen
+import com.neurotruth.mobile.ui.auq.AuqScreen
 import com.neurotruth.mobile.ui.chat.ChatScreen
+import com.neurotruth.mobile.ui.dashboard.DashboardScreen
+import com.neurotruth.mobile.ui.rppg.RppgCaptureScreen
+import com.neurotruth.mobile.ui.settings.SettingsScreen
 import com.neurotruth.mobile.ui.consent.ConsentScreen
 import com.neurotruth.mobile.ui.home.HomeScreen
 import com.neurotruth.mobile.ui.notice.NoticeScreen
@@ -42,6 +46,9 @@ object NeuroTruthRoutes {
     const val HOME = "home"
     const val DASHBOARD = "dashboard"
     const val CHAT = "chat"
+    const val AUQ = "auq"
+    const val SETTINGS = "settings"
+    const val RPPG = "rppg"
 
     /** NT-01 through NT-03. The bottom bar is hidden until authentication completes. */
     val PRE_AUTH: Set<String> = setOf(NOTICE, AUTH, CONSENT)
@@ -122,18 +129,62 @@ fun NeuroTruthNavHost(
 
             composable(NeuroTruthRoutes.HOME) {
                 HomeScreen(
-                    onOpenSettings = { /* NT-09 is P1 and is not part of this UI layer. */ },
-                    onOpenCameraMeasurement = { /* NT-04R is P1 and is not part of this layer. */ },
+                    onOpenSettings = { navController.navigate(NeuroTruthRoutes.SETTINGS) },
+                    onOpenCameraMeasurement = { navController.navigate(NeuroTruthRoutes.RPPG) },
                 )
             }
 
             composable(NeuroTruthRoutes.DASHBOARD) {
-                DashboardPlaceholder()
+                DashboardScreen()
             }
 
             composable(NeuroTruthRoutes.CHAT) {
                 ChatScreen(
-                    onFinished = { navController.switchTab(NeuroTruthRoutes.HOME) },
+                    onFinished = { navController.switchTab(NeuroTruthRoutes.DASHBOARD) },
+                    onRequiresAuq = {
+                        navController.navigate(NeuroTruthRoutes.AUQ) { launchSingleTop = true }
+                    },
+                )
+            }
+
+            composable(NeuroTruthRoutes.AUQ) {
+                AuqScreen(
+                    // Submitting and skipping both land here. Chat re-enters ensureSession, which
+                    // returns the same active session, so NT-06 is not offered again.
+                    onContinueToChat = {
+                        navController.navigate(NeuroTruthRoutes.CHAT) {
+                            popUpTo(NeuroTruthRoutes.AUQ) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+
+            composable(NeuroTruthRoutes.SETTINGS) {
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onSignedOut = {
+                        navController.navigate(NeuroTruthRoutes.AUTH) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+
+            composable(NeuroTruthRoutes.RPPG) {
+                RppgCaptureScreen(
+                    // A completed job has already been routed once and the session ensured, so this
+                    // only moves the user to the conversation.
+                    onCompleted = {
+                        navController.navigate(NeuroTruthRoutes.CHAT) {
+                            popUpTo(NeuroTruthRoutes.RPPG) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onCancelled = { navController.popBackStack() },
                 )
             }
         }
@@ -154,31 +205,5 @@ private fun NavHostController.switchTab(route: String) {
         popUpTo(NeuroTruthRoutes.HOME) { saveState = true }
         launchSingleTop = true
         restoreState = true
-    }
-}
-
-/**
- * NT-08 is P1 and outside this layer's scope. The tab is real so the bar keeps its three
- * destinations; the screen states plainly that it is not built yet rather than showing zeros.
- */
-@Composable
-private fun DashboardPlaceholder() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(NeuroTruthSpacing.screenHorizontal),
-        verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = "대시보드",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.semantics { contentDescription = "대시보드 화면" },
-        )
-        Text(
-            text = "기록 화면은 아직 준비 중이에요.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }

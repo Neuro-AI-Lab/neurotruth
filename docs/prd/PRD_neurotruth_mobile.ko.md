@@ -811,6 +811,7 @@ pending 챗봇 요청에는 갈망 상황에 대한 환자의 발화 원문이, 
 | O-006 | 배터리 | 상시 Watch 수집 + SSE 유지의 소모량 미측정 | P0 완료 시점에 8시간 실사용 측정 후 cadence 재검토 | 측정 필요 |
 | O-007 | 오프라인 큐 | 센서 window의 오프라인 누적 상한 | **결정(잠정):** 60개, 오래된 것부터 폐기(§5.6). P1에서 필드 데이터로 재검토 | 결정됨 |
 | O-008 | rPPG 업로드 크기 문구 | 참조 앱의 오류 문구는 "20MiB 초과"인데 서버 기본 최대값은 40 MiB | 서버 값(40 MiB)을 사용하고 가능하면 413 응답에서 한도를 읽음. 낡은 문자열을 이식하지 않음 | 결정됨 |
+| O-011 | PPG 섹션의 측정 선택 경로 | NT-08의 PPG 섹션은 *선택한* prediction의 파형을 보여주는데, `GET /api/me/craving-probability-series`의 각 점은 10초 버킷 평균이라 여러 prediction을 합친 값입니다(`postgres.py::craving_probability_rows`). 실을 수 있는 단일 `predictionId`가 없습니다 | 클라이언트 경로는 플래그 뒤에 완성해 두었고, 서버가 대표 `predictionId`를 실어주면 클라이언트 변경 없이 활성화됩니다. 그 전까지는 API가 필요 없는 Watch 실시간 파형을 표시합니다 | 백엔드 결정 필요 |
 | O-010 | AGP와 compileSdk | AGP 8.5.2는 compileSdk 34까지만 검증돼 있어 `compileSdk 35`에서 매 빌드 호환성 경고가 납니다. 8.5.2는 API 스펙이 고정한 16KB 정렬 baseline이고, 35는 Android 15 FGS 규칙 때문에 이 문서가 선택한 값입니다 | AGP를 8.6 이상으로 올리거나(16KB 정렬은 그대로 충족) compileSdk를 34로 낮춰 Android 15 FGS 대응을 포기합니다. 현재는 어느 쪽이든 빌드는 성공합니다 | 결정 필요 |
 | O-009 | `GET /api/me/dashboard` | §11에 "NT-08 이력"으로 올라 있으나 NT-08의 5개 영역은 모두 `craving-dashboard`, `craving-probability-series`, `ppg-preview`가 담당 | 이 앱에서는 사용하지 않음. §11에는 완전성을 위해서만 남김 | 결정됨 |
 

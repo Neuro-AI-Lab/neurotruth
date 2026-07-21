@@ -8,14 +8,19 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.ChatRetryPolicy
+import com.neurotruth.mobile.core.ConsentGates
 import com.neurotruth.mobile.core.DialogueFailure
 import com.neurotruth.mobile.core.INPUT_MODALITY_TEXT
+import com.neurotruth.mobile.core.INPUT_MODALITY_VOICE
 import com.neurotruth.mobile.core.PendingChatRetry
 import com.neurotruth.mobile.data.AlertSessionEntry
+import com.neurotruth.mobile.core.net.ApiHttpException
 import com.neurotruth.mobile.core.net.ApiRequest
 import com.neurotruth.mobile.core.net.ApiResponse
 import com.neurotruth.mobile.data.ActiveSessionStore
+import com.neurotruth.mobile.data.ProfileRepository
 import com.neurotruth.mobile.data.SessionRepository
+import com.neurotruth.mobile.data.TranscriptionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,12 +49,33 @@ data class ChatUiState(
     val pendingRetry: PendingChatRetry? = null,
     val speakingMessageId: String? = null,
     val ttsAvailable: Boolean = false,
+    /** The modality the current draft will be sent with; a confirmed transcript makes it voice. */
+    val draftInputModality: String = INPUT_MODALITY_TEXT,
+    val voiceConsentGranted: Boolean = false,
+    val micPermissionGranted: Boolean = false,
+    val isRecording: Boolean = false,
+    val isTranscribing: Boolean = false,
+    val voiceNotice: String? = null,
+    /**
+     * Set when the server created a new session, so NT-06 is offered before dialogue. Returning
+     * from the AUQ re-enters this screen, where the server hands back the same active session with
+     * a null `assistantText` — so the flag is false the second time and there is no loop.
+     */
+    val requiresAuq: Boolean = false,
     val errorMessage: String? = null,
     val finished: Boolean = false,
 ) {
     val canSend: Boolean
         get() = sessionId != null && !isSending && !isPreparing && draft.isNotBlank() &&
-            pendingRetry == null
+            pendingRetry == null && !isRecording && !isTranscribing
+
+    /**
+     * The microphone is an addition to text input, never a replacement: it is simply absent when
+     * voice consent is missing, and typing stays available in every state below.
+     */
+    val micEnabled: Boolean
+        get() = voiceConsentGranted && sessionId != null && !isPreparing && !isSending &&
+            !isTranscribing
 }
 
 /**
@@ -127,6 +153,12 @@ class ChatViewModel(
         activeSessionStore = ActiveSessionStore(app),
     )
 
+    private val transcriptionRepository = TranscriptionRepository(app.apiClient, app.endpoints)
+
+    private val profileRepository = ProfileRepository(app.apiClient, app.endpoints)
+
+    private val recorder = VoiceRecorder(app)
+
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
@@ -137,7 +169,12 @@ class ChatViewModel(
     )
 
     init {
+        recorder.onMaxDurationReached = {
+            // The 30-second cap is enforced by the platform; finalize exactly as a tap would.
+            viewModelScope.launch { stopAndTranscribe() }
+        }
         openSession()
+        loadVoiceConsent()
     }
 
     /**
@@ -162,6 +199,7 @@ class ChatViewModel(
                         it.copy(
                             sessionId = entry.sessionId,
                             isPreparing = false,
+                            requiresAuq = entry.requiresAuq,
                             messages = listOf(
                                 ChatMessage(
                                     id = "opening",
@@ -186,15 +224,23 @@ class ChatViewModel(
 
     fun retryOpenSession() = openSession()
 
+    /** Consumed once the navigation to NT-06 has happened, so it cannot fire twice. */
+    fun onAuqNavigated() {
+        _state.update { it.copy(requiresAuq = false) }
+    }
+
     fun onDraftChanged(value: String) {
         // Editing the body abandons the pending retry: an edited message is a new message with a
         // new id, never the same id with different content.
+        // Editing a transcript keeps it a voice-originated message; clearing the field returns the
+        // draft to plain text so a later typed message is not mislabelled.
+        val modality = if (value.isBlank()) INPUT_MODALITY_TEXT else _state.value.draftInputModality
         _state.update {
             if (it.pendingRetry != null) {
                 app.pendingChatStore.clear()
-                it.copy(draft = value, pendingRetry = null)
+                it.copy(draft = value, draftInputModality = modality, pendingRetry = null)
             } else {
-                it.copy(draft = value)
+                it.copy(draft = value, draftInputModality = modality)
             }
         }
     }
@@ -216,15 +262,20 @@ class ChatViewModel(
         if (content.isEmpty()) return
 
         val clientMessageId = UUID.randomUUID().toString()
+        // A confirmed transcript travels the same route, with the same idempotency key and the same
+        // one-shot retry as typed text; only the modality label differs.
+        val inputModality = current.draftInputModality
         _state.update {
             it.copy(
                 draft = "",
+                draftInputModality = INPUT_MODALITY_TEXT,
                 isSending = true,
                 errorMessage = null,
+                voiceNotice = null,
                 messages = it.messages + ChatMessage(clientMessageId, fromUser = true, text = content),
             )
         }
-        dispatch(sessionId, clientMessageId, content, INPUT_MODALITY_TEXT, isRetry = false)
+        dispatch(sessionId, clientMessageId, content, inputModality, isRetry = false)
     }
 
     /** One retry only, with the same id, an identical body and an identical modality. */
@@ -255,6 +306,129 @@ class ChatViewModel(
     }
 
     fun stopPlaybackForNavigation() = tts.stop()
+
+    // -----------------------------------------------------------------------------------------
+    // NT-07 STT
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * `voice` consent gates the microphone. The snapshot the auth client already holds is used when
+     * present so the screen does not wait on the network; otherwise `GET /api/me` fills it in. A
+     * failure here leaves the microphone hidden and text input untouched.
+     */
+    private fun loadVoiceConsent() {
+        val cached = ConsentGates(app.apiClient.consent())
+        if (cached.canUseVoice) {
+            _state.update { it.copy(voiceConsentGranted = true) }
+            return
+        }
+        viewModelScope.launch {
+            val granted = withContext(Dispatchers.IO) {
+                runCatching { ConsentGates(profileRepository.me().consent).canUseVoice }
+                    .getOrDefault(false)
+            }
+            _state.update { it.copy(voiceConsentGranted = granted) }
+        }
+    }
+
+    fun onMicPermissionChanged(granted: Boolean) {
+        _state.update { it.copy(micPermissionGranted = granted) }
+    }
+
+    /** Denying the microphone leaves text conversation fully functional; it only adds a notice. */
+    fun onMicPermissionDenied() {
+        _state.update { it.copy(micPermissionGranted = false, voiceNotice = MIC_PERMISSION_NOTICE) }
+    }
+
+    /** Tap to start, tap again to stop and transcribe. */
+    fun onMicToggled() {
+        if (_state.value.isRecording) {
+            viewModelScope.launch { stopAndTranscribe() }
+            return
+        }
+        val current = _state.value
+        if (!current.micEnabled || !current.micPermissionGranted) return
+        if (!recorder.start()) {
+            _state.update { it.copy(voiceNotice = RECORD_FAILED_NOTICE) }
+            return
+        }
+        _state.update {
+            it.copy(isRecording = true, voiceNotice = null, errorMessage = null)
+        }
+    }
+
+    /** Discards the capture without uploading it; the temporary file is deleted here. */
+    fun cancelRecording() {
+        if (!_state.value.isRecording) return
+        recorder.cancel()
+        _state.update { it.copy(isRecording = false, voiceNotice = null) }
+    }
+
+    /** Leaving the screen must not leave audio on disk. */
+    fun releaseRecording() {
+        recorder.cancel()
+        _state.update { it.copy(isRecording = false) }
+    }
+
+    private suspend fun stopAndTranscribe() {
+        if (!recorder.isRecording) return
+        val file = recorder.stop()
+        _state.update { it.copy(isRecording = false) }
+        val sessionId = _state.value.sessionId
+        if (file == null || sessionId == null) {
+            file?.delete()
+            _state.update { it.copy(voiceNotice = RECORD_FAILED_NOTICE) }
+            return
+        }
+
+        _state.update { it.copy(isTranscribing = true, voiceNotice = null) }
+        val outcome = withContext(Dispatchers.IO) {
+            try {
+                runCatching { transcriptionRepository.transcribe(sessionId, file) }
+            } finally {
+                // Deleted on success, failure and cancellation alike.
+                file.delete()
+            }
+        }
+        outcome
+            .onSuccess { text ->
+                if (text.isNullOrBlank()) {
+                    _state.update {
+                        it.copy(isTranscribing = false, voiceNotice = EMPTY_TRANSCRIPT_NOTICE)
+                    }
+                    return@onSuccess
+                }
+                // Never auto-sent: the transcript lands in the editable field for confirmation.
+                _state.update {
+                    it.copy(
+                        isTranscribing = false,
+                        draft = mergeDraft(it.draft, text),
+                        draftInputModality = INPUT_MODALITY_VOICE,
+                        voiceNotice = TRANSCRIPT_READY_NOTICE,
+                    )
+                }
+            }
+            .onFailure { error ->
+                _state.update {
+                    it.copy(isTranscribing = false, voiceNotice = voiceNoticeFor(error))
+                }
+            }
+    }
+
+    private fun mergeDraft(existing: String, transcript: String): String =
+        if (existing.isBlank()) transcript else "${existing.trimEnd()} $transcript"
+
+    /** STT never blocks the conversation: every branch leaves the text field usable. */
+    private fun voiceNoticeFor(error: Throwable): String = when {
+        error !is ApiHttpException -> "네트워크 상태를 확인하고 다시 시도해 주세요. 직접 입력해도 괜찮아요."
+        error.statusCode == 403 -> "설정에서 음성 동의를 켜면 마이크를 사용할 수 있어요."
+        error.statusCode == 404 -> "이 대화는 이미 종료되었어요."
+        error.statusCode == 413 || error.statusCode == 415 || error.statusCode == 422 ->
+            "녹음을 인식할 수 없었어요. 직접 입력해 주세요."
+        error.statusCode == 503 -> "음성 인식을 지금 사용할 수 없어요. 직접 입력해 주세요."
+        error.statusCode == 504 -> "음성 인식이 지연되고 있어요. 직접 입력해 주세요."
+        else -> "음성을 인식하지 못했어요. 직접 입력해 주세요."
+    }
 
     private fun dispatch(
         sessionId: String,
@@ -396,12 +570,18 @@ class ChatViewModel(
 
     override fun onCleared() {
         tts.shutdown()
+        recorder.cancel()
         super.onCleared()
     }
 
     companion object {
         private const val HTTP_BAD_GATEWAY = 502
         private const val RESUMED_NOTICE = "이전 대화를 이어서 진행할게요."
+        private const val MIC_PERMISSION_NOTICE =
+            "마이크 권한이 없어 음성 입력을 사용할 수 없어요. 직접 입력해도 괜찮아요."
+        private const val RECORD_FAILED_NOTICE = "녹음을 시작하지 못했어요. 직접 입력해 주세요."
+        private const val EMPTY_TRANSCRIPT_NOTICE = "음성을 인식하지 못했어요. 직접 입력해 주세요."
+        private const val TRANSCRIPT_READY_NOTICE = "인식한 문장을 확인하고 전송해 주세요."
 
         fun factory(app: NeuroTruthApp): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

@@ -29,16 +29,20 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
@@ -67,6 +71,17 @@ fun HomeScreen(
     ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Watch connection is re-confirmed on every return to the foreground rather than trusted from
+    // before the app was backgrounded.
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     if (state.developerEntryUnlocked) {
         AlertDialog(
@@ -115,6 +130,9 @@ fun HomeScreen(
             onDeveloperEntry = viewModel::onDeveloperEntryUnlocked,
         )
 
+        state.monitoringNotice?.let { MonitoringBanner(message = it, label = "측정 상태 안내") }
+        state.droppedNotice?.let { MonitoringBanner(message = it, label = "전송 안내") }
+
         CravingStateCard(state = state)
 
         WatchAndCameraCard(
@@ -138,6 +156,30 @@ fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * A banner the services layer published — a paused measurement or an evicted retry queue.
+ *
+ * It states why measurement is not running and never carries a craving value or a percentage.
+ */
+@Composable
+private fun MonitoringBanner(message: String, label: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "$label: $message" },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
+        )
     }
 }
 
@@ -278,8 +320,10 @@ private fun CravingStateCard(state: HomeUiState) {
 /**
  * Region 3.
  *
- * The camera action is enabled only when [CameraActionPolicy] says so; while it is blocked the
- * reason from `:core` is shown verbatim beside it. A checking or error Watch state never enables it.
+ * The camera action follows [CameraActionPolicy] through [HomeCameraEntryPolicy]; while it is
+ * blocked the reason from `:core` is shown verbatim beside it. A checking or error Watch state never
+ * enables it. A missing OS camera permission is the one non-blocking case — the button stays
+ * tappable and NT-04R asks for the permission on entry.
  */
 @Composable
 private fun WatchAndCameraCard(
@@ -322,16 +366,19 @@ private fun WatchAndCameraCard(
                         .widthIn(min = 132.dp)
                         .heightIn(min = NeuroTruthSpacing.minTouchTarget)
                         .semantics {
-                            contentDescription = state.cameraBlockedReason
-                                ?.let { "카메라로 측정, 사용할 수 없음. $it" }
-                                ?: "카메라로 측정 시작"
+                            contentDescription = when {
+                                state.cameraEnabled && state.cameraNotice != null ->
+                                    "카메라로 측정 시작. ${state.cameraNotice}"
+                                state.cameraEnabled -> "카메라로 측정 시작"
+                                else -> "카메라로 측정, 사용할 수 없음. ${state.cameraNotice.orEmpty()}"
+                            }
                         },
                 ) {
                     Text("카메라로 측정", style = MaterialTheme.typography.labelLarge)
                 }
             }
 
-            state.cameraBlockedReason?.let { reason ->
+            state.cameraNotice?.let { reason ->
                 Text(
                     text = reason,
                     style = MaterialTheme.typography.bodySmall,

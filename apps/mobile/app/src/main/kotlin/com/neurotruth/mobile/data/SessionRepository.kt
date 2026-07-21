@@ -110,7 +110,7 @@ class SessionRepository(
 
     companion object {
         /** Flip to true when NT-06 ships; nothing else in the flow has to change. */
-        const val AUQ_SCREEN_AVAILABLE: Boolean = false
+        const val AUQ_SCREEN_AVAILABLE: Boolean = true
         const val DEFAULT_INACTIVITY_TIMEOUT_SECONDS: Int = 3_600
     }
 }

@@ -43,6 +43,9 @@ class AuthenticatedApiClient(
         val rotated = rotate(initialToken) ?: throw AuthenticationRequiredException()
         val retried = transport.execute(withDefaults(request).withBearer(rotated))
         if (retried.statusCode == HTTP_UNAUTHORIZED) {
+            // The refresh above succeeded, so the credential is valid and this 401 is the
+            // endpoint's own answer rather than an expired session.
+            if (request.treatUnauthorizedAsResponse) return retried
             clearSession()
             throw AuthenticationRequiredException()
         }

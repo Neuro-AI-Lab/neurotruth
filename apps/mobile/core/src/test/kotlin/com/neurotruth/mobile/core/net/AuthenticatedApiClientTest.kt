@@ -83,6 +83,47 @@ class AuthenticatedApiClientTest {
     }
 
     @Test
+    fun `a wrong current password does not sign the user out`() {
+        // change-password answers 401 for a wrong current password. The refresh still runs, so an
+        // expired token is recovered; a 401 that survives it is the endpoint's answer, not a
+        // dead session.
+        val backend = FakeBackend(endpoints.refresh) { ApiResponse(401, """{"code":"invalid_password"}""") }
+        val store = InMemoryRefreshTokenStore("refresh-0")
+        val client = signedInClient(backend, store)
+
+        val response = client.execute(
+            ApiRequest(
+                "POST",
+                endpoints.changePassword,
+                body = "{}",
+                treatUnauthorizedAsResponse = true,
+            ),
+        )
+
+        assertEquals(401, response.statusCode)
+        assertEquals("refresh-2", store.loadRefreshToken())
+        assertEquals(2, backend.requestsTo(endpoints.changePassword).size)
+    }
+
+    @Test
+    fun `an expired token on that same route still recovers`() {
+        val backend = FakeBackend(endpoints.refresh) { request ->
+            if (bearerOf(request) == "access-1") ApiResponse(401, "") else ApiResponse(204, "")
+        }
+        val client = signedInClient(backend, InMemoryRefreshTokenStore("refresh-0"))
+
+        val response = client.execute(
+            ApiRequest(
+                "POST",
+                endpoints.changePassword,
+                body = "{}",
+                treatUnauthorizedAsResponse = true,
+            ),
+        )
+        assertEquals(204, response.statusCode)
+    }
+
+    @Test
     fun `a failed refresh clears the credential and does not replay`() {
         val requests = mutableListOf<ApiRequest>()
         val transport = ApiTransport { request ->

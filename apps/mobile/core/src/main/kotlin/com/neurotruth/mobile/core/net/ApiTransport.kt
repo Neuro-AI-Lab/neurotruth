@@ -7,6 +7,15 @@ data class ApiRequest(
     val body: String? = null,
     val connectTimeoutMs: Int? = null,
     val readTimeoutMs: Int? = null,
+    /**
+     * Set for routes where a 401 can mean something other than an expired token.
+     *
+     * `POST /api/auth/change-password` answers 401 when the *current password* is wrong. Treating
+     * that as an expired session would sign the user out over a typo. With this set, the refresh
+     * and replay still happen — so a genuinely expired token is still recovered — but a 401 that
+     * survives a successful refresh is returned to the caller instead of clearing the session.
+     */
+    val treatUnauthorizedAsResponse: Boolean = false,
 ) {
     fun withBearer(accessToken: String): ApiRequest =
         copy(headers = headers + ("Authorization" to "Bearer $accessToken"))
