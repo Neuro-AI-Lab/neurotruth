@@ -83,13 +83,13 @@ internal object WatchRppgPresentationPolicy {
                 "현재 얼굴 측정을 사용할 수 없습니다. 상태를 다시 확인해 주세요."
             RppgAvailability.READY -> when (watchState) {
                 WatchConnectionState.CONNECTED ->
-                    "Watch 모니터링 중입니다. 얼굴 측정은 필요할 때 사용하는 20초 보조 측정입니다."
+                    "Watch 모니터링 중에는 얼굴 측정을 사용할 수 없습니다. Watch 연결을 해제한 뒤 다시 시도해 주세요."
                 WatchConnectionState.DISCONNECTED ->
                     "Watch가 연결되지 않았습니다. 20초 얼굴 측정으로 현재 상태를 확인할 수 있습니다."
                 WatchConnectionState.CHECKING ->
-                    "Watch 연결을 확인 중입니다. 얼굴 측정은 별도의 20초 측정으로 사용할 수 있습니다."
+                    "Watch 연결을 확인한 뒤 얼굴 측정 사용 여부를 안내합니다."
                 WatchConnectionState.ERROR ->
-                    "Watch 연결 상태를 확인하지 못했습니다. 얼굴 측정은 별도의 20초 측정으로 사용할 수 있습니다."
+                    "Watch 연결 상태를 확인하지 못했습니다. 연결 상태를 다시 확인해 주세요."
             }
         }
         return WatchRppgPresentation(
@@ -101,12 +101,13 @@ internal object WatchRppgPresentationPolicy {
             },
             guidance = guidance,
             primaryAction = watchState == WatchConnectionState.DISCONNECTED,
-            actionEnabled = availability != RppgAvailability.CONSENT_REQUIRED,
+            actionEnabled = availability == RppgAvailability.READY &&
+                watchState == WatchConnectionState.DISCONNECTED,
             actionLabel = when (availability) {
-                RppgAvailability.READY -> if (watchState == WatchConnectionState.DISCONNECTED) {
-                    "20초 얼굴 측정 시작"
-                } else {
-                    "20초 얼굴 측정"
+                RppgAvailability.READY -> when (watchState) {
+                    WatchConnectionState.DISCONNECTED -> "20초 얼굴 측정 시작"
+                    WatchConnectionState.CONNECTED -> "Watch 연결 중 측정 불가"
+                    else -> "Watch 연결 확인 후 측정"
                 }
                 RppgAvailability.CONSENT_REQUIRED -> "동의 후 얼굴 측정"
                 else -> "상태 다시 확인"

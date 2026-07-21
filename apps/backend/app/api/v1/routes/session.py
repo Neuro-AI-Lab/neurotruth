@@ -15,6 +15,43 @@ from app.services.session import SessionAgentError, SessionError, SessionNotFoun
 router = APIRouter(prefix="/api/sessions")
 
 
+def _validate_auq_v2(body: AssessmentBody) -> None:
+    if body.instrumentCode != "AUQ":
+        return
+    answers = body.answers
+    responses = answers.get("responses")
+    scored = answers.get("scoredItems")
+    valid_items = (
+        isinstance(responses, list)
+        and isinstance(scored, list)
+        and len(responses) == 8
+        and len(scored) == 8
+        and all(type(value) is int and 0 <= value <= 6 for value in responses)
+        and all(type(value) is int and 0 <= value <= 6 for value in scored)
+    )
+    valid_total = (
+        valid_items
+        and responses == scored
+        and float(body.rawScore).is_integer()
+        and int(body.rawScore) == sum(scored)
+        and (
+            "rawTotalScore" not in answers
+            or type(answers["rawTotalScore"]) is int
+            and answers["rawTotalScore"] == int(body.rawScore)
+        )
+    )
+    if not (
+        body.version == "2.0"
+        and body.scaleMin == 0
+        and body.scaleMax == 48
+        and valid_total
+    ):
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_auq_scale",
+            "message": "AUQ requires eight matching 0..6 items and a 0..48 total",
+        })
+
+
 def _map(exc: Exception) -> None:
     def detail(code: str, message: str) -> dict[str, str]: return {"code": code, "message": message}
     if isinstance(exc, SessionNotFound): raise HTTPException(status_code=404, detail=detail(exc.code, "Session not found")) from exc
@@ -67,6 +104,7 @@ async def assessment(session_id: UUID, body: AssessmentBody,
                      runtime: Annotated[BackendRuntime, Depends(get_runtime)],
                      user: Annotated[UserRecord, Depends(patient_user)]) -> dict[str, Any]:
     await _ai_consent(runtime, user)
+    _validate_auq_v2(body)
     if body.scaleMax <= body.scaleMin or not body.scaleMin <= body.rawScore <= body.scaleMax:
         raise HTTPException(status_code=422, detail={"code": "invalid_assessment_score", "message": "Assessment score is outside its scale"})
     try: return await runtime.session_service.assessment(user, session_id, body.model_dump())

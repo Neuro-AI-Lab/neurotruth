@@ -1,6 +1,6 @@
 # NeuroTruth Phone–Backend API
 
-Last updated: 2026-07-19
+Last updated: 2026-07-21
 
 This is the single human-readable API contract for the Android client. The
 running FastAPI application's `/openapi.json` is the machine-readable authority
@@ -159,6 +159,7 @@ contains `predictionId`, nullable `alertId`, and:
   "cravingProbability": 0.812345,
   "classProbabilities": {"low": 0.187655, "high": 0.812345},
   "timestampMs": 1784160000000,
+  "source": "watch_sensor",
   "alertLevel": "recommend",
   "alertAction": "recommend_intervention",
   "windowMean": 0.7,
@@ -171,6 +172,10 @@ independently MinMax-normalizes them without another filter, and runs tensor
 shape `(1,2,1024)`. PPG priority is `PPG_GREEN → PPG_IR → PPG_RED`; missing EDA
 becomes an all-zero channel. Class `0=low`, class `1=high`, and
 `cravingProbability` is softmax `p(class 1)`. It is not a clinical score.
+Watch sensor responses, persisted display metadata, and SSE events identify this
+path with `source="watch_sensor"`. Camera results retain
+`source="camera_rppg"`; clients must compare `timestampMs` before replacing the
+latest Home state.
 
 ### Prediction SSE
 
@@ -181,7 +186,7 @@ becomes an all-zero channel. Class `0=low`, class `1=high`, and
 : connected
 
 event: craving
-data: {"predictionSchema":"binary-craving-v1","class":1,"cravingProbability":0.812345,"alertLevel":"recommend"}
+data: {"predictionSchema":"binary-craving-v1","class":1,"cravingProbability":0.812345,"source":"watch_sensor","alertLevel":"recommend"}
 
 : ping
 ```
@@ -203,6 +208,12 @@ assistant invitation, and have no slot coverage, handoff gate, or turn limit.
 They end by explicit finish or the configured inactivity timeout (3,600 seconds
 by default). Pre-redesign sessions remain readable with `legacy=true` and are
 mutation-protected.
+
+The Phone uses the same entry contract for an alert action, the Chat tab, and a
+completed rPPG job. When `POST /api/sessions` creates a new session, the Phone
+offers either AUQ completion or **skip and continue** before displaying free
+dialogue. When the endpoint returns the already-active session, the Phone
+resumes it directly and does not request another AUQ.
 
 Current free-dialogue safety interpretation is LLM-only. Successful dialogue
 turns store messages and the question/refusal ledger but do not create
@@ -252,35 +263,59 @@ user message is reused; a different payload for that ID returns `409`. Omitting
 ### Optional AUQ
 
 `POST /api/sessions/{sessionId}/assessments` stores the current eight-item,
-seven-choice research adaptation. The Android labels map to values `1..7`:
+seven-choice research adaptation. The Android labels map to zero-based API
+values as follows:
 
-`매우 그렇지 않다`, `그렇지 않다`, `조금 그렇지 않다`, `보통이다`,
-`조금 그렇다`, `그렇다`, `매우 그렇다`.
+| API value | Android label |
+|---:|---|
+| `0` | `매우 그렇지 않다` |
+| `1` | `그렇지 않다` |
+| `2` | `조금 그렇지 않다` |
+| `3` | `보통이다` |
+| `4` | `조금 그렇다` |
+| `5` | `그렇다` |
+| `6` | `매우 그렇다` |
 
 ```json
 {
   "instrumentCode": "AUQ",
-  "version": "1.0",
+  "version": "2.0",
   "phase": "pre_intervention",
   "attemptNo": 1,
   "answers": {
-    "responses": [4, 5, 3, 4, 6, 2, 4, 5],
-    "scoredItems": [4, 5, 3, 4, 6, 2, 4, 5],
+    "responses": [3, 4, 2, 3, 5, 1, 3, 4],
+    "scoredItems": [3, 4, 2, 3, 5, 1, 3, 4],
     "capturedAtMs": 1784160000000,
-    "rawTotalScore": 33
+    "rawTotalScore": 25
   },
-  "rawScore": 33,
-  "scaleMin": 8,
-  "scaleMax": 56
+  "rawScore": 25,
+  "scaleMin": 0,
+  "scaleMax": 48
 }
 ```
 
-The current Korean research adaptation configures all eight items in the same
-scoring direction, so `responses` and `scoredItems` currently match. Do not
-silently apply scoring rules from another AUQ wording/version. AUQ is optional
-and may be skipped without a placeholder request. The UI does not assign
-unsupported low/medium/high AUQ cutoffs; a higher total only means more
-alcohol-urge-related responses at that time.
+For `instrumentCode="AUQ"`, the backend accepts only `version="2.0"`, exactly
+eight integer `responses` and `scoredItems` in `0..6`, matching arrays, and a
+`rawTotalScore`/`rawScore` equal to their sum in `0..48`. `scaleMin` and
+`scaleMax` must be `0` and `48`. A mismatch returns `422` with
+`code="invalid_auq_scale"` and writes no assessment. The current Korean
+research adaptation configures all eight items in the same scoring direction,
+so `responses` and `scoredItems` match. Do not silently apply scoring rules from
+another AUQ wording/version. AUQ is optional and may be skipped without a
+placeholder request. The UI does not assign unsupported low/medium/high AUQ
+cutoffs; a higher total only means more alcohol-urge-related responses at that
+time.
+
+Legacy `1..7` / `8..56` AUQ rows are converted once by an operator from the
+backend working directory. The confirmed command decrypts each answer with its
+stored AAD, validates every row, re-encrypts with a fresh nonce/current key,
+updates version and score metadata, and writes one system audit record. An
+invalid or tampered row rolls back the entire transaction.
+
+```powershell
+python -m app.maintenance.migrate_auq_zero_based --dry-run
+python -m app.maintenance.migrate_auq_zero_based --confirm CONVERT-AUQ-TO-0-48
+```
 
 - `POST /api/sessions/{sessionId}/finish` completes the session and always
   persists deterministic state and evidence. With the default
@@ -331,9 +366,11 @@ output uses Android `TextToSpeech`; there is no server TTS route.
 
 - `GET /api/me/dashboard?range=24h|7d|30d` returns prediction, AUQ, alert,
   session, intervention, report-status, and state-summary history.
-- `GET /api/me/craving-probability-series?range=10m|24h|7d|30d` returns
-  class-1 probability buckets of `1`, `60`, `600`, or `1800` seconds. Empty
-  buckets are omitted, never interpolated.
+- `GET /api/me/craving-probability-series?range=1h|10m|24h|7d|30d` returns
+  class-1 probability buckets of `10`, `1`, `60`, `600`, or `1800` seconds,
+  respectively. `range=1h` covers the latest 60 minutes and returns at most 360
+  ten-second points. Empty buckets are omitted and are never created or
+  interpolated.
 - `GET /api/me/predictions/{predictionId}/ppg-preview` temporarily decrypts an
   owned source window, returns at most 512 display points, and uses
   `Cache-Control: no-store`.
@@ -365,6 +402,21 @@ The count bands are `low: p<0.25`, `observe: 0.25≤p<0.50`,
 phone normalizes them into a four-color 100% stack. Existing clients may ignore
 `stageCounts`. These are research UI bands, not validated clinical cutoffs.
 
+Patient-facing Korean stage copy is fixed even though the stable wire keys stay
+`low|observe|caution|high`:
+
+| Band | Stage | Patient copy |
+|---|---|---|
+| `p < 0.25` | `안전` | `아무 문제 없어요!` |
+| `0.25 ≤ p < 0.50` | `관찰` | `관찰이 필요해요, 심각하진 않아요!` |
+| `0.50 ≤ p < 0.75` | `주의` | `주의가 필요해요, 술이 드시고 싶으신가요?` |
+| `p ≥ 0.75` | `심각` | `갈망이 심해보여요. 챗봇과 대화를 시작할까요?` |
+
+Each AUQ bucket contains `averageScore` on the `0..48` scale and
+`averageNormalizedScore` on `0..1` for compatibility. New clients render
+`averageScore`; they may fall back to `averageNormalizedScore * 48` only when
+the raw-scale field is absent during coordinated rollout.
+
 ## Camera rPPG
 
 rPPG is enabled by default through `RPPG_ENABLED=true`, while operators may set
@@ -374,9 +426,10 @@ the flag to `false`. Capture still requires all four current consents
 
 Android chooses presentation client-side from the Wear Data Layer connected-node
 list. When there is no connected node, Android promotes a manual foreground
-20-second camera action; a connected Watch keeps Watch monitoring primary and
-rPPG optional. Checking or connection-error states are not treated as confirmed
-disconnection. This adds no API field or endpoint.
+20-second camera action. While a Watch is connected, the camera action is
+disabled and explains that the Watch must be disconnected first. Checking or
+connection-error states are not treated as confirmed disconnection and also do
+not enable capture. This adds no API field or endpoint.
 
 - `GET /api/rppg/status` exposes feature/model/queue availability without the
   DGX URL.
@@ -401,7 +454,10 @@ the current upload API accepts only 20-second captures.
 
 rPPG is a user-initiated point-in-time measurement, not continuous/background
 monitoring. A successful result keeps source `camera_rppg`, remains Phone-only,
-and may later be replaced as latest by a successful Watch prediction. Public
+and is routed once into the same active-or-new session flow. A new session
+offers AUQ or skip before free dialogue; an existing active session resumes
+directly. The Phone compares measurement timestamps, so a delayed older camera
+result cannot replace a newer Watch result. Public
 rPPG URLs, methods, payloads, database schema, and Alembic history are unchanged.
 The Android 16KB baseline is AGP 8.5.2, Gradle 8.7, CameraX 1.4.0, and ML Kit
 face detection 16.1.7, with APK zip and ELF alignment verification required for

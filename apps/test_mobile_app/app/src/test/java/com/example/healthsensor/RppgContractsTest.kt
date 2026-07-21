@@ -121,22 +121,22 @@ class RppgContractsTest {
         assertEquals("20초 얼굴 측정 시작", disconnected.actionLabel)
         assertEquals("연결 안 됨", disconnected.watchLabel)
         assertFalse(connected.primaryAction)
-        assertTrue(connected.actionEnabled)
-        assertEquals("20초 얼굴 측정", connected.actionLabel)
-        assertFalse(
-            WatchRppgPresentationPolicy.resolve(
+        assertFalse(connected.actionEnabled)
+        assertEquals("Watch 연결 중 측정 불가", connected.actionLabel)
+        val checking = WatchRppgPresentationPolicy.resolve(
                 WatchConnectionState.CHECKING,
                 true,
                 ready
-            ).primaryAction
-        )
-        assertFalse(
-            WatchRppgPresentationPolicy.resolve(
+            )
+        val error = WatchRppgPresentationPolicy.resolve(
                 WatchConnectionState.ERROR,
                 true,
                 ready
-            ).primaryAction
-        )
+            )
+        assertFalse(checking.primaryAction)
+        assertFalse(checking.actionEnabled)
+        assertFalse(error.primaryAction)
+        assertFalse(error.actionEnabled)
 
         val consentRequired = WatchRppgPresentationPolicy.resolve(
             WatchConnectionState.DISCONNECTED,
@@ -169,7 +169,7 @@ class RppgContractsTest {
             )
         ).forEach { presentation ->
             assertTrue(presentation.primaryAction)
-            assertTrue(presentation.actionEnabled)
+            assertFalse(presentation.actionEnabled)
             assertEquals("상태 다시 확인", presentation.actionLabel)
             assertTrue(presentation.guidance.isNotBlank())
         }
@@ -213,8 +213,34 @@ class RppgContractsTest {
         assertEquals(1024, result.rppgSampleCount)
         assertEquals(51.2f, result.rppgSamplingHz!!, 0.001f)
         assertEquals(0.91f, result.toPrediction()!!.cravingProbability!!, 0.001f)
+        assertEquals("camera_rppg", result.toPrediction()!!.source)
         assertEquals("camera_rppg", org.json.JSONObject(result.toPrediction()!!.rawBody).getString("source"))
         assertEquals(AlertAction.NONE, AlertActionPolicy.resolve(result.toPrediction()!!))
+    }
+
+    @Test
+    fun `delayed camera result does not replace a newer watch prediction`() {
+        PhoneMonitoringState.startNewSession(startedAtMs = 100L, sessionId = "latest-source")
+        try {
+            val watch = CravingPrediction(
+                cravingClass = 0,
+                timestampMs = 2_000L,
+                rawBody = "watch",
+                source = "watch_sensor"
+            )
+            val camera = CravingPrediction(
+                cravingClass = 1,
+                timestampMs = 1_000L,
+                rawBody = "camera",
+                source = "camera_rppg"
+            )
+
+            assertTrue(PhoneMonitoringState.publishPrediction(watch))
+            assertFalse(PhoneMonitoringState.publishPrediction(camera))
+            assertEquals(watch, PhoneMonitoringState.latestPrediction.value)
+        } finally {
+            PhoneMonitoringState.startNewSession()
+        }
     }
 
     @Test

@@ -12,7 +12,8 @@ from fastapi import HTTPException
 
 from app.core.security.crypto import AesGcmKeyring
 from app.models.records import UserRecord
-from app.api.v1.routes.session import _map
+from app.api.v1.routes.session import _map, _validate_auq_v2
+from app.schemas.session import AssessmentBody
 from app.agents.intervention import (
     DIALOGUE_SYSTEM_PROMPT,
     DIALOGUE_PROMPT_VERSION,
@@ -420,6 +421,37 @@ def test_assessment_is_summary_free_until_finish_then_summaries_and_report_run()
         assert agent.report_calls and repo.reports_rows[0]["status"] == "ready"
         await service.shutdown()
     asyncio.run(scenario())
+
+
+def test_auq_v2_route_contract_accepts_zero_based_and_rejects_inconsistent_payloads() -> None:
+    valid = {
+        "instrumentCode": "AUQ",
+        "version": "2.0",
+        "phase": "pre_intervention",
+        "attemptNo": 1,
+        "answers": {
+            "responses": [0, 1, 2, 3, 4, 5, 6, 0],
+            "scoredItems": [0, 1, 2, 3, 4, 5, 6, 0],
+            "rawTotalScore": 21,
+        },
+        "rawScore": 21,
+        "scaleMin": 0,
+        "scaleMax": 48,
+    }
+    _validate_auq_v2(AssessmentBody.model_validate(valid))
+
+    invalid_payloads = [
+        {**valid, "version": "1.0"},
+        {**valid, "scaleMin": 8, "scaleMax": 56, "rawScore": 29},
+        {**valid, "answers": {**valid["answers"], "responses": [0] * 8}},
+        {**valid, "answers": {**valid["answers"], "scoredItems": [6] * 8}},
+        {**valid, "rawScore": 22},
+    ]
+    for payload in invalid_payloads:
+        with pytest.raises(HTTPException) as rejected:
+            _validate_auq_v2(AssessmentBody.model_validate(payload))
+        assert rejected.value.status_code == 422
+        assert rejected.value.detail["code"] == "invalid_auq_scale"
 
 
 def test_timeout_preserves_final_summary_and_partial_report() -> None:

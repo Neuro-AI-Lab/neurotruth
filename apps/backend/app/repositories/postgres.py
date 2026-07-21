@@ -1229,6 +1229,11 @@ class SqlAlchemyV25Repository(V25Repository):
             auq = (await conn.execute(text(f"""
                 SELECT {auq_bucket_sql} AS bucket_key,
                        avg(
+                         LEAST(48.0,GREATEST(0.0,
+                           ((a.raw_score-a.scale_min)/NULLIF(a.scale_max-a.scale_min,0))*48.0
+                         ))
+                       ) AS average_score,
+                       avg(
                          LEAST(1.0,GREATEST(0.0,
                            (a.raw_score-a.scale_min)/NULLIF(a.scale_max-a.scale_min,0)
                          ))

@@ -26,6 +26,14 @@ class Repo:
         self.calls.append(args)
         return self.rows
 
+    async def craving_probability_rows(self, patient_id, since, until, bucket_seconds, max_points):
+        self.calls.append((patient_id, since, until, bucket_seconds, max_points))
+        return [{
+            "bucket_at": since,
+            "average_probability": Decimal("0.75"),
+            "sample_count": 1,
+        }]
+
 
 class Storage:
     pass
@@ -65,6 +73,7 @@ def rows():
         }],
         "auq": [{
             "bucket_key": 9,
+            "average_score": Decimal("30.24"),
             "average_normalized_score": Decimal("0.63"),
             "sample_count": 2,
         }],
@@ -110,6 +119,7 @@ def test_craving_dashboard_returns_complete_local_buckets_and_distinguishes_zero
         assert empty["hasPredictionData"] is False and empty["totalCount"] == 0
         assert len(result["auq"]["buckets"]) == 24
         assert result["auq"]["buckets"][9]["averageNormalizedScore"] == pytest.approx(0.63)
+        assert result["auq"]["buckets"][9]["averageScore"] == pytest.approx(30.24)
         _, zone, day_start, day_end, _, _, unit = repo.calls[0]
         assert zone == "Asia/Seoul" and unit == "hour"
         assert day_start.hour == 15 and day_end.hour == 15
@@ -121,6 +131,7 @@ def test_daily_auq_and_thirty_day_event_ranges_are_complete() -> None:
         payload = rows()
         payload["auq"] = [{
             "bucket_key": date(2026, 7, 16),
+            "average_score": Decimal("52"),
             "average_normalized_score": Decimal("1.2"),
             "sample_count": 1,
         }]
@@ -135,6 +146,7 @@ def test_daily_auq_and_thirty_day_event_ranges_are_complete() -> None:
         assert result["auq"]["bucketUnit"] == "day"
         assert len(result["auq"]["buckets"]) == 7
         assert result["auq"]["buckets"][-1]["averageNormalizedScore"] == 1.0
+        assert result["auq"]["buckets"][-1]["averageScore"] == 48.0
         assert "localDate" in result["auq"]["buckets"][-1]
     asyncio.run(scenario())
 
@@ -173,6 +185,40 @@ def test_hourly_stage_sql_uses_exact_non_overlapping_boundaries() -> None:
     assert "p.continuous_value >= 0.25 AND p.continuous_value < 0.50" in source
     assert "p.continuous_value >= 0.50 AND p.continuous_value < 0.75" in source
     assert "p.continuous_value >= 0.75" in source
+    assert "((a.raw_score-a.scale_min)/NULLIF(a.scale_max-a.scale_min,0))*48.0" in source
+
+
+def test_legacy_scaled_auq_row_is_exposed_on_canonical_zero_to_48_scale() -> None:
+    async def scenario():
+        payload = rows()
+        payload["auq"] = [{
+            "bucket_key": 4,
+            "average_normalized_score": Decimal("0.5"),
+            "sample_count": 1,
+        }]
+        result = await DashboardService(Repo(payload), ring(), Storage()).craving_dashboard(
+            uuid4(), "Asia/Seoul", "7d", "today",
+            now=datetime(2026, 7, 16, 12, tzinfo=timezone.utc),
+        )
+        assert result["auq"]["buckets"][4]["averageNormalizedScore"] == 0.5
+        assert result["auq"]["buckets"][4]["averageScore"] == 24.0
+
+    asyncio.run(scenario())
+
+
+def test_one_hour_probability_series_uses_ten_second_buckets_and_360_point_cap() -> None:
+    async def scenario():
+        repo = Repo(rows())
+        result = await DashboardService(repo, ring(), Storage()).craving_probability_series(
+            uuid4(), "1h",
+        )
+        assert result["range"] == "1h"
+        assert result["bucketSeconds"] == 10
+        assert len(result["points"]) == 1
+        assert result["points"][0]["averageCravingProbability"] == 0.75
+        assert repo.calls[-1][3:] == (10, 360)
+
+    asyncio.run(scenario())
 
 
 def test_invalid_timezone_is_rejected() -> None:
