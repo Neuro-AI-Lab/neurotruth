@@ -54,11 +54,20 @@ object PhoneMonitoringState {
     }
 
     @Synchronized
-    fun publishPrediction(prediction: CravingPrediction) {
+    fun publishPrediction(prediction: CravingPrediction): Boolean {
+        val current = latestPrediction.value
+        if (current != null && !shouldReplaceLatest(current, prediction)) return false
         prediction.sessionId?.trim()?.takeIf { it.isNotEmpty() }?.let {
             latestServerSessionId.value = it
         }
         latestPrediction.value = prediction
+        return true
+    }
+
+    private fun shouldReplaceLatest(current: CravingPrediction, candidate: CravingPrediction): Boolean {
+        if (candidate.timestampMs != current.timestampMs) return candidate.timestampMs > current.timestampMs
+        // At the same measurement time, the continuously monitored Watch result is authoritative.
+        return current.source != "watch_sensor" || candidate.source == "watch_sensor"
     }
 
     @Synchronized

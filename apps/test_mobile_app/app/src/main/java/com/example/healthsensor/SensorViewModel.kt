@@ -53,13 +53,13 @@ data class StateCheckResult(
 )
 
 object StateCheckScoring {
-    private const val MIN_RESPONSE = 1
-    const val MAX_RESPONSE = 7
+    const val MIN_RESPONSE = 0
+    const val MAX_RESPONSE = 6
 
     fun isValidResponse(value: Int): Boolean = value in MIN_RESPONSE..MAX_RESPONSE
 
     fun correctedScore(rawScore: Int, reverseScored: Boolean): Int {
-        require(isValidResponse(rawScore)) { "response must be between 1 and 7" }
+        require(isValidResponse(rawScore)) { "response must be between 0 and 6" }
         return if (reverseScored) MIN_RESPONSE + MAX_RESPONSE - rawScore else rawScore
     }
 
@@ -687,19 +687,23 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    conversationSessionManager.start(
+                    conversationSessionManager.startWithCreationState(
                         ownerId = authenticatedOwnerId(),
                         sessionType = "alert_checkin",
                         triggerAlertId = _latestPrediction.value?.alertId
                     )
                 }
-            }.onSuccess { session ->
+            }.onSuccess { (session, created) ->
                 bufferedSessionPrompt = session.assistantText
                 _conversationPhase.value = session.interactionPhase ?: "free_dialogue"
                 _sessionReportStatus.value = session.reportStatus
                 _sessionInactivityTimeoutSeconds.value = session.inactivityTimeoutSeconds
-                _isAuqChoiceRequired.value = true
-                _chatStatus.value = "AUQ는 선택 사항입니다"
+                if (created) {
+                    _isAuqChoiceRequired.value = true
+                    _chatStatus.value = "AUQ는 선택 사항입니다"
+                } else {
+                    openBufferedConversation("기존 대화를 이어갑니다")
+                }
             }.onFailure {
                 _chatStatus.value = "세션 시작 실패: ${safeSessionError(it)}"
                 _isTalkChoiceRequired.value = true
@@ -731,14 +735,14 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    conversationSessionManager.ensure(authenticatedOwnerId())
+                    conversationSessionManager.ensureWithCreationState(authenticatedOwnerId())
                 }
-            }.onSuccess { session ->
+            }.onSuccess { (session, created) ->
                 bufferedSessionPrompt = session.assistantText
                 _conversationPhase.value = session.interactionPhase ?: "free_dialogue"
                 _sessionReportStatus.value = session.reportStatus
                 _sessionInactivityTimeoutSeconds.value = session.inactivityTimeoutSeconds
-                if (session.assistantText != null) {
+                if (created) {
                     _isAuqChoiceRequired.value = true
                 } else {
                     openBufferedConversation("기존 대화를 이어갑니다")
@@ -1063,10 +1067,13 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         sourceLabel: String,
         sendToWatch: Boolean = true
     ) {
+        if (!PhoneMonitoringState.publishPrediction(prediction)) {
+            _predictionStatus.value = "$sourceLabel 수신, 더 최신인 결과를 유지"
+            return
+        }
         val canNotify = MobileAuthRuntime.state.value.canNotify
         val action = AlertActionPolicy.resolve(prediction)
         val alertClaimed = canNotify && PhoneMonitoringState.registerAlertAction(prediction, action)
-        PhoneMonitoringState.publishPrediction(prediction)
         if (NotificationPresentationPolicy.shouldPresent(canNotify, alertClaimed)) handleCravingAlert(action)
         val sentToWatch = sendToWatch && predictionSender.sendPrediction(
             prediction = prediction,

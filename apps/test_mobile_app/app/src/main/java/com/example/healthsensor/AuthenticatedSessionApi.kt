@@ -218,7 +218,7 @@ class AuthenticatedSessionApi(private val client: AuthenticatedApiClient) : Sess
                     JSON_HEADERS,
                     JSONObject()
                         .put("instrumentCode", "AUQ")
-                        .put("version", "1.0")
+                        .put("version", "2.0")
                         .put("phase", "pre_intervention")
                         .put("attemptNo", 1)
                         .put("answers", JSONObject().apply {
@@ -229,7 +229,7 @@ class AuthenticatedSessionApi(private val client: AuthenticatedApiClient) : Sess
                             put("rawTotalScore", result.rawTotalScore)
                         })
                         .put("rawScore", result.totalScore.toDouble())
-                        .put("scaleMin", result.responses.size.toDouble())
+                        .put("scaleMin", 0.0)
                         .put("scaleMax", result.responses.size * StateCheckScoring.MAX_RESPONSE.toDouble())
                         .toString()
                 )
@@ -512,13 +512,25 @@ class ConversationSessionManager(
         sessionType: String,
         triggerAlertId: String? = null,
         nowMs: Long = System.currentTimeMillis()
-    ): ConversationSession = mutex.withLock {
+    ): ConversationSession = startWithCreationState(
+        ownerId = ownerId,
+        sessionType = sessionType,
+        triggerAlertId = triggerAlertId,
+        nowMs = nowMs
+    ).first
+
+    suspend fun startWithCreationState(
+        ownerId: String,
+        sessionType: String,
+        triggerAlertId: String? = null,
+        nowMs: Long = System.currentTimeMillis()
+    ): Pair<ConversationSession, Boolean> = mutex.withLock {
         val saved = store.load(ownerId)
         if (saved != null && saved.active) {
             val remote = runCatching { api.get(saved.id) }.getOrNull()
             if (remote?.active == true) {
                 store.save(ownerId, remote.copy(updatedAtMs = nowMs))
-                return@withLock remote
+                return@withLock remote to false
             }
             if (remote?.terminal == true) store.saveReportTarget(ownerId, remote)
         }
@@ -526,11 +538,17 @@ class ConversationSessionManager(
         val created = api.create(sessionType, triggerAlertId)
         require(created.active) { "server returned non-active session" }
         store.save(ownerId, created)
-        created
+        created to true
     }
 
     suspend fun ensure(ownerId: String, nowMs: Long = System.currentTimeMillis()): ConversationSession =
         start(ownerId, "manual_checkin", null, nowMs)
+
+    suspend fun ensureWithCreationState(
+        ownerId: String,
+        nowMs: Long = System.currentTimeMillis()
+    ): Pair<ConversationSession, Boolean> =
+        startWithCreationState(ownerId, "manual_checkin", null, nowMs)
 
     suspend fun postMessage(
         ownerId: String,

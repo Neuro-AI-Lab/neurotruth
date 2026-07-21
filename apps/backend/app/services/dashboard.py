@@ -15,6 +15,7 @@ from app.storage.sensor import EncryptedSensorStorage
 
 RANGES = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
 PROBABILITY_RANGES = {
+    "1h": (timedelta(hours=1), 10, 360),
     "10m": (timedelta(minutes=10), 1, 600),
     "24h": (timedelta(hours=24), 60, 1440),
     "7d": (timedelta(days=7), 600, 1008),
@@ -231,6 +232,7 @@ class DashboardService:
                     "averageNormalizedScore": self._probability(
                         row, "average_normalized_score",
                     ),
+                    "averageScore": self._auq_score(row),
                     "sampleCount": int(row["sample_count"]) if row else 0,
                 })
         else:
@@ -244,6 +246,7 @@ class DashboardService:
                     "averageNormalizedScore": self._probability(
                         row, "average_normalized_score",
                     ),
+                    "averageScore": self._auq_score(row),
                     "sampleCount": int(row["sample_count"]) if row else 0,
                 })
 
@@ -343,6 +346,22 @@ class DashboardService:
         if not math.isfinite(value):
             return None
         return round(min(1.0, max(0.0, value)), 6)
+
+    @staticmethod
+    def _auq_score(row: dict[str, Any] | None) -> float | None:
+        if not row:
+            return None
+        value = row.get("average_score")
+        if value is None and row.get("average_normalized_score") is not None:
+            # Compatibility for repository fakes and a coordinated rollout before
+            # the confirmed legacy conversion has run.
+            value = float(row["average_normalized_score"]) * 48.0
+        if value is None:
+            return None
+        score = float(value)
+        if not math.isfinite(score):
+            return None
+        return round(min(48.0, max(0.0, score)), 6)
 
     @staticmethod
     def _as_date(value: Any) -> date:

@@ -92,6 +92,7 @@ data class RppgJobResult(
             classProbabilities = classOneProbability?.let { probability ->
                 mapOf("low" to 1f - probability, "high" to probability)
             }.orEmpty(),
+            source = "camera_rppg",
             alert = AlertMetadata(
                 alertAction = alertAction,
                 isPresent = alertAction != null

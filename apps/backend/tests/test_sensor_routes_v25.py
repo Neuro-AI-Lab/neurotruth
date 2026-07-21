@@ -176,8 +176,10 @@ def test_ingestion_persists_encrypted_file_and_is_idempotent() -> None:
             assert predictor.calls == 1
             assert first["class"] == 1 and first["recordingId"] and first["predictionId"] and first["alertId"]
             assert first["cravingProbability"] == 0.91
+            assert first["source"] == "watch_sensor"
             assert "_lat" not in first and "_readyPerf" not in first
             assert "_lat" not in repo.prediction_values["prediction"]
+            assert repo.prediction_values["prediction"]["source"] == "watch_sensor"
             stored_path = Path(directory) / repo.recording_values["storage_uri"]
             assert stored_path.is_file()
             assert canonical_sensor_json(body) not in stored_path.read_bytes()

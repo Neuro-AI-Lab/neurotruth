@@ -158,6 +158,8 @@ class MainActivity : ComponentActivity() {
                                 val result = rppgResult ?: return@LaunchedEffect
                                 if (result.status == "completed" && rppgViewModel.markResultRouted(result.jobId)) {
                                     result.toPrediction()?.let(viewModel::handleCameraPrediction)
+                                    showRppgCamera = false
+                                    selectedTab = PatientTab.CHAT
                                 }
                             }
                             LaunchedEffect(forceStateCheckLaunchCounter) {
@@ -171,14 +173,6 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Column(modifier = Modifier.fillMaxSize()) {
-                                AuthenticatedAccountBar(
-                                    user = state.user,
-                                    onConsentSettings = {
-                                        authViewModel.clearMessage()
-                                        showConsentSettings = true
-                                    },
-                                    onLogout = authViewModel::logout
-                                )
                                 Box(modifier = Modifier.weight(1f)) {
                                     if (showRppgCamera) {
                                         RppgCameraScreen(
@@ -201,12 +195,16 @@ class MainActivity : ComponentActivity() {
                                         UserHomeScreen(
                                             viewModel = viewModel,
                                             rppgViewModel = rppgViewModel,
-                                            onRequestPermissions = { requestPermissionsFromUserAction() },
+                                            user = state.user,
+                                            onOpenSettings = {
+                                                authViewModel.clearMessage()
+                                                showConsentSettings = true
+                                            },
+                                            onLogout = authViewModel::logout,
                                             onDeveloperUnlock = { showDeveloperMode = true },
                                             onOpenRppgCamera = {
                                                 if (rppgViewModel.prepareCapture()) showRppgCamera = true
                                             },
-                                            onOpenNotice = { showNotice = true },
                                             showChatTab = selectedTab == PatientTab.CHAT,
                                             onChatClosed = { selectedTab = PatientTab.HOME }
                                         )
@@ -456,14 +454,14 @@ class MainActivity : ComponentActivity() {
 fun UserHomeScreen(
     viewModel: SensorViewModel,
     rppgViewModel: RppgViewModel,
-    onRequestPermissions: () -> Unit,
+    user: AuthUser,
+    onOpenSettings: () -> Unit,
+    onLogout: () -> Unit,
     onDeveloperUnlock: () -> Unit,
     onOpenRppgCamera: () -> Unit,
-    onOpenNotice: () -> Unit,
     showChatTab: Boolean,
     onChatClosed: () -> Unit
 ) {
-    val isReceiving by viewModel.isReceiving.collectAsState()
     val watchConnectionState by viewModel.watchConnectionState.collectAsState()
     val latestPrediction by viewModel.latestPrediction.collectAsState()
     val isStateCheckRequired by viewModel.isStateCheckRequired.collectAsState()
@@ -482,8 +480,7 @@ fun UserHomeScreen(
     val isVoiceTranscribing by viewModel.isVoiceTranscribing.collectAsState()
     val voiceDraft by viewModel.voiceDraft.collectAsState()
     val voiceStatus by viewModel.voiceStatus.collectAsState()
-    val cravingClass = latestPrediction?.cravingClass
-    val cravingColor = cravingTone(cravingClass)
+    val cravingColor = cravingProbabilityTone(latestPrediction?.cravingProbability)
     val rppgStatus by rppgViewModel.serviceStatus.collectAsState()
     val rppgResult by rppgViewModel.latestResult.collectAsState()
     val canCaptureRppg = MobileAuthRuntime.state.collectAsState().value.canCaptureRppg
@@ -533,17 +530,18 @@ fun UserHomeScreen(
             }
         )
         else -> UserDashboardScreen(
-            isReceiving = isReceiving,
+            user = user,
             watchConnectionState = watchConnectionState,
-            cravingClass = cravingClass,
             cravingProbability = latestPrediction?.cravingProbability,
+            predictionSource = latestPrediction?.source,
+            predictionTimestampMs = latestPrediction?.timestampMs,
             cravingColor = cravingColor,
             rppgStatus = rppgStatus,
             rppgResult = rppgResult,
             canCaptureRppg = canCaptureRppg,
+            onOpenSettings = onOpenSettings,
+            onLogout = onLogout,
             onOpenRppgCamera = onOpenRppgCamera,
-            onOpenNotice = onOpenNotice,
-            onRequestPermissions = onRequestPermissions,
             onDeveloperUnlock = onDeveloperUnlock
         )
     }
@@ -551,17 +549,18 @@ fun UserHomeScreen(
 
 @Composable
 private fun UserDashboardScreen(
-    isReceiving: Boolean,
+    user: AuthUser,
     watchConnectionState: WatchConnectionState,
-    cravingClass: Int?,
     cravingProbability: Float?,
+    predictionSource: String?,
+    predictionTimestampMs: Long?,
     cravingColor: Color,
     rppgStatus: RppgServiceStatus?,
     rppgResult: RppgJobResult?,
     canCaptureRppg: Boolean,
+    onOpenSettings: () -> Unit,
+    onLogout: () -> Unit,
     onOpenRppgCamera: () -> Unit,
-    onOpenNotice: () -> Unit,
-    onRequestPermissions: () -> Unit,
     onDeveloperUnlock: () -> Unit
 ) {
     val rppgPresentation = WatchRppgPresentationPolicy.resolve(
@@ -579,18 +578,31 @@ private fun UserDashboardScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(onDeveloperUnlock) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val releasedBeforeTimeout = withTimeoutOrNull(DEVELOPER_HOLD_MS) {
+                            waitForUpOrCancellation()
+                        }
+                        if (releasedBeforeTimeout == null) {
+                            onDeveloperUnlock()
+                            waitForUpOrCancellation()
+                        }
+                    }
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("상태 모니터", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = HealthText)
-                Text("현재 상태", fontSize = 13.sp, color = HealthMuted)
+                Text("NeuroTruth 사용자", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = HealthText)
+                Text(user.email, fontSize = 13.sp, color = HealthMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            StatusPill(
-                text = if (isReceiving) "LIVE" else "WAIT",
-                color = if (isReceiving) HealthPrimary else HealthIdle
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onOpenSettings) { Text("설정") }
+                TextButton(onClick = onLogout) { Text("로그아웃", fontSize = 12.sp) }
+            }
         }
 
         Card(
@@ -636,6 +648,11 @@ private fun UserDashboardScreen(
                         color = HealthMuted
                     )
                     Text(
+                        text = predictionMetaLabel(predictionSource, predictionTimestampMs),
+                        fontSize = 12.sp,
+                        color = HealthMuted
+                    )
+                    Text(
                         text = rppgPresentation.guidance,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
@@ -663,13 +680,6 @@ private fun UserDashboardScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             rppgResult?.let { RppgResultCard(it) }
-            if (cravingClass == 1) {
-                CravingNoticeCard(
-                    title = "주의 필요",
-                    message = "갈망과 관련된 변화일 가능성이 있습니다. 원하면 지금 대화할 수 있어요.",
-                    color = HealthWarning
-                )
-            }
             UserStatusTile(
                 label = "Watch 연결",
                 value = rppgPresentation.watchLabel,
@@ -680,18 +690,7 @@ private fun UserDashboardScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenNotice, modifier = Modifier.weight(1f)) {
-                    Text("사용 안내")
-                }
-                OutlinedButton(onClick = onRequestPermissions, modifier = Modifier.weight(1f)) {
-                    Text("권한 확인")
-                }
-            }
         }
-
-        Spacer(Modifier.height(8.dp))
-        DeveloperHoldButton(onUnlock = onDeveloperUnlock)
     }
 }
 
@@ -858,7 +857,7 @@ private fun StateCheckScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     AUQ_RESPONSE_LABELS.forEachIndexed { index, label ->
-                        val value = index + 1
+                        val value = index
                         val selected = responses[question.number] == value
                         OutlinedButton(
                             onClick = { onResponse(question.number, value) },
@@ -1194,24 +1193,41 @@ internal val AUQ_RESPONSE_LABELS = listOf(
 
 internal fun cravingProbabilityLabel(probability: Float?): String = when {
     probability == null || !probability.isFinite() -> "측정 대기"
-    probability < 0.25f -> "낮은 가능성"
-    probability < 0.50f -> "변화 관찰"
-    probability < 0.75f -> "주의 필요"
-    else -> "높은 가능성"
+    probability < 0.25f -> "안전"
+    probability < 0.50f -> "관찰"
+    probability < 0.75f -> "주의"
+    else -> "심각"
 }
 
 private fun cravingProbabilityBadge(probability: Float?): String = when (cravingProbabilityLabel(probability)) {
-    "낮은 가능성" -> "낮음"
-    "변화 관찰" -> "관찰"
-    "주의 필요" -> "주의"
-    "높은 가능성" -> "높음"
+    "안전" -> "안전"
+    "관찰" -> "관찰"
+    "주의" -> "주의"
+    "심각" -> "심각"
     else -> "--"
 }
 
-private fun cravingProbabilityMessage(probability: Float?): String = if (probability == null) {
-    "워치 측정과 서버 예측을 기다리는 중입니다."
-} else {
-    "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다."
+private fun cravingProbabilityMessage(probability: Float?): String = when {
+    probability == null || !probability.isFinite() -> "측정 결과를 기다리는 중이에요."
+    probability < 0.25f -> "아무 문제 없어요!"
+    probability < 0.50f -> "관찰이 필요해요, 심각하진 않아요!"
+    probability < 0.75f -> "주의가 필요해요, 술이 드시고 싶으신가요?"
+    else -> "갈망이 심해보여요. 챗봇과 대화를 시작할까요?"
+}
+
+private fun cravingProbabilityTone(probability: Float?): Color = when {
+    probability == null || !probability.isFinite() -> HealthIdle
+    probability < 0.25f -> HealthPrimary
+    probability < 0.50f -> HealthAccent
+    probability < 0.75f -> HealthWarning
+    else -> HealthDanger
+}
+
+private fun predictionMetaLabel(source: String?, timestampMs: Long?): String {
+    if (timestampMs == null || timestampMs <= 0L) return "측정 출처와 시각을 기다리는 중이에요."
+    val sourceLabel = if (source == "camera_rppg") "카메라" else "Watch"
+    val measuredAt = SimpleDateFormat("M월 d일 HH:mm:ss", Locale.KOREA).format(Date(timestampMs))
+    return "$sourceLabel · $measuredAt"
 }
 
 private fun cravingClassLabel(cravingClass: Int?): String = when (cravingClass) {

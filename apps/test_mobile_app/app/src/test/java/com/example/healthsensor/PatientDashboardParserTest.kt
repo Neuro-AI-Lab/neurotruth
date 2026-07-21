@@ -63,6 +63,7 @@ class PatientDashboardParserTest {
                             put(
                                 JSONObject()
                                     .put("localStart", "2026-07-16T${"%02d".format(hour)}:00:00+09:00")
+                                    .put("averageScore", if (hour == 2) 30.0 else JSONObject.NULL)
                                     .put("averageNormalizedScore", if (hour == 2) 0.625 else JSONObject.NULL)
                                     .put("sampleCount", if (hour == 2) 2 else 0)
                             )
@@ -80,6 +81,7 @@ class PatientDashboardParserTest {
         assertTrue(parsed.dailyEvents.first().let { !it.hasPredictionData && it.totalCount == 0 })
         assertTrue(parsed.dailyEvents[1].let { it.hasPredictionData && it.totalCount == 0 })
         assertEquals(0.625f, parsed.auq[2].averageNormalizedScore)
+        assertEquals(30f, parsed.auq[2].averageScore)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -161,10 +163,10 @@ class PatientDashboardParserTest {
     fun probabilitySeriesParsesBinaryLikelihoodAndRangeContract() {
         val parsed = PatientDashboardParser.parseProbabilitySeries(
             """{
-              "range":"10m",
-              "from":"2026-07-15T00:50:00Z",
+              "range":"1h",
+              "from":"2026-07-15T00:00:00Z",
               "to":"2026-07-15T01:00:00Z",
-              "bucketSeconds":1,
+              "bucketSeconds":10,
               "points":[
                 {"at":"2026-07-15T00:59:58Z","averageCravingProbability":0.25,"sampleCount":1},
                 {"at":"2026-07-15T00:59:59Z","averageCravingProbability":0.75,"sampleCount":1}
@@ -172,70 +174,70 @@ class PatientDashboardParserTest {
             }"""
         )
 
-        assertEquals(ProbabilityRange.MINUTES_10, parsed.range)
+        assertEquals(ProbabilityRange.HOUR_1, parsed.range)
         assertEquals(2, parsed.points.size)
         assertEquals(0.75f, parsed.points.last().probability)
     }
 
     @Test
     fun patientLabelsUseExactBandBoundariesWithoutPercentages() {
-        assertEquals("낮은 가능성", cravingProbabilityLabel(0f))
-        assertEquals("낮은 가능성", cravingProbabilityLabel(0.2499f))
-        assertEquals("변화 관찰", cravingProbabilityLabel(0.25f))
-        assertEquals("주의 필요", cravingProbabilityLabel(0.50f))
-        assertEquals("높은 가능성", cravingProbabilityLabel(0.75f))
-        assertEquals("높은 가능성", cravingProbabilityLabel(1f))
+        assertEquals("안전", cravingProbabilityLabel(0f))
+        assertEquals("안전", cravingProbabilityLabel(0.2499f))
+        assertEquals("관찰", cravingProbabilityLabel(0.25f))
+        assertEquals("주의", cravingProbabilityLabel(0.50f))
+        assertEquals("심각", cravingProbabilityLabel(0.75f))
+        assertEquals("심각", cravingProbabilityLabel(1f))
         assertEquals("측정 대기", cravingProbabilityLabel(null))
     }
 
     @Test
-    fun auqUsesSevenVerbalChoicesAndRawEightToFiftySixScale() {
+    fun auqUsesSevenVerbalChoicesAndRawZeroToFortyEightScale() {
         assertEquals(7, AUQ_RESPONSE_LABELS.size)
         assertEquals("매우 그렇지 않다", AUQ_RESPONSE_LABELS.first())
         assertEquals("매우 그렇다", AUQ_RESPONSE_LABELS.last())
-        assertEquals(8f, normalizedAuqToRaw(0f))
-        assertEquals(56f, normalizedAuqToRaw(1f))
-        assertEquals(38f, normalizedAuqToRaw(0.625f))
+        assertEquals(0f, normalizedAuqToRaw(0f))
+        assertEquals(48f, normalizedAuqToRaw(1f))
+        assertEquals(30f, normalizedAuqToRaw(0.625f))
     }
 
     @Test
     fun liveAppendDeduplicatesCapsAndLeavesTimestampGaps() {
         val base = CravingProbabilitySeries(
-            range = ProbabilityRange.MINUTES_10,
+            range = ProbabilityRange.HOUR_1,
             fromMs = 0L,
-            toMs = 600_000L,
-            bucketSeconds = 1,
-            points = (0 until 600).map { index ->
-                CravingProbabilityPoint(index * 1_000L, 0.1f, 1)
+            toMs = 3_600_000L,
+            bucketSeconds = 10,
+            points = (0 until 360).map { index ->
+                CravingProbabilityPoint(index * 10_000L, 0.1f, 1)
             }
         )
         val appended = CravingProbabilitySeriesState.appendLive(
             base,
-            prediction(timestampMs = 600_000L, probability = 0.8f, id = "new")
+            prediction(timestampMs = 3_600_000L, probability = 0.8f, id = "new")
         )
         val deduplicated = CravingProbabilitySeriesState.appendLive(
             appended,
-            prediction(timestampMs = 600_000L, probability = 0.8f, id = "new")
+            prediction(timestampMs = 3_600_000L, probability = 0.8f, id = "new")
         )
 
-        assertEquals(600, deduplicated.points.size)
+        assertEquals(360, deduplicated.points.size)
         assertEquals(0.8f, deduplicated.points.last().probability)
 
         val timestampDeduplicated = CravingProbabilitySeriesState.appendLive(
             deduplicated.copy(
                 points = deduplicated.points.dropLast(1) +
-                    CravingProbabilityPoint(600_000L, 0.2f, 1)
+                    CravingProbabilityPoint(3_600_000L, 0.2f, 1)
             ),
-            prediction(timestampMs = 600_000L, probability = 0.8f, id = "server-id")
+            prediction(timestampMs = 3_600_000L, probability = 0.8f, id = "server-id")
         )
-        assertEquals(600, timestampDeduplicated.points.size)
+        assertEquals(360, timestampDeduplicated.points.size)
         assertEquals(0.8f, timestampDeduplicated.points.last().probability)
 
         val withGap = deduplicated.copy(
             points = listOf(
-                CravingProbabilityPoint(1_000L, 0.1f, 1),
-                CravingProbabilityPoint(2_000L, 0.2f, 1),
-                CravingProbabilityPoint(10_000L, 0.3f, 1)
+                CravingProbabilityPoint(10_000L, 0.1f, 1),
+                CravingProbabilityPoint(20_000L, 0.2f, 1),
+                CravingProbabilityPoint(50_000L, 0.3f, 1)
             )
         )
         assertEquals(listOf(2, 1), CravingProbabilitySeriesState.segments(withGap).map { it.size })

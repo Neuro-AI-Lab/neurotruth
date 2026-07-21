@@ -149,6 +149,7 @@ data class CravingPrediction(
     val hasServerTimestamp: Boolean = false,
     val sessionId: String? = null,
     val alertId: String? = null,
+    val source: String? = null,
     val alert: AlertMetadata = AlertMetadata()
 ) {
     val label: String
@@ -353,6 +354,7 @@ class ServerUploader {
             hasServerTimestamp = json.has("timestampMs"),
             sessionId = json.optCleanString("sessionId"),
             alertId = json.optCleanString("alertId"),
+            source = json.optCleanString("source") ?: "watch_sensor",
             alert = json.optAlertMetadata()
         )
     }

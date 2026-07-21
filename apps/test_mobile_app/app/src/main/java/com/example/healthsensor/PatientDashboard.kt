@@ -67,6 +67,7 @@ enum class ProbabilityRange(
     val bucketSeconds: Int,
     val maxPoints: Int
 ) {
+    HOUR_1("1h", "최근 1시간", 60 * 60 * 1_000L, 10, 360),
     MINUTES_10("10m", "실시간 10분", 10 * 60 * 1_000L, 1, 600),
     HOURS_24("24h", "24시간", 24 * 60 * 60 * 1_000L, 60, 1_440),
     DAYS_7("7d", "7일", 7 * 24 * 60 * 60 * 1_000L, 600, 1_008),
@@ -114,6 +115,7 @@ data class DailyEventBucket(
 
 data class AuqBucket(
     val localLabel: String,
+    val averageScore: Float?,
     val averageNormalizedScore: Float?,
     val sampleCount: Int
 )
@@ -254,7 +256,7 @@ object PatientDashboardParser {
                     atMs = item.instant("at"),
                     rawScore = item.floatOrNull("rawScore") ?: 0f,
                     scaleMin = item.floatOrNull("scaleMin") ?: 0f,
-                    scaleMax = item.floatOrNull("scaleMax") ?: 56f
+                    scaleMax = item.floatOrNull("scaleMax") ?: 48f
                 )
             }.sortedBy(DashboardAssessment::atMs),
             events = root.optJSONArray("events").objects().map { item ->
@@ -389,9 +391,15 @@ object PatientDashboardParser {
             }
             AuqBucket(
                 localLabel = label,
+                averageScore = item.floatOrNull("averageScore")?.let { value ->
+                    require(value in 0f..48f) { "AUQ average score must be between 0 and 48" }
+                    value
+                } ?: item.floatOrNull("averageNormalizedScore")
+                    ?.requireProbability()
+                    ?.times(48f),
                 averageNormalizedScore = item.floatOrNull("averageNormalizedScore")?.requireProbability(),
                 sampleCount = item.optInt("sampleCount", 0).also { require(it >= 0) }
-            ).also { require(it.sampleCount == 0 || it.averageNormalizedScore != null) }
+            ).also { require(it.sampleCount == 0 || it.averageScore != null) }
         }
         require(auqBuckets.size == auqRange.bucketCount) { "AUQ bucket count mismatch" }
 
@@ -434,7 +442,7 @@ internal object CravingProbabilitySeriesState {
         current: CravingProbabilitySeries,
         prediction: CravingPrediction
     ): CravingProbabilitySeries {
-        if (current.range != ProbabilityRange.MINUTES_10) return current
+        if (current.range != ProbabilityRange.HOUR_1) return current
         val probability = prediction.cravingProbability?.probabilityOrNull() ?: return current
         val point = CravingProbabilityPoint(
             atMs = prediction.timestampMs,
@@ -491,7 +499,7 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
     val status: StateFlow<String> = _status
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
-    private val _probabilityRange = MutableStateFlow(ProbabilityRange.MINUTES_10)
+    private val _probabilityRange = MutableStateFlow(ProbabilityRange.HOUR_1)
     val probabilityRange: StateFlow<ProbabilityRange> = _probabilityRange
     private val _probabilitySeries = MutableStateFlow<CravingProbabilitySeries?>(null)
     val probabilitySeries: StateFlow<CravingProbabilitySeries?> = _probabilitySeries
@@ -532,6 +540,7 @@ class PatientDashboardViewModel(application: Application) : AndroidViewModel(app
         _status.value = "기록을 불러오는 중입니다"
         _preview.value = null
         loadCravingDashboard()
+        loadProbability(ProbabilityRange.HOUR_1)
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { api.get(range) } }
                 .onSuccess {
@@ -627,7 +636,6 @@ fun PatientDashboardScreen(
     livePpg: List<SensorPoint>,
     onClose: () -> Unit
 ) {
-    val range by viewModel.range.collectAsState()
     val data by viewModel.data.collectAsState()
     val preview by viewModel.preview.collectAsState()
     val status by viewModel.status.collectAsState()
@@ -637,6 +645,9 @@ fun PatientDashboardScreen(
     val barDashboard by viewModel.barDashboard.collectAsState()
     val barDashboardStatus by viewModel.barDashboardStatus.collectAsState()
     val barDashboardLoading by viewModel.barDashboardLoading.collectAsState()
+    val probabilitySeries by viewModel.probabilitySeries.collectAsState()
+    val probabilityStatus by viewModel.probabilityStatus.collectAsState()
+    val probabilityLoading by viewModel.probabilityLoading.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFFF7F8FA)).verticalScroll(rememberScrollState())
@@ -647,21 +658,17 @@ fun PatientDashboardScreen(
             Text("내 상태 기록", style = MaterialTheme.typography.headlineSmall)
             OutlinedButton(onClick = onClose) { Text("홈") }
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DashboardRange.values().forEach { candidate ->
-                if (candidate == range) Button(onClick = { viewModel.load(candidate) }) { Text(candidate.label) }
-                else OutlinedButton(onClick = { viewModel.load(candidate) }) { Text(candidate.label) }
-            }
-        }
         Text(status, style = MaterialTheme.typography.bodySmall)
         if (loading && data == null) Text("불러오는 중…")
 
-        DashboardCard("워치 실시간 PPG (휴대폰 내 표시)") {
-            if (livePpg.isEmpty()) Text("워치 PPG를 기다리고 있습니다")
-            else SignalLineChart(livePpg.takeLast(250).map { it.value })
+        DashboardCard("최근 1시간 갈망 가능성") {
+            Text("0~100% · 10초 단위 · 데이터가 없는 구간은 선을 잇지 않습니다", style = MaterialTheme.typography.bodySmall)
+            if (probabilityLoading && probabilitySeries == null) Text("불러오는 중…")
+            Text(probabilityStatus, style = MaterialTheme.typography.bodySmall)
+            probabilitySeries?.let { CravingProbabilityLineChart(it) }
         }
 
-        DashboardCard("갈망 가능성(모델)") {
+        DashboardCard("오늘 갈망 단계 구성") {
             val latest = barDashboard?.currentCraving?.probability
             Text(
                 text = cravingProbabilityLabel(latest),
@@ -675,31 +682,6 @@ fun PatientDashboardScreen(
             Text(barDashboardStatus, style = MaterialTheme.typography.bodySmall)
             if (barDashboardLoading && barDashboard == null) Text("불러오는 중…")
             barDashboard?.let { HourlyCravingBarChart(it.hourlyCraving) }
-
-            val predictions = data?.predictions.orEmpty()
-            predictions.lastOrNull { it.ppgPreviewAvailable }?.let { prediction ->
-                OutlinedButton(onClick = { viewModel.loadPreview(prediction.id) }) { Text("PPG 보기") }
-            }
-            preview?.let { value ->
-                if (value.samples.isEmpty()) Text("PPG 미리보기를 사용할 수 없습니다")
-                else SignalLineChart(value.samples.map { it.value })
-            }
-        }
-
-        DashboardCard("AUQ 기록") {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                AuqRange.values().forEach { candidate ->
-                    if (candidate == auqRange) {
-                        Button(onClick = { viewModel.selectAuqRange(candidate) }) { Text(candidate.label) }
-                    } else {
-                        OutlinedButton(onClick = { viewModel.selectAuqRange(candidate) }) { Text(candidate.label) }
-                    }
-                }
-            }
-            barDashboard?.let { AuqBarChart(it.auq, it.auqRange) }
         }
 
         DashboardCard("갈망 이벤트") {
@@ -718,13 +700,39 @@ fun PatientDashboardScreen(
             barDashboard?.let { DailyEventBarChart(it.dailyEvents) }
         }
 
-        StateSummaryCard("최근 실시간 상태", data?.latestState)
-        StateSummaryCard("최근 장기 상태", data?.longitudinalState)
+        DashboardCard("AUQ 기록") {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                AuqRange.values().forEach { candidate ->
+                    if (candidate == auqRange) {
+                        Button(onClick = { viewModel.selectAuqRange(candidate) }) { Text(candidate.label) }
+                    } else {
+                        OutlinedButton(onClick = { viewModel.selectAuqRange(candidate) }) { Text(candidate.label) }
+                    }
+                }
+            }
+            barDashboard?.let { AuqBarChart(it.auq, it.auqRange) }
+        }
 
-        DashboardCard("보고서 상태") {
-            val reports = data?.reports.orEmpty()
-            if (reports.isEmpty()) Text("생성된 보고서 상태가 없습니다")
-            reports.forEach { report -> Text("${reportStatusLabel(report.status)} · ${localTime(report.updatedAtMs)}") }
+        DashboardCard("Watch 실시간 PPG") {
+            if (livePpg.isEmpty()) Text("Watch PPG를 기다리고 있습니다")
+            else SignalLineChart(livePpg.takeLast(250).map { it.value })
+        }
+
+        DashboardCard("과거 예측 PPG") {
+            val predictions = data?.predictions.orEmpty()
+            val prediction = predictions.lastOrNull { it.ppgPreviewAvailable }
+            if (prediction == null) {
+                Text("미리 볼 수 있는 PPG 기록이 없습니다")
+            } else {
+                OutlinedButton(onClick = { viewModel.loadPreview(prediction.id) }) { Text("PPG 보기") }
+            }
+            preview?.let { value ->
+                if (value.samples.isEmpty()) Text("PPG 미리보기를 사용할 수 없습니다")
+                else SignalLineChart(value.samples.map { it.value })
+            }
         }
     }
 }
@@ -743,10 +751,10 @@ private fun DashboardCard(title: String, content: @Composable () -> Unit) {
 private fun HourlyCravingBarChart(buckets: List<HourlyCravingBucket>) {
     var selected by remember(buckets) { mutableIntStateOf(0) }
     val stages = listOf(
-        Triple("낮은 가능성", Color(0xFF267A73), { value: CravingStageCounts -> value.low }),
-        Triple("변화 관찰", Color(0xFF62A8A1), { value: CravingStageCounts -> value.observe }),
-        Triple("주의 필요", Color(0xFFD68A22), { value: CravingStageCounts -> value.caution }),
-        Triple("높은 가능성", Color(0xFFC94C5C), { value: CravingStageCounts -> value.high })
+        Triple("안전", Color(0xFF267A73), { value: CravingStageCounts -> value.low }),
+        Triple("관찰", Color(0xFF62A8A1), { value: CravingStageCounts -> value.observe }),
+        Triple("주의", Color(0xFFD68A22), { value: CravingStageCounts -> value.caution }),
+        Triple("심각", Color(0xFFC94C5C), { value: CravingStageCounts -> value.high })
     )
     Canvas(
         modifier = Modifier
@@ -892,12 +900,12 @@ private fun DailyEventBarChart(buckets: List<DailyEventBucket>) {
 private fun AuqBarChart(buckets: List<AuqBucket>, range: AuqRange) {
     var selected by remember(buckets) { mutableIntStateOf(buckets.lastIndex.coerceAtLeast(0)) }
     SelectableNormalizedBars(
-        values = buckets.map { bucket -> bucket.averageNormalizedScore?.let(::normalizedAuqToRaw) },
+        values = buckets.map(AuqBucket::averageScore),
         selected = selected,
         onSelect = { selected = it },
         accessibilityLabel = "AUQ 평균 막대 그래프",
-        maximum = 56f,
-        axisLabel = "세로축 8–56점 · 회색은 데이터 없음"
+        maximum = 48f,
+        axisLabel = "세로축 0–48점 · 회색은 데이터 없음"
     )
     if (range == AuqRange.TODAY) FixedHourLabels()
     else DailyAxisLabels(buckets.map(AuqBucket::localLabel))
@@ -911,7 +919,7 @@ private fun AuqBarChart(buckets: List<AuqBucket>, range: AuqRange) {
         if (bucket.sampleCount == 0) {
             "$period · 데이터 없음"
         } else {
-            "$period · 총점 ${"%.1f".format(normalizedAuqToRaw(bucket.averageNormalizedScore ?: 0f))}/56 · " +
+            "$period · 총점 ${"%.1f".format(bucket.averageScore ?: 0f)}/48 · " +
                 "응답 ${bucket.sampleCount}회"
         }
     )
@@ -997,7 +1005,39 @@ private fun barIndex(x: Float, width: Float, count: Int): Int {
     return ((x / width) * count).toInt().coerceIn(0, count - 1)
 }
 
-internal fun normalizedAuqToRaw(value: Float): Float = 8f + value.coerceIn(0f, 1f) * 48f
+internal fun normalizedAuqToRaw(value: Float): Float = value.coerceIn(0f, 1f) * 48f
+
+@Composable
+private fun CravingProbabilityLineChart(series: CravingProbabilitySeries) {
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .semantics { contentDescription = "최근 1시간 갈망 가능성 0에서 100퍼센트 선 그래프" }
+    ) {
+        val duration = (series.toMs - series.fromMs).coerceAtLeast(1L)
+        CravingProbabilitySeriesState.segments(series).forEach { segment ->
+            if (segment.size == 1) {
+                val point = segment.first()
+                val x = ((point.atMs - series.fromMs).toFloat() / duration.toFloat()) * size.width
+                val y = size.height * (1f - point.probability)
+                drawCircle(Color(0xFF246B60), radius = 3.dp.toPx(), center = Offset(x, y))
+            } else {
+                val path = Path()
+                segment.forEachIndexed { index, point ->
+                    val x = ((point.atMs - series.fromMs).toFloat() / duration.toFloat()) * size.width
+                    val y = size.height * (1f - point.probability)
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, Color(0xFF246B60), style = Stroke(width = 3.dp.toPx()))
+            }
+        }
+    }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("60분 전", style = MaterialTheme.typography.labelSmall)
+        Text("지금", style = MaterialTheme.typography.labelSmall)
+    }
+}
 
 @Composable
 private fun SignalLineChart(values: List<Float>) {

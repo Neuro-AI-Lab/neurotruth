@@ -20,6 +20,7 @@ class AuthenticatedSessionApiContractTest {
                 request.url.endsWith("/api/auth/login") -> ApiResponse(200, authResponse())
                 request.url.endsWith("/api/sessions") -> ApiResponse(200, sessionJson("in_progress", "free_dialogue"))
                 request.url.endsWith("/messages") -> ApiResponse(200, messageJson())
+                request.url.endsWith("/assessments") -> ApiResponse(200, "{}")
                 request.url.endsWith("/finish") -> ApiResponse(200, sessionJson("completed", "completed"))
                 request.method == "GET" && request.url.endsWith("/reports") -> ApiResponse(
                     200,
@@ -34,6 +35,10 @@ class AuthenticatedSessionApiContractTest {
 
         val created = api.create("alert_checkin", "33333333-3333-4333-8333-333333333333")
         val message = api.postMessage(sessionId, clientMessageId, "지금 불안해요", 3_600_000, "voice")
+        api.postAssessment(
+            sessionId,
+            StateCheckResult(100L, 1, List(8) { 6 }, List(8) { 6 }, 48, 6f, 48, 6f)
+        )
         val finished = api.finish(sessionId)
         val report = api.getReport(sessionId)
 
@@ -45,6 +50,11 @@ class AuthenticatedSessionApiContractTest {
         assertEquals(setOf("clientMessageId", "content", "inputModality"), messageBody.keys().asSequence().toSet())
         assertEquals(clientMessageId, messageBody.getString("clientMessageId"))
         assertEquals("voice", messageBody.getString("inputModality"))
+        val assessmentBody = JSONObject(requests.single { it.url.endsWith("/assessments") }.body!!)
+        assertEquals("2.0", assessmentBody.getString("version"))
+        assertEquals(0.0, assessmentBody.getDouble("scaleMin"), 0.0)
+        assertEquals(48.0, assessmentBody.getDouble("scaleMax"), 0.0)
+        assertEquals(48.0, assessmentBody.getDouble("rawScore"), 0.0)
         assertEquals("https://example.test/api/sessions/$sessionId/transcriptions", client.endpoints.transcriptions(sessionId))
 
         assertEquals("free_dialogue", created.interactionPhase)

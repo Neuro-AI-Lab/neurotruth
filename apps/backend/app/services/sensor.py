@@ -152,7 +152,9 @@ class SensorService:
             "alertRequired": False, "alertAction": "none",
         }
         public_prediction = {
-            key: value for key, value in {**prediction, **alert}.items()
+            key: value for key, value in {
+                **prediction, **alert, "source": "watch_sensor",
+            }.items()
             if not str(key).startswith("_")
         }
         model_version_id = await self.repository.ensure_craving_model_version(
@@ -202,6 +204,7 @@ class SensorService:
     @staticmethod
     def _response(result: SensorResultRecord, *, notification_allowed: bool = True) -> dict[str, Any]:
         prediction = dict(result.prediction)
+        prediction.setdefault("source", "watch_sensor")
         if not notification_allowed:
             prediction.update({"alertRequired": False, "alertAction": "none"})
             prediction.pop("triggerReason", None)

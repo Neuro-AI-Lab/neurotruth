@@ -29,22 +29,22 @@ class StateCheckScoringTest {
     )
 
     @Test
-    fun userFacingQuestionsScoreOneToSevenInTheSameDirection() {
+    fun userFacingQuestionsScoreZeroToSixInTheSameDirection() {
         val allLow = StateCheckScoring.buildResult(
             questions = userFacingQuestions,
-            responsesByQuestion = userFacingQuestions.associate { it.number to 1 },
+            responsesByQuestion = userFacingQuestions.associate { it.number to 0 },
             timestampMs = 123L,
             triggerClass = 2
         )!!
         val allHigh = StateCheckScoring.buildResult(
             questions = userFacingQuestions,
-            responsesByQuestion = userFacingQuestions.associate { it.number to 7 },
+            responsesByQuestion = userFacingQuestions.associate { it.number to 6 },
             timestampMs = 124L,
             triggerClass = 2
         )!!
 
-        assertEquals(1f, allLow.meanScore, 0.0001f)
-        assertEquals(7f, allHigh.meanScore, 0.0001f)
+        assertEquals(0f, allLow.meanScore, 0.0001f)
+        assertEquals(6f, allHigh.meanScore, 0.0001f)
         assertEquals(allLow.rawMeanScore, allLow.meanScore, 0.0001f)
         assertEquals(allHigh.rawMeanScore, allHigh.meanScore, 0.0001f)
     }
@@ -53,30 +53,30 @@ class StateCheckScoringTest {
     fun supportsReverseScoredItemsWhenConfigured() {
         val result = StateCheckScoring.buildResult(
             questions = reverseScoredQuestions,
-            responsesByQuestion = reverseScoredQuestions.associate { it.number to 7 },
+            responsesByQuestion = reverseScoredQuestions.associate { it.number to 6 },
             timestampMs = 123L,
             triggerClass = 2
         )!!
 
-        assertEquals(listOf(7, 1, 7, 7, 7, 7, 1, 7), result.scoredItems)
-        assertEquals(56, result.rawTotalScore)
-        assertEquals(7f, result.rawMeanScore, 0.0001f)
-        assertEquals(44, result.totalScore)
-        assertEquals(5.5f, result.meanScore, 0.0001f)
+        assertEquals(listOf(6, 0, 6, 6, 6, 6, 0, 6), result.scoredItems)
+        assertEquals(48, result.rawTotalScore)
+        assertEquals(6f, result.rawMeanScore, 0.0001f)
+        assertEquals(36, result.totalScore)
+        assertEquals(4.5f, result.meanScore, 0.0001f)
     }
 
     @Test
     fun neutralResponsesStayNeutralAfterReverseScoring() {
         val result = StateCheckScoring.buildResult(
             questions = reverseScoredQuestions,
-            responsesByQuestion = reverseScoredQuestions.associate { it.number to 4 },
+            responsesByQuestion = reverseScoredQuestions.associate { it.number to 3 },
             timestampMs = 123L,
             triggerClass = 2
         )!!
 
-        assertEquals(List(8) { 4 }, result.scoredItems)
-        assertEquals(4f, result.rawMeanScore, 0.0001f)
-        assertEquals(4f, result.meanScore, 0.0001f)
+        assertEquals(List(8) { 3 }, result.scoredItems)
+        assertEquals(3f, result.rawMeanScore, 0.0001f)
+        assertEquals(3f, result.meanScore, 0.0001f)
     }
 
     @Test
@@ -92,7 +92,7 @@ class StateCheckScoringTest {
         assertNull(
             StateCheckScoring.buildResult(
                 questions = userFacingQuestions,
-                responsesByQuestion = userFacingQuestions.associate { it.number to 8 },
+                responsesByQuestion = userFacingQuestions.associate { it.number to 7 },
                 timestampMs = 123L,
                 triggerClass = 2
             )
