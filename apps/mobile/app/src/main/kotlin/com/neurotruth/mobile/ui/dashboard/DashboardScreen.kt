@@ -21,8 +21,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,7 +54,12 @@ import com.neurotruth.mobile.data.LivePpgWindow
 import com.neurotruth.mobile.data.PpgPreviewParser
 import com.neurotruth.mobile.data.PpgPreviewResult
 import com.neurotruth.mobile.data.PpgSample
+import com.neurotruth.mobile.ui.theme.CardTone
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
+import com.neurotruth.mobile.ui.theme.ScreenTitle
+import com.neurotruth.mobile.ui.theme.SectionCard
+import com.neurotruth.mobile.ui.theme.SectionLabel
+import com.neurotruth.mobile.ui.theme.SecondaryButton
 import com.neurotruth.mobile.ui.theme.cravingAccent
 import java.time.Instant
 import java.time.ZoneId
@@ -97,8 +100,7 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             ),
         verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenCards),
     ) {
-        Text(text = "대시보드", style = MaterialTheme.typography.headlineMedium)
-        HorizontalDivider()
+        ScreenTitle("대시보드")
 
         // if/else, never an early return@Column: bailing out of a layout content lambda after
         // emitting composables corrupts the slot table and crashes the next recomposition.
@@ -160,15 +162,11 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             )
 
             if (state.hasAnyError) {
-                OutlinedButton(
+                SecondaryButton(
+                    text = "다시 시도",
                     onClick = viewModel::refresh,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                        .semantics { contentDescription = "대시보드 다시 불러오기" },
-                ) {
-                    Text("다시 시도", style = MaterialTheme.typography.labelLarge)
-                }
+                    contentDescription = "대시보드 다시 불러오기",
+                )
             }
 
             Text(
@@ -195,7 +193,7 @@ private fun RecentHourSection(
     selectedPredictionId: String?,
     onSelectPrediction: (String?) -> Unit,
 ) {
-    SectionCard(title = "최근 1시간 변화") {
+    SectionBlock(label = "최근 1시간 변화") {
         when {
             errorMessage != null -> EmptyLine(errorMessage)
 
@@ -362,31 +360,33 @@ private fun HourlyStackSection(
     selectedHour: Int?,
     onSelect: (Int?) -> Unit,
 ) {
-    SectionCard(title = "시간대별 갈망 가능성") {
-        if (errorMessage != null) {
-            EmptyLine(errorMessage)
-            return@SectionCard
-        }
-        if (buckets.isEmpty()) {
-            EmptyLine("오늘 측정 기록이 없어요.")
-            return@SectionCard
-        }
-        if (buckets.none { it.hasData }) {
-            EmptyLine("오늘은 아직 측정 기록이 없어요.")
-        }
+    SectionBlock(label = "시간대별 갈망 가능성") {
+        // if/else, never an early return@SectionBlock: bailing out of a layout content lambda after
+        // emitting composables corrupts the slot table and crashes the next recomposition.
+        when {
+            errorMessage != null -> EmptyLine(errorMessage)
 
-        StackedHourChart(buckets = buckets, selectedHour = selectedHour, onSelect = onSelect)
-        StageLegend()
+            buckets.isEmpty() -> EmptyLine("오늘 측정 기록이 없어요.")
 
-        val selected = selectedHour?.let { hour -> buckets.firstOrNull { it.hour == hour } }
-        if (selected == null) {
-            Text(
-                text = "막대를 누르면 시간대별 자세한 값을 볼 수 있어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            HourDetailCard(selected)
+            else -> {
+                if (buckets.none { it.hasData }) {
+                    EmptyLine("오늘은 아직 측정 기록이 없어요.")
+                }
+
+                StackedHourChart(buckets = buckets, selectedHour = selectedHour, onSelect = onSelect)
+                StageLegend()
+
+                val selected = selectedHour?.let { hour -> buckets.firstOrNull { it.hour == hour } }
+                if (selected == null) {
+                    Text(
+                        text = "막대를 누르면 시간대별 자세한 값을 볼 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    HourDetailCard(selected)
+                }
+            }
         }
     }
 }
@@ -496,32 +496,27 @@ private fun StageLegend() {
 
 @Composable
 private fun HourDetailCard(bucket: HourlyCravingBucket) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(text = bucket.hourLabel, style = MaterialTheme.typography.titleMedium)
-            if (!bucket.hasData) {
+    SectionCard(tone = CardTone.Low, contentGap = 6.dp) {
+        Text(text = bucket.hourLabel, style = MaterialTheme.typography.titleMedium)
+        if (!bucket.hasData) {
+            Text(
+                text = CravingStage.NO_DATA_LABEL,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics {
+                    contentDescription = "${bucket.hourLabel}, ${CravingStage.NO_DATA_LABEL}"
+                },
+            )
+        } else {
+            Text(
+                text = "측정 ${bucket.sampleCount}회",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            bucket.proportions().forEach { (stage, portion) ->
                 Text(
-                    text = CravingStage.NO_DATA_LABEL,
+                    text = "${stage.label} ${percentOf(portion)} (${bucket.stageCounts[stage] ?: 0}회)",
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.semantics {
-                        contentDescription = "${bucket.hourLabel}, ${CravingStage.NO_DATA_LABEL}"
-                    },
+                    color = cravingAccent(stage),
                 )
-            } else {
-                Text(
-                    text = "측정 ${bucket.sampleCount}회",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                bucket.proportions().forEach { (stage, portion) ->
-                    Text(
-                        text = "${stage.label} ${percentOf(portion)} (${bucket.stageCounts[stage] ?: 0}회)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = cravingAccent(stage),
-                    )
-                }
             }
         }
     }
@@ -540,8 +535,8 @@ private fun EventSection(
     onRangeChange: (String) -> Unit,
     onSelect: (Int?) -> Unit,
 ) {
-    SectionCard(
-        title = "갈망 이벤트",
+    SectionBlock(
+        label = "갈망 이벤트",
         trailing = {
             RangeChips(
                 options = listOf(
@@ -553,23 +548,25 @@ private fun EventSection(
             )
         },
     ) {
-        if (errorMessage != null) {
-            EmptyLine(errorMessage)
-            return@SectionCard
-        }
-        if (buckets.isEmpty() || buckets.none { it.hasPredictionData }) {
-            EmptyLine("예측 기록이 없어 이벤트를 표시할 수 없어요.")
-            return@SectionCard
-        }
+        // if/else, never an early return@SectionBlock: bailing out of a layout content lambda after
+        // emitting composables corrupts the slot table and crashes the next recomposition.
+        when {
+            errorMessage != null -> EmptyLine(errorMessage)
 
-        EventChart(buckets = buckets, selectedIndex = selectedIndex, onSelect = onSelect)
-        Text(
-            text = "점은 예측은 있었지만 알림이 없던 날, 빈 자리는 예측 자체가 없던 날이에요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        selectedIndex?.let { index ->
-            buckets.getOrNull(index)?.let { EventDetailCard(it) }
+            buckets.isEmpty() || buckets.none { it.hasPredictionData } ->
+                EmptyLine("예측 기록이 없어 이벤트를 표시할 수 없어요.")
+
+            else -> {
+                EventChart(buckets = buckets, selectedIndex = selectedIndex, onSelect = onSelect)
+                Text(
+                    text = "점은 예측은 있었지만 알림이 없던 날, 빈 자리는 예측 자체가 없던 날이에요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                selectedIndex?.let { index ->
+                    buckets.getOrNull(index)?.let { EventDetailCard(it) }
+                }
+            }
         }
     }
 }
@@ -661,20 +658,15 @@ private fun EventDetailCard(bucket: DailyEventBucket) {
         bucket.isValidZero -> "이벤트 0회 (예측은 있었어요)"
         else -> "이벤트 ${bucket.totalCount}회 · 권유 ${bucket.recommendCount}, 필요 ${bucket.requiredCount}"
     }
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(text = longLabel(bucket.localDate), style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.semantics {
-                    contentDescription = "${longLabel(bucket.localDate)}, $summary"
-                },
-            )
-        }
+    SectionCard(tone = CardTone.Low, contentGap = 6.dp) {
+        Text(text = longLabel(bucket.localDate), style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = summary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics {
+                contentDescription = "${longLabel(bucket.localDate)}, $summary"
+            },
+        )
     }
 }
 
@@ -692,8 +684,8 @@ private fun AuqSection(
     onRangeChange: (String) -> Unit,
     onSelect: (Int?) -> Unit,
 ) {
-    SectionCard(
-        title = "자가설문 평균",
+    SectionBlock(
+        label = "자가설문 평균",
         trailing = {
             RangeChips(
                 options = listOf(
@@ -706,23 +698,24 @@ private fun AuqSection(
             )
         },
     ) {
-        if (errorMessage != null) {
-            EmptyLine(errorMessage)
-            return@SectionCard
-        }
-        if (buckets.none { it.hasData }) {
-            EmptyLine("아직 응답한 자가설문이 없어요.")
-            return@SectionCard
-        }
+        // if/else, never an early return@SectionBlock: bailing out of a layout content lambda after
+        // emitting composables corrupts the slot table and crashes the next recomposition.
+        when {
+            errorMessage != null -> EmptyLine(errorMessage)
 
-        AuqChart(buckets = buckets, selectedIndex = selectedIndex, onSelect = onSelect)
-        Text(
-            text = if (bucketUnit == "hour") "오늘 시간대별 평균 (0-48)" else "일별 평균 (0-48)",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        selectedIndex?.let { index ->
-            buckets.getOrNull(index)?.let { AuqDetailCard(it, range) }
+            buckets.none { it.hasData } -> EmptyLine("아직 응답한 자가설문이 없어요.")
+
+            else -> {
+                AuqChart(buckets = buckets, selectedIndex = selectedIndex, onSelect = onSelect)
+                Text(
+                    text = if (bucketUnit == "hour") "오늘 시간대별 평균 (0-48)" else "일별 평균 (0-48)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                selectedIndex?.let { index ->
+                    buckets.getOrNull(index)?.let { AuqDetailCard(it, range) }
+                }
+            }
         }
     }
 }
@@ -818,18 +811,13 @@ private fun AuqDetailCard(bucket: AuqBucket, range: String) {
     } else {
         "평균 ${bucket.averageScore.roundToInt()}/${Auq.SCALE_MAX} · 응답 ${bucket.sampleCount}회"
     }
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(text = period, style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.semantics { contentDescription = "$period, $summary" },
-            )
-        }
+    SectionCard(tone = CardTone.Low, contentGap = 6.dp) {
+        Text(text = period, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = summary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { contentDescription = "$period, $summary" },
+        )
     }
 }
 
@@ -854,7 +842,7 @@ private fun PpgSection(
     result: PpgPreviewResult?,
     errorMessage: String?,
 ) {
-    SectionCard(title = "신호 데이터") {
+    SectionBlock(label = "신호 데이터") {
         Text(
             text = "실시간 · Watch",
             style = MaterialTheme.typography.titleMedium,
@@ -1023,9 +1011,13 @@ private fun ppgInvalidCopy(reason: String): String = when (reason) {
 // Shared pieces
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * One dashboard section: a grouping [SectionLabel] (with optional trailing range chips) above a
+ * shared tonal [SectionCard] that holds the chart, note, and detail cards.
+ */
 @Composable
-private fun SectionCard(
-    title: String,
+private fun SectionBlock(
+    label: String,
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -1035,13 +1027,10 @@ private fun SectionCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(text = title, style = MaterialTheme.typography.titleLarge)
+            SectionLabel(label)
             trailing?.invoke()
         }
-        Column(
-            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-            content = content,
-        )
+        SectionCard(content = content)
     }
 }
 

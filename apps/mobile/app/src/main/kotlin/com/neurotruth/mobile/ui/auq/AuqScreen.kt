@@ -3,39 +3,33 @@ package com.neurotruth.mobile.ui.auq
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.Auq
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
+import com.neurotruth.mobile.ui.theme.PrimaryButton
+import com.neurotruth.mobile.ui.theme.ScreenScaffold
+import com.neurotruth.mobile.ui.theme.SectionCard
+import com.neurotruth.mobile.ui.theme.SecondaryButton
 
 /**
  * NT-06 · 자가보고 (AUQ).
@@ -60,8 +54,9 @@ fun AuqScreen(
         if (state.done) onContinueToChat()
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
+    ScreenScaffold(
+        title = "지금의 상태",
+        modifier = modifier,
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.background) {
                 Column(
@@ -78,44 +73,26 @@ fun AuqScreen(
                         horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
                     ) {
                         if (!state.isFirstItem) {
-                            OutlinedButton(
+                            SecondaryButton(
+                                text = "이전",
                                 onClick = viewModel::onPrevious,
                                 enabled = !state.isSubmitting,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                                    .semantics { contentDescription = "이전 문항으로" },
-                            ) {
-                                Text("이전", style = MaterialTheme.typography.labelLarge)
-                            }
+                                contentDescription = "이전 문항으로",
+                                modifier = Modifier.weight(1f),
+                            )
                         }
-                        Button(
+                        PrimaryButton(
+                            text = if (state.isLastItem) "저장하고 대화하기" else "다음",
                             onClick = if (state.isLastItem) viewModel::onSubmit else viewModel::onNext,
                             enabled = if (state.isLastItem) state.canSubmit else state.canAdvance,
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                                .semantics {
-                                    contentDescription = if (state.isLastItem) {
-                                        "응답을 저장하고 대화 시작"
-                                    } else {
-                                        "다음 문항으로"
-                                    }
-                                },
-                        ) {
-                            if (state.isSubmitting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
+                            loading = state.isSubmitting,
+                            contentDescription = if (state.isLastItem) {
+                                "응답을 저장하고 대화 시작"
                             } else {
-                                Text(
-                                    text = if (state.isLastItem) "저장하고 대화하기" else "다음",
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            }
-                        }
+                                "다음 문항으로"
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
 
                     // Available on every item, including while a submission has just failed.
@@ -131,34 +108,21 @@ fun AuqScreen(
                 }
             }
         },
-    ) { insets ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(insets)
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = NeuroTruthSpacing.screenHorizontal,
-                    vertical = NeuroTruthSpacing.screenVertical,
-                ),
-            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-        ) {
-            Text(text = "지금의 상태", style = MaterialTheme.typography.headlineMedium)
-            HorizontalDivider()
+    ) {
+        Text(
+            text = state.progressLabel,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics {
+                contentDescription = "전체 ${Auq.ITEM_COUNT}문항 중 ${state.index + 1}번째 문항"
+            },
+        )
+        LinearProgressIndicator(
+            progress = { state.progressFraction },
+            modifier = Modifier.fillMaxWidth(),
+        )
 
-            Text(
-                text = state.progressLabel,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics {
-                    contentDescription = "전체 ${Auq.ITEM_COUNT}문항 중 ${state.index + 1}번째 문항"
-                },
-            )
-            LinearProgressIndicator(
-                progress = { state.progressFraction },
-                modifier = Modifier.fillMaxWidth(),
-            )
-
+        SectionCard {
             Text(
                 text = state.question.text,
                 style = MaterialTheme.typography.titleLarge,
@@ -173,26 +137,26 @@ fun AuqScreen(
                     onSelect = { viewModel.onResponseSelected(value) },
                 )
             }
+        }
 
-            Text(
-                text = "점수가 높을수록 당시 음주 욕구 관련 응답이 높았습니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = "언제든 건너뛰고 대화를 시작할 수 있어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Text(
+            text = "점수가 높을수록 당시 음주 욕구 관련 응답이 높았습니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "언제든 건너뛰고 대화를 시작할 수 있어요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
-            state.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.semantics { contentDescription = "저장 오류: $message" },
-                )
-            }
+        state.errorMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { contentDescription = "저장 오류: $message" },
+            )
         }
     }
 }
@@ -205,26 +169,42 @@ private fun ResponseRow(
     enabled: Boolean,
     onSelect: () -> Unit,
 ) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
+    // if/else — never an early return — so this content lambda always runs to a balanced end.
+    if (selected) {
+        Button(
+            onClick = onSelect,
+            enabled = enabled,
+            shape = MaterialTheme.shapes.large,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .heightIn(min = NeuroTruthSpacing.minTouchTarget),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            RadioButton(
-                selected = selected,
-                onClick = onSelect,
-                enabled = enabled,
-                modifier = Modifier.semantics {
-                    contentDescription = "$label${if (selected) ", 선택됨" else ""}, 두 번 눌러 선택"
+                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                .semantics {
+                    contentDescription = "$label, 선택됨, 두 번 눌러 선택"
                 },
-            )
+        ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    } else {
+        OutlinedButton(
+            onClick = onSelect,
+            enabled = enabled,
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                .semantics {
+                    contentDescription = "$label, 두 번 눌러 선택"
+                },
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Start,
                 modifier = Modifier.weight(1f),
             )
         }

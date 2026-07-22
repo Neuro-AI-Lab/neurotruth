@@ -18,38 +18,43 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
+import com.neurotruth.mobile.ui.theme.CardTone
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
+import com.neurotruth.mobile.ui.theme.SectionCard
+import com.neurotruth.mobile.ui.theme.SecondaryButton
 
 /**
  * NT-07 · AI 챗봇.
@@ -124,14 +129,19 @@ fun ChatScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = NeuroTruthSpacing.screenVertical),
+                .padding(top = NeuroTruthSpacing.titleTop, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(text = "AI 챗봇", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                text = "AI 챗봇",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.semantics { heading() },
+            )
             OutlinedButton(
                 onClick = viewModel::finishSession,
                 enabled = state.sessionId != null,
+                shape = CircleShape,
                 modifier = Modifier
                     .heightIn(min = NeuroTruthSpacing.minTouchTarget)
                     .semantics { contentDescription = "대화 종료" },
@@ -139,7 +149,6 @@ fun ChatScreen(
                 Text("종료", style = MaterialTheme.typography.labelLarge)
             }
         }
-        HorizontalDivider()
 
         Box(modifier = Modifier.weight(1f)) {
             when {
@@ -270,12 +279,21 @@ fun ChatScreen(
                     },
                 )
             }
-            OutlinedTextField(
+            TextField(
                 value = state.draft,
                 onValueChange = viewModel::onDraftChanged,
                 placeholder = { Text("메시지를 입력하세요") },
                 enabled = !state.isPreparing,
                 maxLines = 4,
+                shape = MaterialTheme.shapes.large,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                ),
                 modifier = Modifier
                     .weight(1f)
                     .semantics { contentDescription = "메시지 입력란" },
@@ -283,6 +301,7 @@ fun ChatScreen(
             Button(
                 onClick = viewModel::send,
                 enabled = state.canSend,
+                shape = CircleShape,
                 modifier = Modifier
                     .widthIn(min = 72.dp)
                     .heightIn(min = NeuroTruthSpacing.minTouchTarget)
@@ -345,24 +364,30 @@ private fun MessageBubble(
     onSpeak: () -> Unit,
     onStop: () -> Unit,
 ) {
+    // Asymmetric large radius with one tight corner nearest the sender: bottom-end for the user's
+    // right-aligned bubble, bottom-start for the assistant's left-aligned one.
+    val bubbleShape = if (message.fromUser) {
+        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 4.dp, bottomStart = 20.dp)
+    } else {
+        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 4.dp)
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start,
     ) {
-        Card(
+        Surface(
             modifier = Modifier.fillMaxWidth(0.86f),
-            colors = CardDefaults.cardColors(
-                containerColor = if (message.fromUser) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                contentColor = if (message.fromUser) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ),
+            shape = bubbleShape,
+            color = if (message.fromUser) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            contentColor = if (message.fromUser) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -400,55 +425,32 @@ private fun MessageBubble(
 /** The user's bubble above this card is untouched; the retry sends the same message once. */
 @Composable
 private fun RetryCard(enabled: Boolean, onRetry: () -> Unit) {
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(text = "답변을 불러오지 못했어요", style = MaterialTheme.typography.titleMedium)
-            Text(text = "보낸 메시지는 그대로 유지됩니다.", style = MaterialTheme.typography.bodyMedium)
-            OutlinedButton(
-                onClick = onRetry,
-                enabled = enabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                    .semantics { contentDescription = "같은 메시지로 응답 다시 받기" },
-            ) {
-                Text("응답 다시 받기", style = MaterialTheme.typography.labelLarge)
-            }
-        }
+    SectionCard(tone = CardTone.Warm, contentGap = 8.dp) {
+        Text(text = "답변을 불러오지 못했어요", style = MaterialTheme.typography.titleMedium)
+        Text(text = "보낸 메시지는 그대로 유지됩니다.", style = MaterialTheme.typography.bodyMedium)
+        SecondaryButton(
+            text = "응답 다시 받기",
+            onClick = onRetry,
+            enabled = enabled,
+            contentDescription = "같은 메시지로 응답 다시 받기",
+        )
     }
 }
 
 @Composable
 private fun ErrorCard(message: String, showReconnect: Boolean, onReconnect: () -> Unit) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.semantics { contentDescription = "오류: $message" },
+    SectionCard(tone = CardTone.Alert, contentGap = 8.dp) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { contentDescription = "오류: $message" },
+        )
+        if (showReconnect) {
+            SecondaryButton(
+                text = "다시 시도",
+                onClick = onReconnect,
+                contentDescription = "대화 다시 연결",
             )
-            if (showReconnect) {
-                OutlinedButton(
-                    onClick = onReconnect,
-                    modifier = Modifier
-                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                        .semantics { contentDescription = "대화 다시 연결" },
-                ) {
-                    Text("다시 시도")
-                }
-            }
         }
     }
 }

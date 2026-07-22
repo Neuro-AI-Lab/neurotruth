@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -61,9 +61,9 @@ object NeuroTruthRoutes {
  * Home.
  */
 enum class BottomTab(val route: String, val label: String, val icon: ImageVector) {
-    HOME(NeuroTruthRoutes.HOME, "홈", Icons.Filled.Home),
-    DASHBOARD(NeuroTruthRoutes.DASHBOARD, "대시보드", Icons.Filled.Insights),
-    CHAT(NeuroTruthRoutes.CHAT, "챗봇", Icons.AutoMirrored.Filled.Chat),
+    HOME(NeuroTruthRoutes.HOME, "홈", Icons.Outlined.Home),
+    DASHBOARD(NeuroTruthRoutes.DASHBOARD, "대시보드", Icons.Outlined.BarChart),
+    CHAT(NeuroTruthRoutes.CHAT, "챗봇", Icons.AutoMirrored.Outlined.Chat),
 }
 
 @Composable

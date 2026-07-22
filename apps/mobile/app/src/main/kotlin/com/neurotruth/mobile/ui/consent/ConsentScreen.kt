@@ -3,20 +3,10 @@ package com.neurotruth.mobile.ui.consent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -28,12 +18,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.ConsentVersions
+import com.neurotruth.mobile.ui.theme.CardTone
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
+import com.neurotruth.mobile.ui.theme.PrimaryButton
+import com.neurotruth.mobile.ui.theme.ScreenScaffold
+import com.neurotruth.mobile.ui.theme.SectionCard
+import com.neurotruth.mobile.ui.theme.SectionLabel
 
 /**
  * NT-03 · 동의 · 권한.
@@ -58,93 +52,66 @@ fun ConsentScreen(
         if (state.saved) onSaved()
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
+    ScreenScaffold(
+        title = "동의 · 권한",
+        modifier = modifier,
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.background) {
-                Button(
+                PrimaryButton(
+                    text = "저장하고 홈으로",
                     onClick = viewModel::submit,
                     enabled = state.canSubmit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = NeuroTruthSpacing.screenHorizontal,
-                            vertical = NeuroTruthSpacing.screenVertical,
-                        )
-                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                        .semantics { contentDescription = "동의를 저장하고 홈으로 이동" },
-                ) {
-                    if (state.isSubmitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
-                        Text("저장하고 홈으로", style = MaterialTheme.typography.labelLarge)
-                    }
-                }
+                    loading = state.isSubmitting,
+                    contentDescription = "동의를 저장하고 홈으로 이동",
+                    modifier = Modifier.padding(
+                        horizontal = NeuroTruthSpacing.screenHorizontal,
+                        vertical = NeuroTruthSpacing.screenVertical,
+                    ),
+                )
             }
         },
-    ) { insets ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(insets)
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = NeuroTruthSpacing.screenHorizontal,
-                    vertical = NeuroTruthSpacing.screenVertical,
-                ),
-            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-        ) {
-            Text(text = "동의 · 권한", style = MaterialTheme.typography.headlineMedium)
-            HorizontalDivider()
-
-            Text(text = "필수 동의", style = MaterialTheme.typography.titleMedium)
-            ConsentKey.REQUIRED.forEach { key ->
-                ConsentRow(
-                    key = key,
-                    checked = state.values[key] == true,
-                    enabled = !state.isSubmitting,
-                    onCheckedChange = { viewModel.onToggle(key, it) },
-                )
-            }
-
-            Spacer(modifier = Modifier.heightIn(min = 8.dp))
-            Text(text = "선택 동의", style = MaterialTheme.typography.titleMedium)
-            ConsentKey.OPTIONAL.forEach { key ->
-                ConsentRow(
-                    key = key,
-                    checked = state.values[key] == true,
-                    enabled = !state.isSubmitting,
-                    onCheckedChange = { viewModel.onToggle(key, it) },
-                )
-            }
-
-            Spacer(modifier = Modifier.heightIn(min = 8.dp))
-            Text(
-                text = "동의를 철회하면 이후 처리가 중단되지만, 이미 보관된 기록이 삭제되지는 않습니다. " +
-                    "카메라·마이크 권한은 해당 기능을 처음 열 때 따로 요청해요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        SectionLabel(text = "필수 동의")
+        ConsentKey.REQUIRED.forEach { key ->
+            ConsentRow(
+                key = key,
+                checked = state.values[key] == true,
+                enabled = !state.isSubmitting,
+                onCheckedChange = { viewModel.onToggle(key, it) },
             )
-            Text(
-                text = "약관 ${ConsentVersions.TOS} · 개인정보 ${ConsentVersions.PRIVACY} · " +
-                    "동의서 ${ConsentVersions.CONSENT_FORM}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics { contentDescription = "적용된 동의 버전" },
-            )
+        }
 
-            state.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.semantics { contentDescription = "저장 오류: $message" },
-                )
-            }
+        SectionLabel(text = "선택 동의")
+        ConsentKey.OPTIONAL.forEach { key ->
+            ConsentRow(
+                key = key,
+                checked = state.values[key] == true,
+                enabled = !state.isSubmitting,
+                onCheckedChange = { viewModel.onToggle(key, it) },
+            )
+        }
+
+        Text(
+            text = "동의를 철회하면 이후 처리가 중단되지만, 이미 보관된 기록이 삭제되지는 않습니다. " +
+                "카메라·마이크 권한은 해당 기능을 처음 열 때 따로 요청해요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "약관 ${ConsentVersions.TOS} · 개인정보 ${ConsentVersions.PRIVACY} · " +
+                "동의서 ${ConsentVersions.CONSENT_FORM}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { contentDescription = "적용된 동의 버전" },
+        )
+
+        state.errorMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { contentDescription = "저장 오류: $message" },
+            )
         }
     }
 }
@@ -157,14 +124,13 @@ private fun ConsentRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val explanation = if (checked || key.required) key.whenOn else key.whenOff
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    SectionCard(tone = CardTone.Default) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .heightIn(min = NeuroTruthSpacing.minTouchTarget),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(

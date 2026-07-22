@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,16 +14,17 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,6 +54,10 @@ import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.net.PatientSignupRequest
 import com.neurotruth.mobile.ui.consent.ConsentKey
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
+import com.neurotruth.mobile.ui.theme.PrimaryButton
+import com.neurotruth.mobile.ui.theme.SecondaryButton
+import com.neurotruth.mobile.ui.theme.SectionCard
+import com.neurotruth.mobile.ui.theme.SectionLabel
 
 /**
  * NT-09 · 설정.
@@ -122,76 +129,93 @@ fun SettingsScreen(
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .imePadding()
-            .padding(
-                horizontal = NeuroTruthSpacing.screenHorizontal,
-                vertical = NeuroTruthSpacing.screenVertical,
-            ),
-        verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenCards),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { insets ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(insets)
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .padding(
+                    horizontal = NeuroTruthSpacing.screenHorizontal,
+                    vertical = NeuroTruthSpacing.screenVertical,
+                ),
+            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenCards),
         ) {
-            Text(text = "설정", style = MaterialTheme.typography.headlineMedium)
-            OutlinedButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                    .semantics { contentDescription = "설정 닫고 홈으로" },
-            ) {
-                Text("닫기", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        HorizontalDivider()
-
-        AccountSection(state = state, viewModel = viewModel)
-        ConsentSection(state = state, viewModel = viewModel)
-        NoticeSection(version = state.noticeVersion, onReRead = { showNotice = true })
-        PermissionSection(
-            state = state,
-            onOpenSystemSettings = { context.openAppSettings() },
-        )
-        PasswordSection(state = state, viewModel = viewModel)
-
-        SettingsCard(title = "로그아웃") {
-            Text(
-                text = "로그아웃하면 측정·알림 연결과 이 기기의 화면 정보가 정리돼요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
-                onClick = { confirmLogout = true },
-                enabled = !state.isSigningOut,
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                    .semantics { contentDescription = "로그아웃" },
+                    .padding(top = NeuroTruthSpacing.titleTop, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                if (state.isSigningOut) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text("로그아웃", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = "설정",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.semantics { heading() },
+                )
+                OutlinedButton(
+                    onClick = onBack,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                        .semantics { contentDescription = "설정 닫고 홈으로" },
+                ) {
+                    Text("닫기", style = MaterialTheme.typography.labelLarge)
                 }
             }
-        }
 
-        state.errorMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { contentDescription = "오류: $message" },
+            AccountSection(state = state, viewModel = viewModel)
+            ConsentSection(state = state, viewModel = viewModel)
+            NoticeSection(version = state.noticeVersion, onReRead = { showNotice = true })
+            PermissionSection(
+                state = state,
+                onOpenSystemSettings = { context.openAppSettings() },
             )
+            PasswordSection(state = state, viewModel = viewModel)
+
+            SettingsCard(title = "로그아웃") {
+                Text(
+                    text = "로그아웃하면 측정·알림 연결과 이 기기의 화면 정보가 정리돼요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = { confirmLogout = true },
+                    enabled = !state.isSigningOut,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                        .semantics { contentDescription = "로그아웃" },
+                ) {
+                    if (state.isSigningOut) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onError,
+                        )
+                    } else {
+                        Text("로그아웃", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+
+            state.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { contentDescription = "오류: $message" },
+                )
+            }
         }
     }
 }
@@ -216,24 +240,13 @@ private fun AccountSection(state: SettingsUiState, viewModel: SettingsViewModel)
                 .fillMaxWidth()
                 .semantics { contentDescription = "표시 이름 입력란" },
         )
-        Button(
+        PrimaryButton(
+            text = "표시 이름 저장",
             onClick = viewModel::saveDisplayName,
             enabled = state.canSaveName,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                .semantics { contentDescription = "표시 이름 저장" },
-        ) {
-            if (state.isSavingName) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text("표시 이름 저장", style = MaterialTheme.typography.labelLarge)
-            }
-        }
+            loading = state.isSavingName,
+            contentDescription = "표시 이름 저장",
+        )
         state.nameSavedMessage?.let { message ->
             Text(
                 text = message,
@@ -256,8 +269,6 @@ private fun ConsentSection(state: SettingsUiState, viewModel: SettingsViewModel)
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        HorizontalDivider()
 
         Text(text = "선택 동의", style = MaterialTheme.typography.titleSmall)
         ConsentKey.OPTIONAL.forEach { key ->
@@ -282,24 +293,13 @@ private fun ConsentSection(state: SettingsUiState, viewModel: SettingsViewModel)
             modifier = Modifier.semantics { contentDescription = "적용된 동의 버전" },
         )
 
-        Button(
+        PrimaryButton(
+            text = "동의 변경 저장",
             onClick = viewModel::saveConsent,
             enabled = !state.isSavingConsent && !state.isLoading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                .semantics { contentDescription = "동의 변경 내용 저장" },
-        ) {
-            if (state.isSavingConsent) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text("동의 변경 저장", style = MaterialTheme.typography.labelLarge)
-            }
-        }
+            loading = state.isSavingConsent,
+            contentDescription = "동의 변경 내용 저장",
+        )
         state.consentSavedMessage?.let { message ->
             Text(
                 text = message,
@@ -320,7 +320,7 @@ private fun RequiredConsentRow(key: ConsentKey, granted: Boolean) {
                 contentDescription = "${key.label} 필수 동의 ${if (granted) "동의함" else "확인 필요"}"
             },
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = "${key.label} (필수)", style = MaterialTheme.typography.titleSmall)
@@ -350,7 +350,7 @@ private fun OptionalConsentRow(
             .fillMaxWidth()
             .heightIn(min = NeuroTruthSpacing.minTouchTarget),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = key.label, style = MaterialTheme.typography.titleSmall)
@@ -385,15 +385,11 @@ private fun NoticeSection(version: String, onReRead: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.semantics { contentDescription = "확인한 안내 버전 $version" },
         )
-        OutlinedButton(
+        SecondaryButton(
+            text = "제품 안내 다시 보기",
             onClick = onReRead,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                .semantics { contentDescription = "제품 안내 다시 보기" },
-        ) {
-            Text("제품 안내 다시 보기", style = MaterialTheme.typography.labelLarge)
-        }
+            contentDescription = "제품 안내 다시 보기",
+        )
     }
 }
 
@@ -451,7 +447,7 @@ private fun PermissionSection(state: SettingsUiState, onOpenSystemSettings: () -
                             "${permission.label} 권한 ${if (granted) "허용됨" else "허용 안 됨"}"
                     },
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = permission.label, style = MaterialTheme.typography.titleSmall)
@@ -472,15 +468,11 @@ private fun PermissionSection(state: SettingsUiState, onOpenSystemSettings: () -
                 )
             }
         }
-        OutlinedButton(
+        SecondaryButton(
+            text = "시스템 설정 열기",
             onClick = onOpenSystemSettings,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                .semantics { contentDescription = "시스템 권한 설정 열기" },
-        ) {
-            Text("시스템 설정 열기", style = MaterialTheme.typography.labelLarge)
-        }
+            contentDescription = "시스템 권한 설정 열기",
+        )
     }
 }
 
@@ -546,24 +538,13 @@ private fun PasswordSection(state: SettingsUiState, viewModel: SettingsViewModel
                 .fillMaxWidth()
                 .semantics { contentDescription = "새 비밀번호 확인 입력란" },
         )
-        Button(
+        PrimaryButton(
+            text = "비밀번호 변경",
             onClick = viewModel::changePassword,
             enabled = !state.isChangingPassword,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                .semantics { contentDescription = "비밀번호 변경" },
-        ) {
-            if (state.isChangingPassword) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text("비밀번호 변경", style = MaterialTheme.typography.labelLarge)
-            }
-        }
+            loading = state.isChangingPassword,
+            contentDescription = "비밀번호 변경",
+        )
         state.passwordChangedMessage?.let { message ->
             Text(
                 text = message,
@@ -575,19 +556,13 @@ private fun PasswordSection(state: SettingsUiState, viewModel: SettingsViewModel
 }
 
 @Composable
-private fun SettingsCard(title: String, content: @Composable () -> Unit) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.semantics { contentDescription = "$title 영역" },
-            )
-            content()
-        }
+private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows)) {
+        SectionLabel(
+            text = title,
+            modifier = Modifier.semantics { contentDescription = "$title 영역" },
+        )
+        SectionCard(content = content)
     }
 }
 
