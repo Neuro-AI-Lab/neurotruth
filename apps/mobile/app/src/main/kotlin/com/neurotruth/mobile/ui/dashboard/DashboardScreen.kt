@@ -100,6 +100,8 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         Text(text = "대시보드", style = MaterialTheme.typography.headlineMedium)
         HorizontalDivider()
 
+        // if/else, never an early return@Column: bailing out of a layout content lambda after
+        // emitting composables corrupts the slot table and crashes the next recomposition.
         if (state.isLoading && state.dashboard == null && state.series == null) {
             Box(
                 modifier = Modifier
@@ -113,69 +115,68 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
                         .semantics { contentDescription = "기록을 불러오고 있어요" },
                 )
             }
-            return@Column
-        }
+        } else {
+            RecentHourSection(
+                series = state.series,
+                errorMessage = state.seriesError,
+                selectedPredictionId = state.selectedPredictionId,
+                onSelectPrediction = viewModel::onPredictionSelected,
+            )
 
-        RecentHourSection(
-            series = state.series,
-            errorMessage = state.seriesError,
-            selectedPredictionId = state.selectedPredictionId,
-            onSelectPrediction = viewModel::onPredictionSelected,
-        )
+            HourlyStackSection(
+                buckets = state.dashboard?.hourly.orEmpty(),
+                errorMessage = state.dashboardError,
+                selectedHour = state.selectedHour,
+                onSelect = viewModel::onHourSelected,
+            )
 
-        HourlyStackSection(
-            buckets = state.dashboard?.hourly.orEmpty(),
-            errorMessage = state.dashboardError,
-            selectedHour = state.selectedHour,
-            onSelect = viewModel::onHourSelected,
-        )
+            EventSection(
+                buckets = state.dashboard?.events.orEmpty(),
+                range = state.eventRange,
+                errorMessage = state.dashboardError,
+                selectedIndex = state.selectedEventIndex,
+                onRangeChange = viewModel::onEventRangeChanged,
+                onSelect = viewModel::onEventSelected,
+            )
 
-        EventSection(
-            buckets = state.dashboard?.events.orEmpty(),
-            range = state.eventRange,
-            errorMessage = state.dashboardError,
-            selectedIndex = state.selectedEventIndex,
-            onRangeChange = viewModel::onEventRangeChanged,
-            onSelect = viewModel::onEventSelected,
-        )
+            AuqSection(
+                buckets = state.dashboard?.auq.orEmpty(),
+                range = state.auqRange,
+                bucketUnit = state.dashboard?.auqBucketUnit ?: "day",
+                errorMessage = state.dashboardError,
+                selectedIndex = state.selectedAuqIndex,
+                onRangeChange = viewModel::onAuqRangeChanged,
+                onSelect = viewModel::onAuqSelected,
+            )
 
-        AuqSection(
-            buckets = state.dashboard?.auq.orEmpty(),
-            range = state.auqRange,
-            bucketUnit = state.dashboard?.auqBucketUnit ?: "day",
-            errorMessage = state.dashboardError,
-            selectedIndex = state.selectedAuqIndex,
-            onRangeChange = viewModel::onAuqRangeChanged,
-            onSelect = viewModel::onAuqSelected,
-        )
+            PpgSection(
+                live = state.livePpg,
+                watchState = state.watchState,
+                hasSelectionPath = state.hasPpgSelectionPath,
+                selectedPredictionId = state.selectedPredictionId,
+                isLoading = state.isPpgLoading,
+                result = state.ppg,
+                errorMessage = state.ppgError,
+            )
 
-        PpgSection(
-            live = state.livePpg,
-            watchState = state.watchState,
-            hasSelectionPath = state.hasPpgSelectionPath,
-            selectedPredictionId = state.selectedPredictionId,
-            isLoading = state.isPpgLoading,
-            result = state.ppg,
-            errorMessage = state.ppgError,
-        )
-
-        if (state.hasAnyError) {
-            OutlinedButton(
-                onClick = viewModel::refresh,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                    .semantics { contentDescription = "대시보드 다시 불러오기" },
-            ) {
-                Text("다시 시도", style = MaterialTheme.typography.labelLarge)
+            if (state.hasAnyError) {
+                OutlinedButton(
+                    onClick = viewModel::refresh,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                        .semantics { contentDescription = "대시보드 다시 불러오기" },
+                ) {
+                    Text("다시 시도", style = MaterialTheme.typography.labelLarge)
+                }
             }
-        }
 
-        Text(
-            text = "연구용 모델 출력이며 진단이나 임상적 갈망 강도를 의미하지 않습니다. 기기 현지시간 기준.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+            Text(
+                text = "연구용 모델 출력이며 진단이나 임상적 갈망 강도를 의미하지 않습니다. 기기 현지시간 기준.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -509,18 +510,18 @@ private fun HourDetailCard(bucket: HourlyCravingBucket) {
                         contentDescription = "${bucket.hourLabel}, ${CravingStage.NO_DATA_LABEL}"
                     },
                 )
-                return@Column
-            }
-            Text(
-                text = "측정 ${bucket.sampleCount}회",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            bucket.proportions().forEach { (stage, portion) ->
+            } else {
                 Text(
-                    text = "${stage.label} ${percentOf(portion)} (${bucket.stageCounts[stage] ?: 0}회)",
+                    text = "측정 ${bucket.sampleCount}회",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = cravingAccent(stage),
                 )
+                bucket.proportions().forEach { (stage, portion) ->
+                    Text(
+                        text = "${stage.label} ${percentOf(portion)} (${bucket.stageCounts[stage] ?: 0}회)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = cravingAccent(stage),
+                    )
+                }
             }
         }
     }

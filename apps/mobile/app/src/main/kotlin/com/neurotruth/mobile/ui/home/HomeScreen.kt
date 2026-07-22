@@ -249,69 +249,71 @@ private fun CravingStateCard(state: HomeUiState) {
             modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
             verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
         ) {
+            // Branch with if/else rather than an early return@Column: bailing out of a layout
+            // content lambda after emitting composables leaves the slot table's groups unbalanced
+            // and crashes the next recomposition.
             if (state.cravingHiddenReason != null) {
                 Text(
                     text = state.cravingHiddenReason,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                return@Column
-            }
+            } else {
+                Text(
+                    text = if (state.hasMeasurement) state.stageMessage else "아직 측정된 기록이 없어요.",
+                    style = MaterialTheme.typography.titleLarge,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
-            Text(
-                text = if (state.hasMeasurement) state.stageMessage else "아직 측정된 기록이 없어요.",
-                style = MaterialTheme.typography.titleLarge,
-                textAlign = TextAlign.End,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(96.dp)
-                        .clip(CircleShape)
-                        .background(accent.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .background(accent.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = state.stageLabel,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = accent,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(4.dp),
+                        )
+                    }
                     Text(
-                        text = state.stageLabel,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = accent,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(4.dp),
+                        text = "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
                     )
                 }
-                Text(
-                    text = "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-            }
 
-            if (state.recommendsConversation) {
-                AssistChip(
-                    onClick = { },
-                    label = { Text("대화 권장") },
-                    modifier = Modifier.semantics {
-                        contentDescription = "대화 권장 표시"
-                    },
-                )
-            }
+                if (state.recommendsConversation) {
+                    AssistChip(
+                        onClick = { },
+                        label = { Text("대화 권장") },
+                        modifier = Modifier.semantics {
+                            contentDescription = "대화 권장 표시"
+                        },
+                    )
+                }
 
-            state.measurementOrigin?.let { origin ->
-                Text(
-                    text = origin,
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "측정 시각과 기기: $origin" },
-                )
+                state.measurementOrigin?.let { origin ->
+                    Text(
+                        text = origin,
+                        style = MaterialTheme.typography.labelMedium,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = "측정 시각과 기기: $origin" },
+                    )
+                }
             }
         }
     }

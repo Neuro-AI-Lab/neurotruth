@@ -323,49 +323,50 @@ private fun CameraPermissionGate(
             modifier = Modifier.semantics { contentDescription = message },
         )
 
+        // if/else, never an early return@Column: bailing out of a layout content lambda after
+        // emitting composables corrupts the slot table and crashes the next recomposition.
         if (permission == CameraPermissionState.REQUESTING) {
             CircularProgressIndicator(color = CaptureOnDark)
-            return@Column
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-        ) {
-            if (permission == CameraPermissionState.PERMANENTLY_DENIED) {
-                Button(
-                    onClick = onOpenSettings,
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
+            ) {
+                if (permission == CameraPermissionState.PERMANENTLY_DENIED) {
+                    Button(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                            .semantics { contentDescription = "앱 설정 화면 열기" },
+                    ) { Text("설정 열기") }
+                } else {
+                    Button(
+                        onClick = onRetry,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                            .semantics { contentDescription = "카메라 권한 다시 요청" },
+                    ) { Text("다시 요청") }
+                }
+                OutlinedButton(
+                    onClick = onCancelled,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                        .semantics { contentDescription = "앱 설정 화면 열기" },
-                ) { Text("설정 열기") }
-            } else {
-                Button(
-                    onClick = onRetry,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                        .semantics { contentDescription = "카메라 권한 다시 요청" },
-                ) { Text("다시 요청") }
+                        .semantics { contentDescription = "측정 화면 닫기" },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CaptureOnDark),
+                ) { Text("홈으로") }
             }
-            OutlinedButton(
-                onClick = onCancelled,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                    .semantics { contentDescription = "측정 화면 닫기" },
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = CaptureOnDark),
-            ) { Text("홈으로") }
-        }
 
-        Text(
-            text = RppgCaptureCopy.RETENTION_NOTICE,
-            style = MaterialTheme.typography.bodySmall,
-            color = CaptureOnDarkMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+            Text(
+                text = RppgCaptureCopy.RETENTION_NOTICE,
+                style = MaterialTheme.typography.bodySmall,
+                color = CaptureOnDarkMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
