@@ -1,7 +1,9 @@
 package com.neurotruth.mobile.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -29,7 +31,13 @@ private val LightColors = lightColorScheme(
     onSurface = OnSurfaceLight,
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = OnSurfaceVariantLight,
+    surfaceContainerLowest = SurfaceContainerLowestLight,
+    surfaceContainerLow = SurfaceContainerLowLight,
+    surfaceContainer = SurfaceContainerLight,
+    surfaceContainerHigh = SurfaceContainerHighLight,
+    surfaceContainerHighest = SurfaceContainerHighestLight,
     outline = OutlineLight,
+    outlineVariant = OutlineVariantLight,
     error = ErrorLight,
     onError = OnErrorLight,
     errorContainer = ErrorContainerLight,
@@ -55,7 +63,13 @@ private val DarkColors = darkColorScheme(
     onSurface = OnSurfaceDark,
     surfaceVariant = SurfaceVariantDark,
     onSurfaceVariant = OnSurfaceVariantDark,
+    surfaceContainerLowest = SurfaceContainerLowestDark,
+    surfaceContainerLow = SurfaceContainerLowDark,
+    surfaceContainer = SurfaceContainerDark,
+    surfaceContainerHigh = SurfaceContainerHighDark,
+    surfaceContainerHighest = SurfaceContainerHighestDark,
     outline = OutlineDark,
+    outlineVariant = OutlineVariantDark,
     error = ErrorDark,
     onError = OnErrorDark,
     errorContainer = ErrorContainerDark,
@@ -65,12 +79,32 @@ private val DarkColors = darkColorScheme(
 /** Shared spacing so no screen invents its own rhythm. */
 object NeuroTruthSpacing {
     val screenHorizontal = 20.dp
-    val screenVertical = 16.dp
+    val screenVertical = 20.dp
     val betweenCards = 16.dp
     val cardPadding = 20.dp
     val betweenRows = 12.dp
-    val minTouchTarget = 48.dp
+    val minTouchTarget = 52.dp
+
+    /** Breathing room above a screen's large title. */
+    val titleTop = 20.dp
+
+    /** Gap between logical sections within one screen. */
+    val sectionGap = 24.dp
 }
+
+/**
+ * Softer, larger corner radii than the Material default.
+ *
+ * Cards use `large` (24dp) and pills use a full round; the effect is a calm, modern surface rather
+ * than the tighter default 12dp corners.
+ */
+val NeuroTruthShapes: Shapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(30.dp),
+)
 
 @Composable
 fun NeuroTruthTheme(
@@ -80,6 +114,7 @@ fun NeuroTruthTheme(
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = NeuroTruthTypography,
+        shapes = NeuroTruthShapes,
         content = content,
     )
 }

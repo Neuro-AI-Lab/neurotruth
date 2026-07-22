@@ -17,15 +17,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +38,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -47,7 +48,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.WatchConnectionState
+import com.neurotruth.mobile.ui.theme.CardTone
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
+import com.neurotruth.mobile.ui.theme.SectionCard
 import com.neurotruth.mobile.ui.theme.cravingAccent
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -97,62 +100,67 @@ fun HomeScreen(
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = NeuroTruthSpacing.screenHorizontal,
-                vertical = NeuroTruthSpacing.screenVertical,
-            ),
-        verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenCards),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { insets ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(insets)
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = NeuroTruthSpacing.screenHorizontal,
+                    vertical = NeuroTruthSpacing.screenVertical,
+                ),
+            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenCards),
         ) {
-            Text(text = "홈", style = MaterialTheme.typography.headlineMedium)
-            OutlinedButton(
-                onClick = onOpenSettings,
+            Row(
                 modifier = Modifier
-                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                    .semantics { contentDescription = "설정 열기" },
+                    .fillMaxWidth()
+                    .padding(top = NeuroTruthSpacing.titleTop, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("설정", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        HorizontalDivider()
-
-        ProfileSummary(
-            displayName = state.displayName,
-            accountSummary = state.accountSummary,
-            onDeveloperEntry = viewModel::onDeveloperEntryUnlocked,
-        )
-
-        state.monitoringNotice?.let { MonitoringBanner(message = it, label = "측정 상태 안내") }
-        state.droppedNotice?.let { MonitoringBanner(message = it, label = "전송 안내") }
-
-        CravingStateCard(state = state)
-
-        WatchAndCameraCard(
-            state = state,
-            onOpenCameraMeasurement = onOpenCameraMeasurement,
-        )
-
-        state.errorMessage?.let { message ->
-            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                Text(
+                    text = "홈",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.semantics { heading() },
+                )
+                FilledTonalIconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .size(NeuroTruthSpacing.minTouchTarget)
+                        .semantics { contentDescription = "설정 열기" },
                 ) {
+                    Icon(imageVector = Icons.Outlined.Settings, contentDescription = null)
+                }
+            }
+
+            ProfileSummary(
+                displayName = state.displayName,
+                accountSummary = state.accountSummary,
+                onDeveloperEntry = viewModel::onDeveloperEntryUnlocked,
+            )
+
+            state.monitoringNotice?.let { MonitoringBanner(message = it, label = "측정 상태 안내") }
+            state.droppedNotice?.let { MonitoringBanner(message = it, label = "전송 안내") }
+
+            CravingStateCard(state = state)
+
+            WatchAndCameraCard(
+                state = state,
+                onOpenCameraMeasurement = onOpenCameraMeasurement,
+            )
+
+            state.errorMessage?.let { message ->
+                SectionCard(tone = CardTone.Low) {
                     Text(text = message, style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(
+                    com.neurotruth.mobile.ui.theme.SecondaryButton(
+                        text = "다시 시도",
                         onClick = viewModel::refresh,
-                        modifier = Modifier
-                            .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                            .semantics { contentDescription = "다시 불러오기" },
-                    ) { Text("다시 시도") }
+                        contentDescription = "다시 불러오기",
+                    )
                 }
             }
         }
@@ -166,20 +174,11 @@ fun HomeScreen(
  */
 @Composable
 private fun MonitoringBanner(message: String, label: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "$label: $message" },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        ),
+    SectionCard(
+        tone = CardTone.Alert,
+        modifier = Modifier.semantics { contentDescription = "$label: $message" },
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-        )
+        Text(text = message, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -190,9 +189,10 @@ private fun ProfileSummary(
     accountSummary: String,
     onDeveloperEntry: () -> Unit,
 ) {
-    Card(
+    SectionCard(
+        tone = CardTone.Highlight,
+        contentGap = 6.dp,
         modifier = Modifier
-            .fillMaxWidth()
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -203,25 +203,16 @@ private fun ProfileSummary(
                 }
             }
             .semantics { contentDescription = "프로필 요약" },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ),
     ) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(text = "프로필", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = displayName.ifBlank { "사용자" } + "님",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Text(
-                text = accountSummary.ifBlank { "내 계정과 동의 상태" },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
+        Text(text = "프로필", style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = displayName.ifBlank { "사용자" } + "님",
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        Text(
+            text = accountSummary.ifBlank { "내 계정과 동의 상태" },
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
@@ -234,67 +225,63 @@ private fun ProfileSummary(
 @Composable
 private fun CravingStateCard(state: HomeUiState) {
     val accent = cravingAccent(state.stage)
-    OutlinedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                contentDescription = if (state.hasMeasurement) {
-                    "갈망 상태 ${state.stageLabel}. ${state.stageMessage}"
-                } else {
-                    state.cravingHiddenReason ?: "갈망 상태 ${state.stageLabel}"
-                }
-            },
-    ) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-        ) {
-            // Branch with if/else rather than an early return@Column: bailing out of a layout
-            // content lambda after emitting composables leaves the slot table's groups unbalanced
-            // and crashes the next recomposition.
-            if (state.cravingHiddenReason != null) {
-                Text(
-                    text = state.cravingHiddenReason,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    SectionCard(
+        modifier = Modifier.semantics {
+            contentDescription = if (state.hasMeasurement) {
+                "갈망 상태 ${state.stageLabel}. ${state.stageMessage}"
             } else {
+                state.cravingHiddenReason ?: "갈망 상태 ${state.stageLabel}"
+            }
+        },
+        contentGap = NeuroTruthSpacing.betweenRows,
+    ) {
+        // Branch with if/else rather than an early return@Column: bailing out of a layout content
+        // lambda after emitting composables leaves the slot table unbalanced and crashes the next
+        // recomposition.
+        if (state.cravingHiddenReason != null) {
+            Text(
+                text = state.cravingHiddenReason,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(132.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = state.stageLabel,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = accent,
+                        textAlign = TextAlign.Center,
+                    )
+                }
                 Text(
                     text = if (state.hasMeasurement) state.stageMessage else "아직 측정된 기록이 없어요.",
                     style = MaterialTheme.typography.titleLarge,
-                    textAlign = TextAlign.End,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(96.dp)
-                            .clip(CircleShape)
-                            .background(accent.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = state.stageLabel,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = accent,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(4.dp),
-                        )
-                    }
-                    Text(
-                        text = "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+            Text(
+                text = "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
-                if (state.recommendsConversation) {
+            if (state.recommendsConversation) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     AssistChip(
                         onClick = { },
                         label = { Text("대화 권장") },
@@ -303,17 +290,18 @@ private fun CravingStateCard(state: HomeUiState) {
                         },
                     )
                 }
+            }
 
-                state.measurementOrigin?.let { origin ->
-                    Text(
-                        text = origin,
-                        style = MaterialTheme.typography.labelMedium,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics { contentDescription = "측정 시각과 기기: $origin" },
-                    )
-                }
+            state.measurementOrigin?.let { origin ->
+                Text(
+                    text = origin,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = "측정 시각과 기기: $origin" },
+                )
             }
         }
     }
@@ -332,61 +320,57 @@ private fun WatchAndCameraCard(
     state: HomeUiState,
     onOpenCameraMeasurement: () -> Unit,
 ) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(NeuroTruthSpacing.cardPadding),
-            verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
+    SectionCard(contentGap = NeuroTruthSpacing.betweenRows) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Watch 연결",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = state.watchStateLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (state.watchState == WatchConnectionState.CONNECTED) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        modifier = Modifier.semantics {
-                            contentDescription = "Watch 연결 상태: ${state.watchStateLabel}"
-                        },
-                    )
-                }
-                Button(
-                    onClick = onOpenCameraMeasurement,
-                    enabled = state.cameraEnabled,
-                    modifier = Modifier
-                        .widthIn(min = 132.dp)
-                        .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                        .semantics {
-                            contentDescription = when {
-                                state.cameraEnabled && state.cameraNotice != null ->
-                                    "카메라로 측정 시작. ${state.cameraNotice}"
-                                state.cameraEnabled -> "카메라로 측정 시작"
-                                else -> "카메라로 측정, 사용할 수 없음. ${state.cameraNotice.orEmpty()}"
-                            }
-                        },
-                ) {
-                    Text("카메라로 측정", style = MaterialTheme.typography.labelLarge)
-                }
-            }
-
-            state.cameraNotice?.let { reason ->
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = reason,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Watch 연결",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = state.watchStateLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (state.watchState == WatchConnectionState.CONNECTED) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.semantics {
+                        contentDescription = "Watch 연결 상태: ${state.watchStateLabel}"
+                    },
+                )
             }
+            Button(
+                onClick = onOpenCameraMeasurement,
+                enabled = state.cameraEnabled,
+                shape = CircleShape,
+                modifier = Modifier
+                    .widthIn(min = 132.dp)
+                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                    .semantics {
+                        contentDescription = when {
+                            state.cameraEnabled && state.cameraNotice != null ->
+                                "카메라로 측정 시작. ${state.cameraNotice}"
+                            state.cameraEnabled -> "카메라로 측정 시작"
+                            else -> "카메라로 측정, 사용할 수 없음. ${state.cameraNotice.orEmpty()}"
+                        }
+                    },
+            ) {
+                Text("카메라로 측정", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+
+        state.cameraNotice?.let { reason ->
+            Text(
+                text = reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
