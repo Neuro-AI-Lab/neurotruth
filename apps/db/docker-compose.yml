@@ -72,6 +72,34 @@ services:
     networks:
       - neurotruth-network
 
+  alcohol-test-import:
+    profiles: ["alcohol-test"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-myuser}:${POSTGRES_PASSWORD:-changeme_strong_password}@db:5432/${POSTGRES_DB:-mydb}
+      SENSOR_STORAGE_ROOT: /var/lib/neurotruth/sensors
+      CRAVING_MODEL_PATH: /app/model/weights/final_model_win20s_high2p4/model_weights.pt
+      CRAVING_MODEL_METADATA_PATH: /app/model/weights/final_model_win20s_high2p4/model_metadata.json
+      CRAVING_MODEL_SHA256: 2493e5d75fcdc9b066b341deb47f81c9db49aac37c626619b7afe1a6b2fc354c
+      CRAVING_INFERENCE_DEVICE: ${CRAVING_INFERENCE_DEVICE:-auto}
+      ALCOHOL_TEST_DATA_ROOT: /data/alcohol-test
+      ALCOHOL_TEST_OUTPUT_ROOT: /output
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - encrypted_sensor_data:/var/lib/neurotruth/sensors
+      - ${ALCOHOL_TEST_DATA_ROOT:-../../../Alcohol_Test/data}:/data/alcohol-test:ro
+      - ${ALCOHOL_TEST_OUTPUT_ROOT:-../../../Alcohol_Test/output}:/output
+    entrypoint: ["python", "-m", "app.maintenance.import_alcohol_test"]
+    networks:
+      - neurotruth-network
+
   stt:
     build:
       context: ../stt-service

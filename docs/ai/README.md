@@ -1,6 +1,6 @@
 # NeuroTruth AI Workspace
 
-Last updated: 2026-07-19
+Last updated: 2026-07-23
 
 ## Purpose
 
@@ -77,6 +77,18 @@ The optional topic IDs are `safety`, `current_environment`, `alcohol_access`, `t
 | [Dialogue agent Korean](agents/01_dialogue_agent.ko.md) | Korean text intervention behavior |
 | [Legacy slot extraction agent Korean](agents/02_slot_extraction_agent.ko.md) | Korean read-only historical slot contract |
 | [Report agent Korean](agents/03_handoff_agent.ko.md) | Korean report generation/status |
+
+## Demo Personas
+
+The [demo persona workspace](personas/README.md) contains two fictional
+recovery personas and an operator input script for the NeuroTruth app demo.
+The one-hour curves preserve the order of each selected research subject's
+class-1 softmax MA10 trace while normalizing only the time axis.
+
+Names, biographies, recovery histories, monthly craving events, AUQ responses,
+and dialogue are synthetic demo content. They must not be presented as source
+subject identities, clinical findings, model validation, or evidence of
+intervention efficacy.
 
 ## Latest Validation
 

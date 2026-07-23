@@ -1,0 +1,725 @@
+{
+  "timezone": "Asia/Seoul",
+  "generatedAt": "2026-07-23T05:00:39.814058+00:00",
+  "currentCraving": {
+    "probability": 0.8301,
+    "at": "2026-07-23T04:57:37.084219+00:00"
+  },
+  "hourlyCraving": {
+    "buckets": [
+      {
+        "localStart": "2026-07-23T00:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T01:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T02:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T03:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T04:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T05:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T06:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T07:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T08:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T09:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T10:00:00+09:00",
+        "averageProbability": 0.67,
+        "minimumProbability": 0.67,
+        "maximumProbability": 0.67,
+        "sampleCount": 1,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 1,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T11:00:00+09:00",
+        "averageProbability": 0.86,
+        "minimumProbability": 0.86,
+        "maximumProbability": 0.86,
+        "sampleCount": 1,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 1
+        }
+      },
+      {
+        "localStart": "2026-07-23T12:00:00+09:00",
+        "averageProbability": 0.137514,
+        "minimumProbability": 0.1169,
+        "maximumProbability": 0.1884,
+        "sampleCount": 14,
+        "stageCounts": {
+          "low": 14,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T13:00:00+09:00",
+        "averageProbability": 0.245111,
+        "minimumProbability": 0.1255,
+        "maximumProbability": 0.8301,
+        "sampleCount": 346,
+        "stageCounts": {
+          "low": 239,
+          "observe": 80,
+          "caution": 21,
+          "high": 6
+        }
+      },
+      {
+        "localStart": "2026-07-23T14:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T15:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T16:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T17:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T18:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T19:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T20:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T21:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T22:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      },
+      {
+        "localStart": "2026-07-23T23:00:00+09:00",
+        "averageProbability": null,
+        "minimumProbability": null,
+        "maximumProbability": null,
+        "sampleCount": 0,
+        "stageCounts": {
+          "low": 0,
+          "observe": 0,
+          "caution": 0,
+          "high": 0
+        }
+      }
+    ]
+  },
+  "dailyEvents": {
+    "range": "30d",
+    "buckets": [
+      {
+        "localDate": "2026-06-24",
+        "hasPredictionData": false,
+        "recommendCount": 0,
+        "requiredCount": 0,
+        "totalCount": 0
+      },
+      {
+        "localDate": "2026-06-25",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 0,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-06-26",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 0,
+        "totalCount": 1
+      },
+      {
+        "localDate": "2026-06-27",
+        "hasPredictionData": true,
+        "recommendCount": 3,
+        "requiredCount": 0,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-06-28",
+        "hasPredictionData": true,
+        "recommendCount": 0,
+        "requiredCount": 2,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-06-29",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 0,
+        "totalCount": 1
+      },
+      {
+        "localDate": "2026-06-30",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 1,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-01",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 0,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-02",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-03",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 1,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-04",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 0,
+        "totalCount": 1
+      },
+      {
+        "localDate": "2026-07-05",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 0,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-06",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 2,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-07",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-08",
+        "hasPredictionData": true,
+        "recommendCount": 3,
+        "requiredCount": 0,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-09",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 0,
+        "totalCount": 1
+      },
+      {
+        "localDate": "2026-07-10",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-11",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 1,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-12",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-13",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 0,
+        "totalCount": 1
+      },
+      {
+        "localDate": "2026-07-14",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 1,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-15",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-16",
+        "hasPredictionData": true,
+        "recommendCount": 3,
+        "requiredCount": 0,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-17",
+        "hasPredictionData": true,
+        "recommendCount": 3,
+        "requiredCount": 1,
+        "totalCount": 4
+      },
+      {
+        "localDate": "2026-07-18",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-19",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 2,
+        "totalCount": 3
+      },
+      {
+        "localDate": "2026-07-20",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 0,
+        "totalCount": 1
+      },
+      {
+        "localDate": "2026-07-21",
+        "hasPredictionData": true,
+        "recommendCount": 2,
+        "requiredCount": 0,
+        "totalCount": 2
+      },
+      {
+        "localDate": "2026-07-22",
+        "hasPredictionData": true,
+        "recommendCount": 3,
+        "requiredCount": 1,
+        "totalCount": 4
+      },
+      {
+        "localDate": "2026-07-23",
+        "hasPredictionData": true,
+        "recommendCount": 1,
+        "requiredCount": 1,
+        "totalCount": 2
+      }
+    ]
+  },
+  "auq": {
+    "range": "30d",
+    "bucketUnit": "day",
+    "buckets": [
+      {
+        "localDate": "2026-06-24",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-06-25",
+        "averageNormalizedScore": 0.270833,
+        "averageScore": 13.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-06-26",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-06-27",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-06-28",
+        "averageNormalizedScore": 0.354167,
+        "averageScore": 17.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-06-29",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-06-30",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-01",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-02",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-03",
+        "averageNormalizedScore": 0.333333,
+        "averageScore": 16.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-04",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-05",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-06",
+        "averageNormalizedScore": 0.416667,
+        "averageScore": 20.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-07",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-08",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-09",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-10",
+        "averageNormalizedScore": 0.375,
+        "averageScore": 18.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-11",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-12",
+        "averageNormalizedScore": 0.458333,
+        "averageScore": 22.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-13",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-14",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-15",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-16",
+        "averageNormalizedScore": 0.4375,
+        "averageScore": 21.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-17",
+        "averageNormalizedScore": 0.5625,
+        "averageScore": 27.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-18",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-19",
+        "averageNormalizedScore": 0.520833,
+        "averageScore": 25.0,
+        "sampleCount": 1
+      },
+      {
+        "localDate": "2026-07-20",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-21",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-22",
+        "averageNormalizedScore": null,
+        "averageScore": null,
+        "sampleCount": 0
+      },
+      {
+        "localDate": "2026-07-23",
+        "averageNormalizedScore": 0.583333,
+        "averageScore": 28.0,
+        "sampleCount": 1
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 # NeuroTruth
 
-Last updated: 2026-07-19
+Last updated: 2026-07-23
 
 NeuroTruth is an authenticated wearable-assisted supportive intervention research prototype. It is intended for people receiving CBT or willing to seek treatment who need ongoing records and dialogue support in craving situations; it is not a treatment, diagnostic, or emergency-response app. A Watch is optional: Android checks connected Wear nodes client-side, uses Watch sensor windows when connected, and otherwise promotes a manual foreground 20-second camera-rPPG action. The FastAPI backend owns patient identity, AES-256-GCM persistence, model/prompt traceability, state inference, reports, and audit records. The React web surface is administrator-only.
 
@@ -117,7 +117,7 @@ The unauthenticated `/sensor-window`, `/prediction-stream`, `/api/llm/chat`, and
 - Safety-risk dialogue may offer administrator involvement once and show the Korean 109 resource, but no live administrator chat, emergency queue, automatic contact, or connection guarantee exists.
 - `interventionsEnabled=false` suppresses normal interventions only; safety guidance remains available.
 
-See [backend operations](apps/backend/README.md), [database operations](apps/db/README.md), [mobile operations](apps/mobile/README.md), [server API](apps/mobile/SERVER_API_SPEC.md), [development environment](docs/dev-environment.md), and [agent behavior](docs/ai/agents/README.md).
+See [backend operations](apps/backend/README.md), [database operations](apps/db/README.md), [mobile operations](apps/mobile/README.md), [server API](apps/mobile/SERVER_API_SPEC.md), [development environment](docs/dev-environment.md), [agent behavior](docs/ai/agents/README.md), and [demo personas](docs/ai/personas/README.md).
 
 ## GitHub Upload and Review
 

@@ -1,0 +1,66 @@
+﻿date,time,alertLevel,alertAction,peakMovingAverage10,selfReportedIntensity,trigger,copingResponse,alcoholConsumed,eventId,auqAssessmentId,synthetic,demoOnly
+2026-06-24,08:10,recommend,recommend_intervention,0.63,4,아침: 직장 동료와의 긴장,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-001,,True,True
+2026-06-24,20:15,recommend,recommend_intervention,0.59,4,혼자 있는 저녁,친구에게 메시지,False,NT-DP-002-CE-002,NT-DP-002-AUQ-001,True,True
+2026-06-25,08:10,recommend,recommend_intervention,0.58,5,아침: 편의점 술 진열대,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-003,,True,True
+2026-06-26,08:10,recommend,recommend_intervention,0.65,3,아침: 혼자 보내는 저녁 시간,언니에게 짧게 전화,False,NT-DP-002-CE-004,,True,True
+2026-06-26,12:40,recommend,recommend_intervention,0.66,4,점심: SNS에서 본 음주 장면,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-005,,True,True
+2026-06-26,18:20,recommend,recommend_intervention,0.67,5,저녁: 재발에 대한 걱정과 자책,친구와 통화하며 귀가,False,NT-DP-002-CE-006,,True,True
+2026-06-27,08:10,required,required_intervention,0.8,7,아침: SNS에서 본 음주 장면,친구와 통화하며 귀가,False,NT-DP-002-CE-007,,True,True
+2026-06-27,22:05,required,required_intervention,0.74,6,직장 갈등,언니에게 전화,False,NT-DP-002-CE-008,NT-DP-002-AUQ-002,True,True
+2026-06-28,08:10,recommend,recommend_intervention,0.67,5,아침: 재발에 대한 걱정과 자책,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-009,,True,True
+2026-06-29,08:10,recommend,recommend_intervention,0.62,3,아침: 출근 전 불안과 수면 부족,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-010,,True,True
+2026-06-29,12:40,recommend,recommend_intervention,0.63,4,점심: 직장 동료와의 긴장,친구와 통화하며 귀가,False,NT-DP-002-CE-011,,True,True
+2026-06-29,18:20,required,required_intervention,0.74,8,저녁: 편의점 술 진열대,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-012,,True,True
+2026-06-30,08:10,recommend,recommend_intervention,0.57,4,아침: 직장 동료와의 긴장,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-013,,True,True
+2026-06-30,18:45,recommend,recommend_intervention,0.62,5,편의점 술 진열대,매장을 바로 나옴,False,NT-DP-002-CE-014,,True,True
+2026-07-01,08:10,required,required_intervention,0.75,8,아침: 편의점 술 진열대,언니에게 짧게 전화,False,NT-DP-002-CE-015,,True,True
+2026-07-01,12:40,recommend,recommend_intervention,0.65,3,점심: 혼자 보내는 저녁 시간,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-016,,True,True
+2026-07-02,08:10,recommend,recommend_intervention,0.59,3,아침: 혼자 보내는 저녁 시간,친구와 통화하며 귀가,False,NT-DP-002-CE-017,,True,True
+2026-07-02,12:40,required,required_intervention,0.83,7,점심: SNS에서 본 음주 장면,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-018,,True,True
+2026-07-02,21:20,recommend,recommend_intervention,0.65,5,친구의 음주 사진,알림을 끄고 샤워,False,NT-DP-002-CE-019,NT-DP-002-AUQ-003,True,True
+2026-07-03,08:10,recommend,recommend_intervention,0.66,4,아침: SNS에서 본 음주 장면,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-020,,True,True
+2026-07-04,08:10,recommend,recommend_intervention,0.61,5,아침: 재발에 대한 걱정과 자책,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-021,,True,True
+2026-07-04,12:40,recommend,recommend_intervention,0.62,3,점심: 출근 전 불안과 수면 부족,친구와 통화하며 귀가,False,NT-DP-002-CE-022,,True,True
+2026-07-05,08:10,required,required_intervention,0.81,6,아침: 출근 전 불안과 수면 부족,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-023,,True,True
+2026-07-05,12:40,recommend,recommend_intervention,0.57,4,점심: 직장 동료와의 긴장,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-024,,True,True
+2026-07-05,19:35,required,required_intervention,0.78,7,주말 외로움,중독 상담 선생님에게 연락,False,NT-DP-002-CE-025,NT-DP-002-AUQ-004,True,True
+2026-07-06,08:10,recommend,recommend_intervention,0.63,4,아침: 직장 동료와의 긴장,언니에게 짧게 전화,False,NT-DP-002-CE-026,,True,True
+2026-07-06,12:40,required,required_intervention,0.78,8,점심: 편의점 술 진열대,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-027,,True,True
+2026-07-07,08:10,recommend,recommend_intervention,0.58,5,아침: 편의점 술 진열대,친구와 통화하며 귀가,False,NT-DP-002-CE-028,,True,True
+2026-07-07,12:40,recommend,recommend_intervention,0.59,3,점심: 혼자 보내는 저녁 시간,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-029,,True,True
+2026-07-07,18:10,recommend,recommend_intervention,0.58,4,퇴근길 피로,다음 버스를 타고 귀가,False,NT-DP-002-CE-030,,True,True
+2026-07-08,08:10,recommend,recommend_intervention,0.65,3,아침: 혼자 보내는 저녁 시간,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-031,,True,True
+2026-07-09,08:10,required,required_intervention,0.76,7,아침: SNS에서 본 음주 장면,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-032,,True,True
+2026-07-09,20:50,recommend,recommend_intervention,0.67,5,업무 실수에 대한 자책,호흡 후 친구와 통화,False,NT-DP-002-CE-033,NT-DP-002-AUQ-005,True,True
+2026-07-10,08:10,recommend,recommend_intervention,0.67,5,아침: 재발에 대한 걱정과 자책,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-034,,True,True
+2026-07-10,12:40,required,required_intervention,0.84,6,점심: 출근 전 불안과 수면 부족,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-035,,True,True
+2026-07-10,18:20,recommend,recommend_intervention,0.57,4,저녁: 직장 동료와의 긴장,언니에게 짧게 전화,False,NT-DP-002-CE-036,,True,True
+2026-07-11,08:10,recommend,recommend_intervention,0.62,3,아침: 출근 전 불안과 수면 부족,언니에게 짧게 전화,False,NT-DP-002-CE-037,,True,True
+2026-07-11,23:00,required,required_intervention,0.8,7,늦은 귀가와 수면 부족,언니 집에서 머묾,False,NT-DP-002-CE-038,NT-DP-002-AUQ-006,True,True
+2026-07-12,08:10,recommend,recommend_intervention,0.57,4,아침: 직장 동료와의 긴장,친구와 통화하며 귀가,False,NT-DP-002-CE-039,,True,True
+2026-07-13,08:10,required,required_intervention,0.82,8,아침: 편의점 술 진열대,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-040,,True,True
+2026-07-13,12:40,recommend,recommend_intervention,0.65,3,점심: 혼자 보내는 저녁 시간,언니에게 짧게 전화,False,NT-DP-002-CE-041,,True,True
+2026-07-13,17:40,recommend,recommend_intervention,0.63,5,동료의 회식 제안,회식을 거절하고 상담 일정 확인,False,NT-DP-002-CE-042,,True,True
+2026-07-14,08:10,recommend,recommend_intervention,0.59,3,아침: 혼자 보내는 저녁 시간,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-043,,True,True
+2026-07-14,12:40,required,required_intervention,0.79,7,점심: SNS에서 본 음주 장면,친구와 통화하며 귀가,False,NT-DP-002-CE-044,,True,True
+2026-07-15,08:10,recommend,recommend_intervention,0.66,4,아침: SNS에서 본 음주 장면,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-045,,True,True
+2026-07-15,12:40,recommend,recommend_intervention,0.67,5,점심: 재발에 대한 걱정과 자책,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-046,,True,True
+2026-07-15,21:10,recommend,recommend_intervention,0.69,6,직장 동료와 충돌,천천히 호흡하고 편의점에서 이동,False,NT-DP-002-CE-047,NT-DP-002-AUQ-007,True,True
+2026-07-16,08:10,recommend,recommend_intervention,0.61,5,아침: 재발에 대한 걱정과 자책,언니에게 짧게 전화,False,NT-DP-002-CE-048,,True,True
+2026-07-16,12:40,recommend,recommend_intervention,0.62,3,점심: 출근 전 불안과 수면 부족,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-049,,True,True
+2026-07-16,18:20,recommend,recommend_intervention,0.63,4,저녁: 직장 동료와의 긴장,친구와 통화하며 귀가,False,NT-DP-002-CE-050,,True,True
+2026-07-16,22:25,required,required_intervention,0.88,9,혼자 귀가 중 술을 구매,재음주 뒤 언니와 상담자에게 알림,True,NT-DP-002-CE-051,NT-DP-002-AUQ-008,True,True
+2026-07-17,08:10,required,required_intervention,0.77,6,아침: 출근 전 불안과 수면 부족,친구와 통화하며 귀가,False,NT-DP-002-CE-052,,True,True
+2026-07-17,12:40,recommend,recommend_intervention,0.57,4,점심: 직장 동료와의 긴장,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-053,,True,True
+2026-07-18,08:10,recommend,recommend_intervention,0.63,4,아침: 직장 동료와의 긴장,천천히 호흡하고 장소를 벗어남,False,NT-DP-002-CE-054,,True,True
+2026-07-18,12:40,required,required_intervention,0.74,8,점심: 편의점 술 진열대,언니에게 짧게 전화,False,NT-DP-002-CE-055,,True,True
+2026-07-18,19:20,required,required_intervention,0.81,7,재음주 뒤 불안과 술 광고,언니와 저녁을 함께 보냄,False,NT-DP-002-CE-056,NT-DP-002-AUQ-009,True,True
+2026-07-19,08:10,recommend,recommend_intervention,0.58,5,아침: 편의점 술 진열대,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-057,,True,True
+2026-07-20,08:10,recommend,recommend_intervention,0.65,3,아침: 혼자 보내는 저녁 시간,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-058,,True,True
+2026-07-20,18:30,recommend,recommend_intervention,0.66,5,버스 정류장 주변 음주 단서,정류장을 옮기고 친구에게 연락,False,NT-DP-002-CE-059,,True,True
+2026-07-21,08:10,required,required_intervention,0.83,7,아침: SNS에서 본 음주 장면,언니에게 짧게 전화,False,NT-DP-002-CE-060,,True,True
+2026-07-21,12:40,recommend,recommend_intervention,0.61,5,점심: 재발에 대한 걱정과 자책,중독 상담 선생님에게 메시지를 보냄,False,NT-DP-002-CE-061,,True,True
+2026-07-21,18:20,recommend,recommend_intervention,0.62,3,저녁: 출근 전 불안과 수면 부족,친구와 통화하며 귀가,False,NT-DP-002-CE-062,,True,True
+2026-07-21,22:10,recommend,recommend_intervention,0.63,4,밤: 직장 동료와의 긴장,무알코올 음료를 마시고 다음 버스를 기다림,False,NT-DP-002-CE-063,,True,True
+2026-07-22,08:10,recommend,recommend_intervention,0.67,5,아침: 재발에 대한 걱정과 자책,친구와 통화하며 귀가,False,NT-DP-002-CE-064,,True,True
+2026-07-22,18:50,required,required_intervention,0.86,8,직장 갈등과 편의점 술 진열대,진열대에서 벗어나 언니에게 전화,False,NT-DP-002-CE-065,NT-DP-002-AUQ-010,True,True

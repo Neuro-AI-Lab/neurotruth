@@ -1,0 +1,43 @@
+﻿date,time,alertLevel,alertAction,peakMovingAverage10,selfReportedIntensity,trigger,copingResponse,alcoholConsumed,eventId,auqAssessmentId,synthetic,demoOnly
+2026-06-24,08:10,recommend,recommend_intervention,0.63,4,아침: 점심 뒤 업무 압박,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-001,,True,True
+2026-06-25,08:10,recommend,recommend_intervention,0.58,5,아침: 퇴근길 편의점과 주류 광고,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-002,,True,True
+2026-06-25,19:10,recommend,recommend_intervention,0.58,4,야근 뒤 피로,물을 마시고 귀가,False,NT-DP-001-CE-003,NT-DP-001-AUQ-001,True,True
+2026-06-27,08:10,recommend,recommend_intervention,0.6,4,아침: 과거 음주 장소가 떠오름,회복 모임 지인에게 연락,False,NT-DP-001-CE-004,,True,True
+2026-06-29,08:10,recommend,recommend_intervention,0.62,3,아침: 출근 전 긴장과 수면 부족,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-005,,True,True
+2026-06-29,18:35,recommend,recommend_intervention,0.6,4,회식 장소 근처 통과,동료와 함께 이동,False,NT-DP-001-CE-006,,True,True
+2026-06-30,08:10,recommend,recommend_intervention,0.57,4,아침: 점심 뒤 업무 압박,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-007,,True,True
+2026-07-02,08:10,recommend,recommend_intervention,0.59,3,아침: 저녁 시간의 피로와 무료함,회복 모임 지인에게 연락,False,NT-DP-001-CE-008,,True,True
+2026-07-02,21:05,required,required_intervention,0.75,6,배우자와 말다툼,회복 모임 지인에게 전화,False,NT-DP-001-CE-009,NT-DP-001-AUQ-002,True,True
+2026-07-03,08:10,required,required_intervention,0.78,7,아침: 과거 음주 장소가 떠오름,물을 마시고 10분 동안 기다림,False,NT-DP-001-CE-010,,True,True
+2026-07-04,08:10,recommend,recommend_intervention,0.61,5,아침: 회복 과정에 대한 자책,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-011,,True,True
+2026-07-05,08:10,recommend,recommend_intervention,0.56,3,아침: 출근 전 긴장과 수면 부족,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-012,,True,True
+2026-07-05,17:50,recommend,recommend_intervention,0.57,4,주말의 무료함,산책과 탄산수,False,NT-DP-001-CE-013,,True,True
+2026-07-06,08:10,recommend,recommend_intervention,0.63,4,아침: 점심 뒤 업무 압박,배우자에게 짧게 메시지를 보냄,False,NT-DP-001-CE-014,,True,True
+2026-07-07,08:10,recommend,recommend_intervention,0.58,5,아침: 퇴근길 편의점과 주류 광고,회복 모임 지인에게 연락,False,NT-DP-001-CE-015,,True,True
+2026-07-08,08:10,required,required_intervention,0.8,6,아침: 저녁 시간의 피로와 무료함,물을 마시고 10분 동안 기다림,False,NT-DP-001-CE-016,,True,True
+2026-07-08,19:25,recommend,recommend_intervention,0.64,5,업무 마감 스트레스,퇴근 경로 변경,False,NT-DP-001-CE-017,NT-DP-001-AUQ-003,True,True
+2026-07-09,08:10,recommend,recommend_intervention,0.6,4,아침: 과거 음주 장소가 떠오름,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-018,,True,True
+2026-07-10,08:10,recommend,recommend_intervention,0.67,5,아침: 회복 과정에 대한 자책,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-019,,True,True
+2026-07-11,08:10,recommend,recommend_intervention,0.62,3,아침: 출근 전 긴장과 수면 부족,배우자에게 짧게 메시지를 보냄,False,NT-DP-001-CE-020,,True,True
+2026-07-11,20:40,required,required_intervention,0.77,6,과거 음주 장소를 봄,배우자에게 전화 후 귀가,False,NT-DP-001-CE-021,NT-DP-001-AUQ-004,True,True
+2026-07-12,08:10,recommend,recommend_intervention,0.57,4,아침: 점심 뒤 업무 압박,회복 모임 지인에게 연락,False,NT-DP-001-CE-022,,True,True
+2026-07-14,08:10,recommend,recommend_intervention,0.59,3,아침: 저녁 시간의 피로와 무료함,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-023,,True,True
+2026-07-14,18:20,recommend,recommend_intervention,0.61,5,프로젝트 일정 압박,물을 마시고 10분 대기,False,NT-DP-001-CE-024,,True,True
+2026-07-15,08:10,recommend,recommend_intervention,0.66,4,아침: 과거 음주 장소가 떠오름,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-025,,True,True
+2026-07-16,08:10,recommend,recommend_intervention,0.61,5,아침: 회복 과정에 대한 자책,배우자에게 짧게 메시지를 보냄,False,NT-DP-001-CE-026,,True,True
+2026-07-16,22:10,recommend,recommend_intervention,0.68,6,수면 부족과 피로,회복 기록 작성,False,NT-DP-001-CE-027,NT-DP-001-AUQ-005,True,True
+2026-07-17,08:10,recommend,recommend_intervention,0.56,3,아침: 출근 전 긴장과 수면 부족,회복 모임 지인에게 연락,False,NT-DP-001-CE-028,,True,True
+2026-07-17,12:40,recommend,recommend_intervention,0.57,4,점심: 점심 뒤 업무 압박,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-029,,True,True
+2026-07-18,08:10,required,required_intervention,0.84,7,아침: 점심 뒤 업무 압박,물을 마시고 10분 동안 기다림,False,NT-DP-001-CE-030,,True,True
+2026-07-18,12:40,recommend,recommend_intervention,0.64,5,점심: 퇴근길 편의점과 주류 광고,배우자에게 짧게 메시지를 보냄,False,NT-DP-001-CE-031,,True,True
+2026-07-18,18:20,recommend,recommend_intervention,0.65,3,저녁: 저녁 시간의 피로와 무료함,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-032,,True,True
+2026-07-18,21:30,required,required_intervention,0.84,8,지인과의 술자리 제안,재음주 뒤 배우자와 상담자에게 알림,True,NT-DP-001-CE-033,NT-DP-001-AUQ-006,True,True
+2026-07-19,08:10,recommend,recommend_intervention,0.58,5,아침: 퇴근길 편의점과 주류 광고,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-034,,True,True
+2026-07-20,08:10,recommend,recommend_intervention,0.65,3,아침: 저녁 시간의 피로와 무료함,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-035,,True,True
+2026-07-20,18:55,recommend,recommend_intervention,0.66,5,재음주 뒤 자책과 퇴근 피로,회복 모임에 참석,False,NT-DP-001-CE-036,,True,True
+2026-07-21,08:10,recommend,recommend_intervention,0.6,4,아침: 과거 음주 장소가 떠오름,배우자에게 짧게 메시지를 보냄,False,NT-DP-001-CE-037,,True,True
+2026-07-21,12:40,recommend,recommend_intervention,0.61,5,점심: 회복 과정에 대한 자책,주류 판매점이 없는 경로로 이동,False,NT-DP-001-CE-038,,True,True
+2026-07-21,18:20,recommend,recommend_intervention,0.62,3,저녁: 출근 전 긴장과 수면 부족,회복 모임 지인에게 연락,False,NT-DP-001-CE-039,,True,True
+2026-07-22,08:10,recommend,recommend_intervention,0.67,5,아침: 회복 과정에 대한 자책,회복 모임 지인에게 연락,False,NT-DP-001-CE-040,,True,True
+2026-07-22,12:40,recommend,recommend_intervention,0.56,3,점심: 출근 전 긴장과 수면 부족,호흡을 가다듬고 갈망 기록을 작성,False,NT-DP-001-CE-041,,True,True
+2026-07-22,19:05,required,required_intervention,0.82,7,힘든 회의와 익숙한 주류 판매점,경로를 바꾸고 배우자에게 연락,False,NT-DP-001-CE-042,NT-DP-001-AUQ-007,True,True

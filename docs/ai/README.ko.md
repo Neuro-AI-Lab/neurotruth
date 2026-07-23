@@ -1,6 +1,6 @@
 # NeuroTruth AI 작업공간
 
-최종 업데이트: 2026-07-19
+최종 업데이트: 2026-07-23
 
 ## 목적
 
@@ -64,6 +64,16 @@ apps/backend/app/services/session.py
 | [Report Agent](agents/03_handoff_agent.ko.md) | Evidence-linked report 생성/status |
 
 영어 원본: [AI workspace](README.md)
+
+## 데모 페르소나
+
+[데모 페르소나 작업공간](personas/README.ko.md)에는 NeuroTruth 앱 시연을 위한
+가상의 회복 중 페르소나 2명과 운영자 입력 대본이 있습니다. 1시간 곡선은 선택한
+각 연구 subject의 class 1 softmax MA10 값 순서를 보존하고 시간축만 정규화합니다.
+
+이름, 생활사, 회복 이력, 월간 갈망 이벤트, AUQ 응답과 대화는 모두 데모용 합성
+정보입니다. 이를 원본 subject의 신원, 임상 결과, 모델 검증 또는 중재 효과의
+근거로 표현하면 안 됩니다.
 
 ## 최신 검증
 
