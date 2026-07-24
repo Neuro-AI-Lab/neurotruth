@@ -36,6 +36,14 @@ class CravingAlertNotifier(
     private val ledger: PredictionLedger,
 ) {
 
+    // A stable per-alert notification id. String.hashCode() can collide across distinct alertIds,
+    // which would share a notification slot and a PendingIntent request code and route a tap into
+    // chat with the wrong alert. A monotonic id per distinct alertId can't collide.
+    private val notificationIds = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    private fun notificationIdFor(alertId: String): Int =
+        notificationIds.getOrPut(alertId) { ID_SEQUENCE.incrementAndGet() }
+
     /** Returns true when a notification was actually posted. */
     fun present(prediction: CravingPrediction, gates: ConsentGates): Boolean {
         if (!AlertActionPolicy.recommendsConversation(prediction.alertAction)) return false
@@ -45,8 +53,9 @@ class CravingAlertNotifier(
         if (!ledger.claimAlert(alertId)) return false
 
         ensureChannel()
+        val notificationId = notificationIdFor(alertId)
         context.getSystemService(NotificationManager::class.java)
-            .notify(alertId.hashCode(), build(alertId))
+            .notify(notificationId, build(alertId, notificationId))
         return true
     }
 
@@ -55,7 +64,7 @@ class CravingAlertNotifier(
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun build(alertId: String): Notification {
+    private fun build(alertId: String, notificationId: Int): Notification {
         val talkIntent = context.packageManager
             .getLaunchIntentForPackage(context.packageName)
             ?.apply {
@@ -66,7 +75,7 @@ class CravingAlertNotifier(
         val talkPendingIntent = talkIntent?.let {
             PendingIntent.getActivity(
                 context,
-                alertId.hashCode(),
+                notificationId,
                 it,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
@@ -74,10 +83,11 @@ class CravingAlertNotifier(
 
         val laterPendingIntent = PendingIntent.getBroadcast(
             context,
-            alertId.hashCode(),
+            notificationId,
             Intent(context, CravingAlertDismissReceiver::class.java)
                 .setPackage(context.packageName)
-                .putExtra(EXTRA_ALERT_ID, alertId),
+                .putExtra(EXTRA_ALERT_ID, alertId)
+                .putExtra(EXTRA_NOTIFICATION_ID, notificationId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -122,6 +132,10 @@ class CravingAlertNotifier(
 
         const val ACTION_TALK_NOW = "com.neurotruth.mobile.action.TALK_NOW"
         const val EXTRA_ALERT_ID = "com.neurotruth.mobile.extra.ALERT_ID"
+        const val EXTRA_NOTIFICATION_ID = "com.neurotruth.mobile.extra.NOTIFICATION_ID"
+
+        /** Base for per-alert notification ids, above the watch's 2001/2002 range. */
+        private val ID_SEQUENCE = java.util.concurrent.atomic.AtomicInteger(4000)
 
         const val ACTION_LABEL_TALK_NOW = "지금 대화하기"
         const val ACTION_LABEL_LATER = "나중에"
@@ -141,6 +155,10 @@ class CravingAlertNotifier(
 class CravingAlertDismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val alertId = intent.getStringExtra(CravingAlertNotifier.EXTRA_ALERT_ID) ?: return
-        context.getSystemService(NotificationManager::class.java).cancel(alertId.hashCode())
+        // Cancel the exact id the notification was posted with, carried through the intent, since it
+        // is no longer derivable from alertId.hashCode().
+        val notificationId =
+            intent.getIntExtra(CravingAlertNotifier.EXTRA_NOTIFICATION_ID, alertId.hashCode())
+        context.getSystemService(NotificationManager::class.java).cancel(notificationId)
     }
 }

@@ -130,7 +130,13 @@ class MonitoringService : Service() {
     private lateinit var scheduler: SensorWindowScheduler
     private lateinit var streamClient: PredictionStreamClient
 
+    // Written on the main thread, read from the watchdog on Dispatchers.Default — needs a
+    // happens-before so the watchdog observes a stop promptly.
+    @Volatile
     private var started = false
+
+    @Volatile
+    private var shuttingDown = false
 
     override fun onCreate() {
         super.onCreate()
@@ -201,6 +207,7 @@ class MonitoringService : Service() {
         }
 
         started = true
+        shuttingDown = false
         MonitoringState.setBlocker(MonitoringBlocker.NONE)
         MonitoringState.setRunning(true)
 
@@ -298,6 +305,10 @@ class MonitoringService : Service() {
     private fun consentGates(): ConsentGates = ConsentGates(app.apiClient.consent())
 
     private fun shutdown(blocker: MonitoringBlocker) {
+        // Reachable concurrently from the watchdog, the scheduler/stream callbacks and onStartCommand;
+        // run the teardown once.
+        if (shuttingDown) return
+        shuttingDown = true
         started = false
         scheduler.stop()
         streamClient.stop()
@@ -381,9 +392,13 @@ class MonitoringService : Service() {
 
         /** Called on logout, on consent withdrawal, and on confirmed disconnection. */
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, MonitoringService::class.java).apply { action = ACTION_STOP },
-            )
+            // Consent withdrawal and a confirmed watch disconnect can fire while the app is
+            // backgrounded, where startService is disallowed on API 26+/31+; never let that crash.
+            runCatching {
+                context.startService(
+                    Intent(context, MonitoringService::class.java).apply { action = ACTION_STOP },
+                )
+            }
         }
     }
 }

@@ -157,10 +157,18 @@ class HomeViewModel(
      * field or endpoint carries it. [WatchConnectionTracker] converts the raw counts into the Home
      * state, so a failed query lands on `ERROR` rather than being mistaken for a disconnection.
      */
+    /** True while the Home screen is on-screen; the poll pauses off-tab and while backgrounded. */
+    @Volatile
+    private var screenActive: Boolean = true
+
+    fun onScreenActive(active: Boolean) {
+        screenActive = active
+    }
+
     private fun pollWatchConnection() {
         viewModelScope.launch {
             while (isActive) {
-                queryWatchNodes()
+                if (screenActive) queryWatchNodes()
                 delay(WATCH_POLL_INTERVAL_MS)
             }
         }

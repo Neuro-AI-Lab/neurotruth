@@ -46,13 +46,18 @@ class PhoneDataSender(private val context: Context) {
 
     fun sendBatch(path: String, samples: List<Pair<Long, Float>>) {
         if (samples.isEmpty()) return
-        val buffer = ByteBuffer.allocate(HEADER_BYTES + samples.size * SAMPLE_BYTES)
-        buffer.putInt(samples.size)
-        for ((timestampMs, value) in samples) {
-            buffer.putLong(timestampMs)
-            buffer.putFloat(value)
+        // Split so no single message approaches the ~100KB MessageClient limit. Today's flow
+        // capacities and 200ms drain keep batches tiny, but this removes the implicit coupling so a
+        // future cadence/capacity change can't silently start dropping oversized messages.
+        samples.chunked(MAX_SAMPLES_PER_MESSAGE).forEach { chunk ->
+            val buffer = ByteBuffer.allocate(HEADER_BYTES + chunk.size * SAMPLE_BYTES)
+            buffer.putInt(chunk.size)
+            for ((timestampMs, value) in chunk) {
+                buffer.putLong(timestampMs)
+                buffer.putFloat(value)
+            }
+            send(path, buffer.array())
         }
-        send(path, buffer.array())
     }
 
     fun close() {
@@ -82,6 +87,9 @@ class PhoneDataSender(private val context: Context) {
         const val TAG = "PhoneDataSender"
         const val HEADER_BYTES = 4
         const val SAMPLE_BYTES = 12
+
+        /** 6000 samples = ~72KB, comfortably under the ~100KB Data Layer message limit. */
+        const val MAX_SAMPLES_PER_MESSAGE = 6000
     }
 }
 

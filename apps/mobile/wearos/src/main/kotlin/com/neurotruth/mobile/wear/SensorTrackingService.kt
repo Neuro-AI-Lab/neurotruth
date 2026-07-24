@@ -64,7 +64,10 @@ class SensorTrackingService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 startTracking()
-                START_STICKY
+                // REDELIVER, not STICKY: after a low-memory kill the last start intent is
+                // redelivered so tracking resumes, instead of a null intent hitting the else branch
+                // below and immediately stopping the service.
+                START_REDELIVER_INTENT
             }
 
             ACTION_STOP -> {

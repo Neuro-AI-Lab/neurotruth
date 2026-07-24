@@ -79,11 +79,21 @@ fun HomeScreen(
     // Watch connection is re-confirmed on every return to the foreground rather than trusted from
     // before the app was backgrounded.
     DisposableEffect(lifecycleOwner, viewModel) {
+        viewModel.onScreenActive(true)
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onResumed()
+                Lifecycle.Event.ON_START -> viewModel.onScreenActive(true)
+                Lifecycle.Event.ON_STOP -> viewModel.onScreenActive(false)
+                else -> Unit
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        // Leaving the tab disposes this composable without an ON_STOP, so pause the poll here too.
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onScreenActive(false)
+        }
     }
 
     if (state.developerEntryUnlocked) {

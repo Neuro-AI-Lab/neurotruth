@@ -89,9 +89,21 @@ class DashboardViewModel(
      * this is a view of a buffer the services layer already keeps, and it starts nothing of its own.
      * A failed node query is [WatchConnectionState.ERROR], never disconnection, exactly as on Home.
      */
+    /** True while the dashboard is on-screen; the live-PPG poll pauses off-tab and while backgrounded. */
+    @Volatile
+    private var screenActive: Boolean = true
+
+    fun onScreenActive(active: Boolean) {
+        screenActive = active
+    }
+
     private fun observeLivePpg() {
         viewModelScope.launch {
             while (isActive) {
+                if (!screenActive) {
+                    delay(LIVE_POLL_INTERVAL_MS)
+                    continue
+                }
                 val connectedNodes = withContext(Dispatchers.IO) {
                     runCatching { Tasks.await(Wearable.getNodeClient(app).connectedNodes).size }
                 }

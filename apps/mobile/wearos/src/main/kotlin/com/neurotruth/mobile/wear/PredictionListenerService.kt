@@ -57,7 +57,7 @@ class PredictionListenerService : WearableListenerService() {
             }
             SensorState.alertText.value = when (action) {
                 AlertAction.RECOMMEND -> "대화 권장"
-                AlertAction.REQUIRED -> "대화 권장"
+                AlertAction.REQUIRED -> "지금 확인"
                 AlertAction.NONE, AlertAction.COOLDOWN -> "알림 없음"
             }
 

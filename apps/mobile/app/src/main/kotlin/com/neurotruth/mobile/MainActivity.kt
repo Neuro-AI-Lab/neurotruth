@@ -72,7 +72,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (armAlertEntry(intent) && NeuroTruthApp.from(this).apiClient.hasSession()) {
+        val app = NeuroTruthApp.from(this)
+        // Same gate as onCreate: an alert tap must not jump into chat past an unshown product notice
+        // or before authentication.
+        if (armAlertEntry(intent) &&
+            app.apiClient.hasSession() &&
+            !app.noticePolicy.requiresAcknowledgement()
+        ) {
             pendingRoute = NeuroTruthRoutes.CHAT
         }
     }

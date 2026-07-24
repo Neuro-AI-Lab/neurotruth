@@ -102,8 +102,10 @@ class SessionRepository(
 
     fun finish(sessionId: String) {
         val response = client.execute(ApiRequest("POST", endpoints.finish(sessionId), body = "{}"))
-        activeSessionStore.clear()
+        // Clear the local resume state only after the server confirms the finish. Clearing first
+        // would drop the id on a network failure while the server still holds the session.
         if (!response.isSuccessful) throw ApiHttpException(response.statusCode, response.body)
+        activeSessionStore.clear()
     }
 
     fun clearActiveSession() = activeSessionStore.clear()

@@ -33,9 +33,7 @@ class AuthenticatedApiClient(
     fun hasSession(): Boolean = accessToken != null || sessionStore.loadRefreshToken() != null
 
     fun execute(request: ApiRequest): ApiResponse {
-        val initialToken = accessToken
-            ?: recoverSession()?.accessToken
-            ?: throw AuthenticationRequiredException()
+        val initialToken = ensureAccessToken() ?: throw AuthenticationRequiredException()
 
         val first = transport.execute(withDefaults(request).withBearer(initialToken))
         if (first.statusCode != HTTP_UNAUTHORIZED) return first
@@ -57,9 +55,7 @@ class AuthenticatedApiClient(
      * [block] must throw [HttpStatusException] with 401 for the refresh to engage.
      */
     fun <T> executeStreaming(block: (accessToken: String) -> T): T {
-        val initialToken = accessToken
-            ?: recoverSession()?.accessToken
-            ?: throw AuthenticationRequiredException()
+        val initialToken = ensureAccessToken() ?: throw AuthenticationRequiredException()
         return try {
             block(initialToken)
         } catch (error: HttpStatusException) {
@@ -84,6 +80,17 @@ class AuthenticatedApiClient(
     private fun rotate(usedToken: String): String? = synchronized(this) {
         val current = accessToken
         if (current != null && current != usedToken) return current
+        val refreshToken = sessionStore.loadRefreshToken() ?: return null
+        return runCatching { refresh(refreshToken).accessToken }.getOrNull()
+    }
+
+    /**
+     * The access token to open a call with, refreshing from the stored refresh token if there is
+     * none yet. Re-checks under the monitor so two cold-start callers don't both refresh — the
+     * second sees the token the first already obtained.
+     */
+    private fun ensureAccessToken(): String? = synchronized(this) {
+        accessToken?.let { return it }
         val refreshToken = sessionStore.loadRefreshToken() ?: return null
         return runCatching { refresh(refreshToken).accessToken }.getOrNull()
     }
