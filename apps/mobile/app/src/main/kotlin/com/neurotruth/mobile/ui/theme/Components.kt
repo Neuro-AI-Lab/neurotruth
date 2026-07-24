@@ -107,11 +107,19 @@ enum class CardTone { Default, Low, Hero, Highlight, Warm, Alert }
 fun SectionCard(
     modifier: Modifier = Modifier,
     tone: CardTone = CardTone.Default,
-    elevation: androidx.compose.ui.unit.Dp = 0.dp,
+    elevation: androidx.compose.ui.unit.Dp? = null,
     contentPadding: PaddingValues = PaddingValues(NeuroTruthSpacing.cardPadding),
     contentGap: androidx.compose.ui.unit.Dp = NeuroTruthSpacing.betweenRows,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // White cards separate from the cool ground by shadow, not by a tinted fill. Each tone has a
+    // resting shadow; the hero lifts more, and the tinted tones (Highlight/Warm/Alert) sit flat.
+    val shadow: androidx.compose.ui.unit.Dp = elevation ?: when (tone) {
+        CardTone.Hero -> 4.dp
+        CardTone.Default -> 2.dp
+        CardTone.Low -> 0.dp
+        CardTone.Highlight, CardTone.Warm, CardTone.Alert -> 0.dp
+    }
     val container: Color = when (tone) {
         CardTone.Default -> MaterialTheme.colorScheme.surfaceContainer
         CardTone.Low -> MaterialTheme.colorScheme.surfaceContainerLow
@@ -133,7 +141,7 @@ fun SectionCard(
         shape = MaterialTheme.shapes.large,
         color = container,
         contentColor = contentColor,
-        shadowElevation = elevation,
+        shadowElevation = shadow,
     ) {
         Column(
             modifier = Modifier.padding(contentPadding),

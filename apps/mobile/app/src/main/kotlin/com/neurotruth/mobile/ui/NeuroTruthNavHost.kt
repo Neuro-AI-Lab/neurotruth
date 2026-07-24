@@ -52,6 +52,9 @@ object NeuroTruthRoutes {
 
     /** NT-01 through NT-03. The bottom bar is hidden until authentication completes. */
     val PRE_AUTH: Set<String> = setOf(NOTICE, AUTH, CONSENT)
+
+    /** The three destinations that own a bottom-bar tab. Sub-screens run full width without it. */
+    val TAB_ROUTES: Set<String> = setOf(HOME, DASHBOARD, CHAT)
 }
 
 /**
@@ -74,7 +77,8 @@ fun NeuroTruthNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute != null && currentRoute !in NeuroTruthRoutes.PRE_AUTH
+    // Only the three tab destinations show the bar; settings, AUQ and rPPG are full-width sub-screens.
+    val showBottomBar = currentRoute in NeuroTruthRoutes.TAB_ROUTES
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

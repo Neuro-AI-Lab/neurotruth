@@ -13,14 +13,14 @@ import androidx.compose.ui.unit.dp
 import com.neurotruth.mobile.core.CravingStage
 
 private val LightColors = lightColorScheme(
-    primary = TealPrimaryLight,
-    onPrimary = TealOnPrimaryLight,
-    primaryContainer = TealPrimaryContainerLight,
-    onPrimaryContainer = TealOnPrimaryContainerLight,
-    secondary = TealSecondaryLight,
-    onSecondary = TealOnSecondaryLight,
-    secondaryContainer = TealSecondaryContainerLight,
-    onSecondaryContainer = TealOnSecondaryContainerLight,
+    primary = BrandPrimaryLight,
+    onPrimary = BrandOnPrimaryLight,
+    primaryContainer = BrandPrimaryContainerLight,
+    onPrimaryContainer = BrandOnPrimaryContainerLight,
+    secondary = BrandSecondaryLight,
+    onSecondary = BrandOnSecondaryLight,
+    secondaryContainer = BrandSecondaryContainerLight,
+    onSecondaryContainer = BrandOnSecondaryContainerLight,
     tertiary = TertiaryLight,
     onTertiary = OnTertiaryLight,
     tertiaryContainer = TertiaryContainerLight,
@@ -45,14 +45,14 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = TealPrimaryDark,
-    onPrimary = TealOnPrimaryDark,
-    primaryContainer = TealPrimaryContainerDark,
-    onPrimaryContainer = TealOnPrimaryContainerDark,
-    secondary = TealSecondaryDark,
-    onSecondary = TealOnSecondaryDark,
-    secondaryContainer = TealSecondaryContainerDark,
-    onSecondaryContainer = TealOnSecondaryContainerDark,
+    primary = BrandPrimaryDark,
+    onPrimary = BrandOnPrimaryDark,
+    primaryContainer = BrandPrimaryContainerDark,
+    onPrimaryContainer = BrandOnPrimaryContainerDark,
+    secondary = BrandSecondaryDark,
+    onSecondary = BrandOnSecondaryDark,
+    secondaryContainer = BrandSecondaryContainerDark,
+    onSecondaryContainer = BrandOnSecondaryContainerDark,
     tertiary = TertiaryDark,
     onTertiary = OnTertiaryDark,
     tertiaryContainer = TertiaryContainerDark,
@@ -122,18 +122,20 @@ fun NeuroTruthTheme(
 /**
  * Accent for a craving band.
  *
- * The ramp stops short of an alarm red on purpose: 안전/관찰/주의/심각 are research display bands, not
- * clinical risk levels, and the colour must not narrate a severity the copy refuses to claim.
+ * This ramp is deliberately kept OFF the brand blue: green → gold → amber → muted red reads as a
+ * calm escalation and never collides with a tappable blue element. In particular 관찰 is gold, not
+ * blue — a blue observe band would look like a brand control. The ramp also stops short of an alarm
+ * red, because 안전/관찰/주의/심각 are research display bands, not clinical risk levels.
  */
 @Composable
 @ReadOnlyComposable
 fun cravingAccent(stage: CravingStage?): Color {
     val dark = MaterialTheme.colorScheme.background.luminanceIsDark()
     return when (stage) {
-        CravingStage.SAFE -> if (dark) Color(0xFF4FA88F) else Color(0xFF2E8B72)
-        CravingStage.OBSERVE -> if (dark) Color(0xFF6FA8C8) else Color(0xFF3D7FA3)
-        CravingStage.CAUTION -> if (dark) Color(0xFFDFAE6A) else Color(0xFFA8762A)
-        CravingStage.SEVERE -> if (dark) Color(0xFFDE9385) else Color(0xFFA8523F)
+        CravingStage.SAFE -> if (dark) Color(0xFF5FC49E) else Color(0xFF2E8F6B)
+        CravingStage.OBSERVE -> if (dark) Color(0xFFE0C275) else Color(0xFFB68E2E)
+        CravingStage.CAUTION -> if (dark) Color(0xFFE0A46A) else Color(0xFFC67A38)
+        CravingStage.SEVERE -> if (dark) Color(0xFFE08578) else Color(0xFFC0564A)
         null -> MaterialTheme.colorScheme.outline
     }
 }
