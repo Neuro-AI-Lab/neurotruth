@@ -97,7 +97,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 /** Tonal fill for a [SectionCard]. */
-enum class CardTone { Default, Low, Highlight, Warm, Alert }
+enum class CardTone { Default, Low, Hero, Highlight, Warm, Alert }
 
 /**
  * A soft, filled, large-radius card — the single card used everywhere, replacing the earlier mix of
@@ -107,6 +107,7 @@ enum class CardTone { Default, Low, Highlight, Warm, Alert }
 fun SectionCard(
     modifier: Modifier = Modifier,
     tone: CardTone = CardTone.Default,
+    elevation: androidx.compose.ui.unit.Dp = 0.dp,
     contentPadding: PaddingValues = PaddingValues(NeuroTruthSpacing.cardPadding),
     contentGap: androidx.compose.ui.unit.Dp = NeuroTruthSpacing.betweenRows,
     content: @Composable ColumnScope.() -> Unit,
@@ -114,6 +115,9 @@ fun SectionCard(
     val container: Color = when (tone) {
         CardTone.Default -> MaterialTheme.colorScheme.surfaceContainer
         CardTone.Low -> MaterialTheme.colorScheme.surfaceContainerLow
+        // Hero lifts off the green wash: the lightest surface plus a soft shadow so the most
+        // important card on a screen reads as the focal point instead of one green block among many.
+        CardTone.Hero -> MaterialTheme.colorScheme.surfaceContainerLowest
         CardTone.Highlight -> MaterialTheme.colorScheme.secondaryContainer
         CardTone.Warm -> MaterialTheme.colorScheme.tertiaryContainer
         CardTone.Alert -> MaterialTheme.colorScheme.errorContainer
@@ -129,6 +133,7 @@ fun SectionCard(
         shape = MaterialTheme.shapes.large,
         color = container,
         contentColor = contentColor,
+        shadowElevation = elevation,
     ) {
         Column(
             modifier = Modifier.padding(contentPadding),

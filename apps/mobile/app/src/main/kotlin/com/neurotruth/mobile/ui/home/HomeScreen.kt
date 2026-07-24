@@ -226,62 +226,86 @@ private fun ProfileSummary(
 private fun CravingStateCard(state: HomeUiState) {
     val accent = cravingAccent(state.stage)
     SectionCard(
+        tone = CardTone.Hero,
+        elevation = 3.dp,
         modifier = Modifier.semantics {
             contentDescription = if (state.hasMeasurement) {
                 "갈망 상태 ${state.stageLabel}. ${state.stageMessage}"
             } else {
-                state.cravingHiddenReason ?: "갈망 상태 ${state.stageLabel}"
+                state.cravingHiddenReason ?: "아직 측정된 기록이 없어요"
             }
         },
         contentGap = NeuroTruthSpacing.betweenRows,
     ) {
-        // Branch with if/else rather than an early return@Column: bailing out of a layout content
-        // lambda after emitting composables leaves the slot table unbalanced and crashes the next
-        // recomposition.
-        if (state.cravingHiddenReason != null) {
-            Text(
-                text = state.cravingHiddenReason,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(132.dp)
-                        .clip(CircleShape)
-                        .background(accent.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = state.stageLabel,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = accent,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+        Text(
+            text = "지금 상태",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        // Three balanced branches (never an early return@Column): a consent/feature reason, the
+        // no-measurement invitation, or the measured hero. Only the measured branch draws the
+        // accent disc — an empty state no longer fills the card with a grey circle.
+        when {
+            state.cravingHiddenReason != null -> {
                 Text(
-                    text = if (state.hasMeasurement) state.stageMessage else "아직 측정된 기록이 없어요.",
-                    style = MaterialTheme.typography.titleLarge,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                    text = state.cravingHiddenReason,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            Text(
-                text = "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            !state.hasMeasurement -> {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "아직 측정된 기록이 없어요",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        text = "Watch를 연결하거나 아래에서 얼굴로 측정하면 여기에 지금 상태가 표시돼요.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
-            if (state.recommendsConversation) {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            else -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenCards),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(112.dp)
+                            .clip(CircleShape)
+                            .background(accent.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = state.stageLabel,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = accent,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    Text(
+                        text = state.stageMessage,
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Text(
+                    text = "연구용 모델의 구간 표시이며 진단이나 임상적 위험도를 의미하지 않습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                if (state.recommendsConversation) {
                     AssistChip(
                         onClick = { },
                         label = { Text("대화 권장") },
@@ -290,18 +314,18 @@ private fun CravingStateCard(state: HomeUiState) {
                         },
                     )
                 }
-            }
 
-            state.measurementOrigin?.let { origin ->
-                Text(
-                    text = origin,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "측정 시각과 기기: $origin" },
-                )
+                state.measurementOrigin?.let { origin ->
+                    Text(
+                        text = origin,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = "측정 시각과 기기: $origin" },
+                    )
+                }
             }
         }
     }
@@ -320,7 +344,7 @@ private fun WatchAndCameraCard(
     state: HomeUiState,
     onOpenCameraMeasurement: () -> Unit,
 ) {
-    SectionCard(contentGap = NeuroTruthSpacing.betweenRows) {
+    SectionCard(tone = CardTone.Low, contentGap = NeuroTruthSpacing.betweenRows) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
