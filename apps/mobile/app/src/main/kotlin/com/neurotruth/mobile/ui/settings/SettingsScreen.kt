@@ -1,6 +1,10 @@
 package com.neurotruth.mobile.ui.settings
 
 import android.content.Intent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.os.Build
+import android.Manifest
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
@@ -83,6 +87,21 @@ fun SettingsScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var showNotice by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
+
+    // In-app runtime permission request. Whatever the result, re-read the real OS state so the row
+    // reflects it immediately.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { viewModel.refreshPermissions() }
+
+    val requestPermission: (DevicePermission) -> Unit = { permission ->
+        when (val manifest = permission.runtimePermission()) {
+            // Notifications below API 33 have no runtime prompt — the channel is toggled in the
+            // system settings, so that is where the tap goes.
+            null -> context.openAppSettings()
+            else -> permissionLauncher.launch(manifest)
+        }
+    }
 
     LaunchedEffect(state.signedOut) {
         if (state.signedOut) onSignedOut()
@@ -173,6 +192,7 @@ fun SettingsScreen(
             NoticeSection(version = state.noticeVersion, onReRead = { showNotice = true })
             PermissionSection(
                 state = state,
+                onRequest = requestPermission,
                 onOpenSystemSettings = { context.openAppSettings() },
             )
             PasswordSection(state = state, viewModel = viewModel)
@@ -429,10 +449,14 @@ private fun ProductNoticeDialog(version: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun PermissionSection(state: SettingsUiState, onOpenSystemSettings: () -> Unit) {
+private fun PermissionSection(
+    state: SettingsUiState,
+    onRequest: (DevicePermission) -> Unit,
+    onOpenSystemSettings: () -> Unit,
+) {
     SettingsCard(title = "기기 권한") {
         Text(
-            text = "권한은 동의와 별개예요. 변경은 시스템 설정에서 할 수 있어요.",
+            text = "권한은 동의와 별개예요. 허용을 누르면 바로 요청하고, 이미 거부한 권한은 시스템 설정에서 바꿀 수 있어요.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -457,15 +481,22 @@ private fun PermissionSection(state: SettingsUiState, onOpenSystemSettings: () -
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    text = if (granted) "허용됨" else "허용 안 됨",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (granted) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                if (granted) {
+                    Text(
+                        text = "허용됨",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    TextButton(
+                        onClick = { onRequest(permission) },
+                        modifier = Modifier.semantics {
+                            contentDescription = "${permission.label} 권한 허용하기"
+                        },
+                    ) {
+                        Text("허용", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
         }
         SecondaryButton(
@@ -474,6 +505,21 @@ private fun PermissionSection(state: SettingsUiState, onOpenSystemSettings: () -
             contentDescription = "시스템 권한 설정 열기",
         )
     }
+}
+
+/**
+ * The runtime permission a row requests, or null when there is no runtime prompt (notifications
+ * below API 33 are a system-settings channel toggle, not a runtime grant).
+ */
+private fun DevicePermission.runtimePermission(): String? = when (this) {
+    DevicePermission.NOTIFICATION ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.POST_NOTIFICATIONS
+        } else {
+            null
+        }
+    DevicePermission.MICROPHONE -> Manifest.permission.RECORD_AUDIO
+    DevicePermission.CAMERA -> Manifest.permission.CAMERA
 }
 
 @Composable
