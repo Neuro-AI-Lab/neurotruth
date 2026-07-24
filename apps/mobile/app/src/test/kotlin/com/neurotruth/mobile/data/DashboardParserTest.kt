@@ -1,0 +1,398 @@
+package com.neurotruth.mobile.data
+
+import com.neurotruth.mobile.core.Auq
+import com.neurotruth.mobile.core.CravingStage
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * NT-08 response parsing.
+ *
+ * The three things that must never regress: a gap in the recent-hour series stays a gap, an hour's
+ * `stageCounts` normalize to a 100% composition without an empty hour becoming 0%, and a day with no
+ * prediction stays distinguishable from a day whose predictions raised no alert.
+ */
+class DashboardParserTest {
+
+    // -----------------------------------------------------------------------------------------
+    // 1 · recent-hour series
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `contiguous buckets form a single segment`() {
+        val series = CravingProbabilitySeriesParser.parse(
+            seriesJson(
+                point("2026-07-21T10:00:00+00:00", 0.10),
+                point("2026-07-21T10:00:10+00:00", 0.20),
+                point("2026-07-21T10:00:20+00:00", 0.30),
+            ),
+        )
+        val segments = series.segments()
+        assertEquals(1, segments.size)
+        assertEquals(3, segments.first().size)
+    }
+
+    @Test
+    fun `a missing bucket breaks the line into two segments`() {
+        val series = CravingProbabilitySeriesParser.parse(
+            seriesJson(
+                point("2026-07-21T10:00:00+00:00", 0.10),
+                point("2026-07-21T10:00:10+00:00", 0.20),
+                // 10:00:20 has no samples and the server omits it entirely.
+                point("2026-07-21T10:00:30+00:00", 0.90),
+                point("2026-07-21T10:00:40+00:00", 0.80),
+            ),
+        )
+        val segments = series.segments()
+        assertEquals(2, segments.size)
+        assertEquals(2, segments[0].size)
+        assertEquals(2, segments[1].size)
+        // No interpolated point was invented across the gap.
+        assertEquals(4, series.points.size)
+    }
+
+    @Test
+    fun `an isolated sample is its own segment and is never joined to a neighbour`() {
+        val series = CravingProbabilitySeriesParser.parse(
+            seriesJson(
+                point("2026-07-21T10:00:00+00:00", 0.40),
+                point("2026-07-21T10:30:00+00:00", 0.60),
+            ),
+        )
+        val segments = series.segments()
+        assertEquals(2, segments.size)
+        assertTrue(segments.all { it.size == 1 })
+    }
+
+    @Test
+    fun `the latest value is the final plotted point`() {
+        val series = CravingProbabilitySeriesParser.parse(
+            seriesJson(
+                point("2026-07-21T10:00:20+00:00", 0.30),
+                point("2026-07-21T10:00:00+00:00", 0.10),
+                point("2026-07-21T10:00:10+00:00", 0.20),
+            ),
+        )
+        val latest = series.latest
+        assertNotNull(latest)
+        assertEquals(0.30f, latest!!.probability, 1e-4f)
+        assertEquals(series.points.last().atMs, latest.atMs)
+        assertEquals(series.segments().last().last().atMs, latest.atMs)
+    }
+
+    @Test
+    fun `an empty series reports no data rather than a zero point`() {
+        val series = CravingProbabilitySeriesParser.parse(
+            """{"range":"1h","from":"2026-07-21T09:00:00+00:00","to":"2026-07-21T10:00:00+00:00","bucketSeconds":10,"points":[]}""",
+        )
+        assertFalse(series.hasData)
+        assertNull(series.latest)
+        assertTrue(series.segments().isEmpty())
+    }
+
+    @Test
+    fun `the series is capped at 360 ten-second points`() {
+        val points = (0 until 400).joinToString(",") { index ->
+            val minute = index / 6
+            val second = (index % 6) * 10
+            """{"at":"2026-07-21T%02d:%02d:%02d+00:00","averageCravingProbability":0.5,"sampleCount":1}"""
+                .format(9 + minute / 60, minute % 60, second)
+        }
+        val series = CravingProbabilitySeriesParser.parse(
+            """{"range":"1h","from":"2026-07-21T09:00:00+00:00","to":"2026-07-21T16:00:00+00:00","bucketSeconds":10,"points":[$points]}""",
+        )
+        assertEquals(CravingProbabilitySeriesParser.MAX_POINTS_1H, series.points.size)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // 2 · stageCounts normalization
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `stage counts normalize to a full 100 percent stack`() {
+        val dashboard = CravingDashboardParser.parse(
+            dashboardJson(
+                hourly = listOf(
+                    hourJson(9, sampleCount = 25, low = 5, observe = 7, caution = 9, high = 4),
+                ),
+            ),
+        )
+        val bucket = dashboard.hourly.single()
+        assertEquals(9, bucket.hour)
+        assertTrue(bucket.hasData)
+        assertEquals(25, bucket.countedSamples)
+        assertEquals(5f / 25f, bucket.proportionOf(CravingStage.SAFE), 1e-4f)
+        assertEquals(7f / 25f, bucket.proportionOf(CravingStage.OBSERVE), 1e-4f)
+        assertEquals(9f / 25f, bucket.proportionOf(CravingStage.CAUTION), 1e-4f)
+        assertEquals(4f / 25f, bucket.proportionOf(CravingStage.SEVERE), 1e-4f)
+        assertEquals(1f, bucket.proportions().sumOf { it.second.toDouble() }.toFloat(), 1e-4f)
+    }
+
+    @Test
+    fun `an hour with no samples is no data rather than zero percent`() {
+        val dashboard = CravingDashboardParser.parse(
+            dashboardJson(
+                hourly = listOf(
+                    hourJson(0, sampleCount = 0, low = 0, observe = 0, caution = 0, high = 0),
+                ),
+            ),
+        )
+        val bucket = dashboard.hourly.single()
+        assertFalse(bucket.hasData)
+        assertTrue(bucket.proportions().isEmpty())
+        assertEquals(0f, bucket.proportionOf(CravingStage.SAFE), 1e-4f)
+        assertFalse(dashboard.hasHourlyData)
+    }
+
+    @Test
+    fun `stage counts are read by their wire keys`() {
+        val dashboard = CravingDashboardParser.parse(
+            dashboardJson(
+                hourly = listOf(
+                    hourJson(13, sampleCount = 4, low = 0, observe = 0, caution = 0, high = 4),
+                ),
+            ),
+        )
+        val bucket = dashboard.hourly.single()
+        assertEquals(4, bucket.stageCounts[CravingStage.SEVERE])
+        assertEquals("high", CravingStage.SEVERE.stageCountsKey)
+        assertEquals(1f, bucket.proportionOf(CravingStage.SEVERE), 1e-4f)
+    }
+
+    @Test
+    fun `all 24 hours survive parsing`() {
+        val hours = (0 until 24).map { hour ->
+            hourJson(hour, sampleCount = if (hour == 12) 2 else 0, low = if (hour == 12) 2 else 0)
+        }
+        val dashboard = CravingDashboardParser.parse(dashboardJson(hourly = hours))
+        assertEquals(24, dashboard.hourly.size)
+        assertEquals(1, dashboard.hourly.count { it.hasData })
+        assertTrue(dashboard.hasHourlyData)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // 3 · events — no data versus a valid zero
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a day without predictions is no data and never a zero`() {
+        val dashboard = CravingDashboardParser.parse(
+            dashboardJson(
+                events = listOf(eventJson("2026-07-20", hasPrediction = false, recommend = 0, required = 0)),
+            ),
+        )
+        val bucket = dashboard.events.single()
+        assertTrue(bucket.isNoData)
+        assertFalse(bucket.isValidZero)
+    }
+
+    @Test
+    fun `a day with predictions and no alert is a valid zero`() {
+        val dashboard = CravingDashboardParser.parse(
+            dashboardJson(
+                events = listOf(eventJson("2026-07-20", hasPrediction = true, recommend = 0, required = 0)),
+            ),
+        )
+        val bucket = dashboard.events.single()
+        assertFalse(bucket.isNoData)
+        assertTrue(bucket.isValidZero)
+        assertEquals(0, bucket.totalCount)
+    }
+
+    @Test
+    fun `a day with alerts is neither no data nor a valid zero`() {
+        val dashboard = CravingDashboardParser.parse(
+            dashboardJson(
+                events = listOf(eventJson("2026-07-21", hasPrediction = true, recommend = 2, required = 1)),
+            ),
+        )
+        val bucket = dashboard.events.single()
+        assertFalse(bucket.isNoData)
+        assertFalse(bucket.isValidZero)
+        assertEquals(3, bucket.totalCount)
+        assertEquals(2, bucket.recommendCount)
+        assertEquals(1, bucket.requiredCount)
+    }
+
+    @Test
+    fun `a missing hasPredictionData flag is read as no data`() {
+        val dashboard = CravingDashboardParser.parse(
+            """{"dailyEvents":{"range":"7d","buckets":[{"localDate":"2026-07-21","recommendCount":0,"requiredCount":0,"totalCount":0}]}}""",
+        )
+        val bucket = dashboard.events.single()
+        assertTrue(bucket.isNoData)
+        assertFalse(bucket.isValidZero)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // 4 · AUQ scale
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `the raw 0 to 48 average wins over the normalized field`() {
+        val dashboard = CravingDashboardParser.parse(
+            """{"auq":{"range":"7d","bucketUnit":"day","buckets":[{"localDate":"2026-07-21","averageNormalizedScore":0.25,"averageScore":21.0,"sampleCount":3}]}}""",
+        )
+        val bucket = dashboard.auq.single()
+        assertEquals(21f, bucket.averageScore!!, 1e-4f)
+        assertFalse(bucket.usedNormalizedFallback)
+        assertTrue(bucket.hasData)
+    }
+
+    @Test
+    fun `a missing raw average falls back to the normalized score times 48`() {
+        val dashboard = CravingDashboardParser.parse(
+            """{"auq":{"range":"7d","bucketUnit":"day","buckets":[{"localDate":"2026-07-21","averageNormalizedScore":0.5,"sampleCount":2}]}}""",
+        )
+        val bucket = dashboard.auq.single()
+        assertEquals(Auq.SCALE_MAX / 2f, bucket.averageScore!!, 1e-4f)
+        assertTrue(bucket.usedNormalizedFallback)
+    }
+
+    @Test
+    fun `an hour with no responses has no average`() {
+        val dashboard = CravingDashboardParser.parse(
+            """{"auq":{"range":"today","bucketUnit":"hour","buckets":[{"localStart":"2026-07-21T03:00:00+09:00","averageNormalizedScore":null,"averageScore":null,"sampleCount":0}]}}""",
+        )
+        val bucket = dashboard.auq.single()
+        assertNull(bucket.averageScore)
+        assertFalse(bucket.hasData)
+        assertEquals(3, bucket.hour)
+        assertFalse(dashboard.hasAuqData)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // 5 · PPG preview
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a chronological preview within the cap is ready`() {
+        val result = PpgPreviewParser.parse(ppgJson(count = 512))
+        assertTrue(result is PpgPreviewResult.Ready)
+        val preview = (result as PpgPreviewResult.Ready).preview
+        assertEquals(PpgPreviewParser.MAX_POINTS, preview.samples.size)
+        assertEquals("11111111-1111-1111-1111-111111111111", preview.predictionId)
+        assertTrue(preview.samples.zipWithNext().all { (a, b) -> a.atMs <= b.atMs })
+    }
+
+    @Test
+    fun `more than 512 points is rejected rather than truncated`() {
+        val result = PpgPreviewParser.parse(ppgJson(count = 513))
+        assertTrue(result is PpgPreviewResult.Invalid)
+        assertEquals(
+            PpgPreviewParser.REASON_TOO_MANY_POINTS,
+            (result as PpgPreviewResult.Invalid).reason,
+        )
+    }
+
+    @Test
+    fun `a non-chronological series is rejected rather than sorted`() {
+        val result = PpgPreviewParser.parse(
+            """{"predictionId":"11111111-1111-1111-1111-111111111111","samples":[""" +
+                """{"at":"2026-07-21T10:00:00.000+00:00","value":1.0},""" +
+                """{"at":"2026-07-21T10:00:00.080+00:00","value":2.0},""" +
+                """{"at":"2026-07-21T10:00:00.040+00:00","value":3.0}]}""",
+        )
+        assertTrue(result is PpgPreviewResult.Invalid)
+        assertEquals(
+            PpgPreviewParser.REASON_OUT_OF_ORDER,
+            (result as PpgPreviewResult.Invalid).reason,
+        )
+    }
+
+    @Test
+    fun `an empty preview is no data rather than an error or a zero line`() {
+        val empty = PpgPreviewParser.parse(
+            """{"predictionId":"11111111-1111-1111-1111-111111111111","samples":[]}""",
+        )
+        assertTrue(empty is PpgPreviewResult.Empty)
+
+        val missing = PpgPreviewParser.parse(
+            """{"predictionId":"11111111-1111-1111-1111-111111111111"}""",
+        )
+        assertTrue(missing is PpgPreviewResult.Empty)
+    }
+
+    @Test
+    fun `a malformed sample is rejected`() {
+        val result = PpgPreviewParser.parse(
+            """{"predictionId":"11111111-1111-1111-1111-111111111111","samples":[{"at":"nope","value":1.0}]}""",
+        )
+        assertTrue(result is PpgPreviewResult.Invalid)
+        assertEquals(
+            PpgPreviewParser.REASON_MALFORMED,
+            (result as PpgPreviewResult.Invalid).reason,
+        )
+    }
+
+    @Test
+    fun `series points expose a prediction id only when the server sends one`() {
+        val without = CravingProbabilitySeriesParser.parse(
+            seriesJson(point("2026-07-21T10:00:00+00:00", 0.4)),
+        )
+        assertNull(without.points.single().predictionId)
+        assertFalse(without.hasSelectablePoints)
+
+        val with = CravingProbabilitySeriesParser.parse(
+            """{"range":"1h","from":"2026-07-21T09:00:00+00:00","to":"2026-07-21T10:00:00+00:00","bucketSeconds":10,"points":[{"at":"2026-07-21T10:00:00+00:00","averageCravingProbability":0.4,"sampleCount":1,"predictionId":"11111111-1111-1111-1111-111111111111"}]}""",
+        )
+        assertTrue(with.hasSelectablePoints)
+        assertEquals(1, with.selectablePoints.size)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // helpers
+    // -----------------------------------------------------------------------------------------
+
+    private fun ppgJson(count: Int): String {
+        val samples = (0 until count).joinToString(",") { index ->
+            val millis = index * 40L
+            """{"at":"2026-07-21T10:00:%02d.%03d+00:00","value":%.3f}"""
+                .format(millis / 1000, millis % 1000, 0.5 + index % 7 * 0.1)
+        }
+        return """{"predictionId":"11111111-1111-1111-1111-111111111111",""" +
+            """"windowStartedAt":"2026-07-21T10:00:00+00:00",""" +
+            """"windowEndedAt":"2026-07-21T10:00:20+00:00",""" +
+            """"samplingHz":25.0,"samples":[$samples]}"""
+    }
+
+    private fun seriesJson(vararg points: String): String =
+        """{"range":"1h","from":"2026-07-21T09:00:00+00:00","to":"2026-07-21T10:00:00+00:00","bucketSeconds":10,"points":[${points.joinToString(",")}]}"""
+
+    private fun point(at: String, probability: Double, sampleCount: Int = 1): String =
+        """{"at":"$at","averageCravingProbability":$probability,"sampleCount":$sampleCount}"""
+
+    private fun hourJson(
+        hour: Int,
+        sampleCount: Int,
+        low: Int = 0,
+        observe: Int = 0,
+        caution: Int = 0,
+        high: Int = 0,
+    ): String =
+        """{"localStart":"2026-07-21T%02d:00:00+09:00","averageProbability":null,"minimumProbability":null,"maximumProbability":null,"sampleCount":$sampleCount,"stageCounts":{"low":$low,"observe":$observe,"caution":$caution,"high":$high}}"""
+            .format(hour)
+
+    private fun eventJson(
+        localDate: String,
+        hasPrediction: Boolean,
+        recommend: Int,
+        required: Int,
+    ): String =
+        """{"localDate":"$localDate","hasPredictionData":$hasPrediction,"recommendCount":$recommend,"requiredCount":$required,"totalCount":${recommend + required}}"""
+
+    private fun dashboardJson(
+        hourly: List<String> = emptyList(),
+        events: List<String> = emptyList(),
+        auq: List<String> = emptyList(),
+    ): String =
+        """{"timezone":"Asia/Seoul","generatedAt":"2026-07-21T10:00:00+00:00",""" +
+            """"currentCraving":{"probability":null,"at":null},""" +
+            """"hourlyCraving":{"buckets":[${hourly.joinToString(",")}]},""" +
+            """"dailyEvents":{"range":"7d","buckets":[${events.joinToString(",")}]},""" +
+            """"auq":{"range":"today","bucketUnit":"hour","buckets":[${auq.joinToString(",")}]}}"""
+}
