@@ -91,12 +91,16 @@ class HealthSensorManager(private val context: Context) {
         }
 
         override fun onConnectionEnded() {
+            // Reset the tracker state so a later reconnect actually re-registers. Without this,
+            // trackersStarted stays true and startTracking() would early-return, registering nothing.
+            stopTracking()
             _connectionState.value = ConnectionState.DISCONNECTED
         }
 
         override fun onConnectionFailed(e: HealthTrackerException) {
             // SDK_POLICY_ERROR means Samsung Health developer mode is off on the watch.
             Log.e(TAG, "HealthTrackingService 연결 실패: ${e.message}")
+            stopTracking()
             _connectionState.value = ConnectionState.ERROR
         }
     }

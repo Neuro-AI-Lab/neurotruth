@@ -111,8 +111,12 @@ class PredictionStreamClient(
             setRequestProperty("Cache-Control", "no-cache")
             setRequestProperty("Authorization", "Bearer $accessToken")
             connectTimeout = CONNECT_TIMEOUT_MS
-            // A held stream must not time out between events; only heartbeats keep it warm.
-            readTimeout = 0
+            // Bounded a little above the server heartbeat interval, not infinite: a silently dropped
+            // connection (NAT rebind, Wi-Fi↔cellular handoff, doze) surfaces as a read timeout
+            // rather than parking readLine() forever, so the reconnect/backoff loop can self-heal.
+            // A blocking read cannot be interrupted by coroutine cancellation, which is why 0 here
+            // would strand the socket until the whole service was destroyed.
+            readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = false
         }
         connection = open
@@ -159,6 +163,10 @@ class PredictionStreamClient(
         const val TAG = "PredictionStream"
         const val HTTP_UNAUTHORIZED = 401
         const val CONNECT_TIMEOUT_MS = 8_000
+
+        /** Above the server heartbeat cadence, so a live stream never trips it but a dead one does. */
+        const val READ_TIMEOUT_MS = 45_000
+
         const val INITIAL_BACKOFF_MS = 2_000L
         const val MAX_BACKOFF_MS = 30_000L
     }

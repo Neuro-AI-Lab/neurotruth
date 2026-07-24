@@ -134,7 +134,14 @@ class AuthenticatedApiClient(
         return runCatching { refresh(refreshToken) }.getOrNull()
     }
 
-    fun clearSession() {
+    /**
+     * Holds the same monitor as [rotate]/[recoverSession] so a logout cannot be undone by an
+     * in-flight refresh. Without the lock, a background 401 that is mid-refresh (holding the lock)
+     * could complete after this ran and [adopt] would write a fresh token back — resurrecting a
+     * session the user just cleared. With the lock, clear waits for the refresh to finish and then
+     * wins.
+     */
+    fun clearSession() = synchronized(this) {
         accessToken = null
         currentUser = null
         currentConsent = null
@@ -154,10 +161,14 @@ class AuthenticatedApiClient(
                 clearSession()
                 throw ApiHttpException(response.statusCode, response.body)
             }
-        accessToken = tokens.accessToken
-        currentUser = tokens.user
-        tokens.consent?.let { currentConsent = it }
-        sessionStore.saveRefreshToken(tokens.refreshToken)
+        // Under the same monitor as clearSession(): the session-adopting writes and a concurrent
+        // logout are serialized rather than interleaved. Reentrant when called from rotate().
+        synchronized(this) {
+            accessToken = tokens.accessToken
+            currentUser = tokens.user
+            tokens.consent?.let { currentConsent = it }
+            sessionStore.saveRefreshToken(tokens.refreshToken)
+        }
         return tokens
     }
 

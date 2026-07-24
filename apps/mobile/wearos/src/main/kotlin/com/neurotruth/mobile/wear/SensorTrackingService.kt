@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground service that keeps sensor collection alive with the screen off.
@@ -78,9 +79,12 @@ class SensorTrackingService : Service() {
         }
 
     private fun startTracking() {
+        // Always call startForeground before the guard: startForegroundService arms the ~5s
+        // "must call startForeground" watchdog on every ACTION_START, so a second start while already
+        // tracking would otherwise skip it and crash with ForegroundServiceDidNotStartInTime.
+        startForeground(NOTIFICATION_ID, buildNotification())
         if (trackingStarted) return
         trackingStarted = true
-        startForeground(NOTIFICATION_ID, buildNotification())
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
@@ -90,16 +94,27 @@ class SensorTrackingService : Service() {
         SensorState.status.value = "연결 중..."
 
         serviceScope.launch {
+            // Tear down after an *established* connection drops, so the wake lock and foreground
+            // service never keep running idle with no data flow. The initial DISCONNECTED (before
+            // the first connect) must not trigger this, hence the wasConnected latch.
+            var wasConnected = false
             sensorManager.connectionState.collect { state ->
                 SensorState.status.value = when (state) {
                     HealthSensorManager.ConnectionState.CONNECTING -> "연결 중..."
                     HealthSensorManager.ConnectionState.CONNECTED -> {
+                        wasConnected = true
                         sensorManager.startTracking()
                         "측정 중"
                     }
 
                     HealthSensorManager.ConnectionState.DISCONNECTED -> "연결 끊김"
                     HealthSensorManager.ConnectionState.ERROR -> "연결 오류"
+                }
+                val lost = state == HealthSensorManager.ConnectionState.DISCONNECTED ||
+                    state == HealthSensorManager.ConnectionState.ERROR
+                if (wasConnected && lost) {
+                    wasConnected = false
+                    stopAndClean()
                 }
             }
         }
@@ -113,19 +128,16 @@ class SensorTrackingService : Service() {
         serviceScope.launch {
             sensorManager.ppgFlow.collect { data ->
                 ppgBuf.add(data.timestamp to data.green.toFloat())
-                SensorState.ppgText.value = "${data.green}"
             }
         }
         serviceScope.launch {
             sensorManager.ppgIrFlow.collect { data ->
                 ppgIrBuf.add(data.timestamp to data.ir.toFloat())
-                SensorState.ppgIrText.value = "${data.ir}"
             }
         }
         serviceScope.launch {
             sensorManager.ppgRedFlow.collect { data ->
                 ppgRedBuf.add(data.timestamp to data.red.toFloat())
-                SensorState.ppgRedText.value = "${data.red}"
             }
         }
         serviceScope.launch {
@@ -140,9 +152,6 @@ class SensorTrackingService : Service() {
                 accelXBuf.add(data.timestamp to data.x)
                 accelYBuf.add(data.timestamp to data.y)
                 accelZBuf.add(data.timestamp to data.z)
-                SensorState.accelXText.value = "%.1f".format(data.x)
-                SensorState.accelYText.value = "%.1f".format(data.y)
-                SensorState.accelZText.value = "%.1f".format(data.z)
             }
         }
         serviceScope.launch {
@@ -155,7 +164,10 @@ class SensorTrackingService : Service() {
         serviceScope.launch {
             while (isActive) {
                 delay(FLUSH_INTERVAL_MS)
-                sensorManager.flushAllTrackers()
+                // The tracker flush() calls are Samsung binder IPC; run them off the collection
+                // thread so the ~200ms cadence never blocks it. The buffers are not touched here —
+                // flushChannel below reads them on the confined thread — so no race is introduced.
+                withContext(Dispatchers.IO) { sensorManager.flushAllTrackers() }
                 delay(CALLBACK_GRACE_MS)
                 flushChannel(WatchSensorPaths.HR, hrBuf)
                 flushChannel(WatchSensorPaths.PPG, ppgBuf)

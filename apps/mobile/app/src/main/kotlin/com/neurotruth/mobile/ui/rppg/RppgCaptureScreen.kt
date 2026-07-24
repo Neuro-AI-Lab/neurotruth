@@ -532,6 +532,14 @@ private class RppgCameraController(
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             val cameraProvider = runCatching { future.get() }.getOrNull()
+            // release() may have run while the future was still pending. bind()'s listener and
+            // release() both run on the main thread, so re-checking bound here is enough to avoid
+            // opening the camera onto a screen that has already torn down (e.g. backgrounded during
+            // the first camera init).
+            if (!bound) {
+                runCatching { cameraProvider?.unbindAll() }
+                return@addListener
+            }
             if (cameraProvider == null) {
                 onCameraUnavailable()
                 return@addListener
