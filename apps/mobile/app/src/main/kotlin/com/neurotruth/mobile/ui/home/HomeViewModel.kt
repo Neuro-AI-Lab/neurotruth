@@ -93,6 +93,7 @@ internal fun MonitoringBlocker.notice(): String? = when (this) {
     MonitoringBlocker.CONSENT_WITHDRAWN -> "동의가 철회되어 측정이 멈췄어요."
     MonitoringBlocker.UPLOAD_PAUSED -> "네트워크 문제로 전송이 잠시 멈췄어요."
     MonitoringBlocker.AUTHENTICATION_REQUIRED -> "다시 로그인하면 측정을 이어갑니다."
+    MonitoringBlocker.SERVICE_START_FAILED -> "측정을 시작하지 못했어요. 기기 권한을 확인해 주세요."
 }
 
 /**

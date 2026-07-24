@@ -38,6 +38,9 @@ enum class MonitoringBlocker {
     CONSENT_WITHDRAWN,
     UPLOAD_PAUSED,
     AUTHENTICATION_REQUIRED,
+
+    /** startForeground was refused by the OS (e.g. a missing FGS-type prerequisite permission). */
+    SERVICE_START_FAILED,
 }
 
 /**
@@ -179,15 +182,25 @@ class MonitoringService : Service() {
             return false
         }
 
-        started = true
         ensureChannel()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildNotification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,
-        )
+        // Never let a refused startForeground crash the app: on Android 14+ the health FGS type
+        // requires a qualifying permission (declared in the manifest), and a background-start can be
+        // disallowed. Surface a blocker and stop instead of throwing.
+        try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,
+            )
+        } catch (error: Exception) {
+            MonitoringState.setBlocker(MonitoringBlocker.SERVICE_START_FAILED)
+            MonitoringState.setRunning(false)
+            stopSelf()
+            return false
+        }
 
+        started = true
         MonitoringState.setBlocker(MonitoringBlocker.NONE)
         MonitoringState.setRunning(true)
 

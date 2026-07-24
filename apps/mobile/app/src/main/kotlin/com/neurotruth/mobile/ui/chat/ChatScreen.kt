@@ -117,7 +117,12 @@ fun ChatScreen(
     }
 
     LaunchedEffect(state.finished) {
-        if (state.finished) onFinished()
+        if (state.finished) {
+            // Consume the flag before leaving so a later return to the preserved chat tab does not
+            // re-fire this effect and bounce the user out.
+            viewModel.onFinishedNavigated()
+            onFinished()
+        }
     }
 
     Column(

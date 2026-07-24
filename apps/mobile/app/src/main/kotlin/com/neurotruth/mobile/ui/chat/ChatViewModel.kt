@@ -229,6 +229,15 @@ class ChatViewModel(
         _state.update { it.copy(requiresAuq = false) }
     }
 
+    /**
+     * Consumed once the finish navigation has happened. Without this the flag stays true, and because
+     * the 챗봇 tab preserves its ViewModel across tab switches (saveState/restoreState), returning to
+     * the tab would re-fire the finish effect and bounce the user straight back out.
+     */
+    fun onFinishedNavigated() {
+        _state.update { it.copy(finished = false) }
+    }
+
     fun onDraftChanged(value: String) {
         // Editing the body abandons the pending retry: an edited message is a new message with a
         // new id, never the same id with different content.

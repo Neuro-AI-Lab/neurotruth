@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is denied by default and permitted ONLY for the current research backend host, which is
+  served over plain HTTP. This scopes the exposure to one known origin instead of allowing cleartext
+  app-wide, but it is a mitigation, not a fix: bearer tokens and biosignal/PHI still travel
+  unencrypted to that host. The real fix is to serve the backend over HTTPS/TLS and remove this
+  domain override. Keep the host in sync with assets/server_config.properties.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">223.194.33.26</domain>
+    </domain-config>
+</network-security-config>
