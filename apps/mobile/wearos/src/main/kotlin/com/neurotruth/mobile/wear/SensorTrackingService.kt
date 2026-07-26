@@ -8,6 +8,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
+import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,6 +20,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 /**
  * Foreground service that keeps sensor collection alive with the screen off.
@@ -27,7 +33,9 @@ import kotlinx.coroutines.withContext
  * The flush loop is the reason this is a service and not a coroutine in a ViewModel: it waits
  * [FLUSH_INTERVAL_MS], drains the SDK batch buffer, waits [CALLBACK_GRACE_MS] for the resulting
  * callbacks, then ships one batch per non-empty channel. Without the flush the SDK holds PPG and
- * accelerometer for ~12 seconds, which would make the phone's 20-second window permanently stale.
+ * accelerometer for ~12 seconds, which would make the phone's 20-second window stale. A two-second
+ * cadence keeps each 10-second inference window current without overwhelming the Data Layer with
+ * dozens of tiny messages per second.
  *
  * The watch buffers only within a flush cycle. If the phone app is not running the samples are
  * dropped rather than queued — this is a research prototype and gapped data beats stale data
@@ -42,6 +50,8 @@ class SensorTrackingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wakeLock: PowerManager.WakeLock? = null
     private var trackingStarted = false
+    private var stopping = false
+    private var currentRequestId: String? = null
 
     // Dispatchers.Main is single-threaded here, so these need no further synchronization.
     private val hrBuf = mutableListOf<Pair<Long, Float>>()
@@ -63,6 +73,10 @@ class SensorTrackingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
         when (intent?.action) {
             ACTION_START -> {
+                currentRequestId = intent.getStringExtra(EXTRA_REQUEST_ID)
+                    ?: SensorState.activeRequestId.value
+                    ?: UUID.randomUUID().toString()
+                SensorState.activeRequestId.value = currentRequestId
                 startTracking()
                 // REDELIVER, not STICKY: after a low-memory kill the last start intent is
                 // redelivered so tracking resumes, instead of a null intent hitting the else branch
@@ -71,6 +85,9 @@ class SensorTrackingService : Service() {
             }
 
             ACTION_STOP -> {
+                currentRequestId = intent.getStringExtra(EXTRA_REQUEST_ID)
+                    ?: currentRequestId
+                    ?: SensorState.activeRequestId.value
                 stopAndClean()
                 START_NOT_STICKY
             }
@@ -86,7 +103,13 @@ class SensorTrackingService : Service() {
         // "must call startForeground" watchdog on every ACTION_START, so a second start while already
         // tracking would otherwise skip it and crash with ForegroundServiceDidNotStartInTime.
         startForeground(NOTIFICATION_ID, buildNotification())
-        if (trackingStarted) return
+        if (trackingStarted) {
+            // Phone may have restarted and lost its in-memory acknowledgement state while this
+            // foreground service kept collecting. A new explicit start request must receive its
+            // own ack without reconnecting trackers or creating a second collection loop.
+            currentRequestId?.let { sendControlStatus(this, it, "started") }
+            return
+        }
         trackingStarted = true
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -95,6 +118,7 @@ class SensorTrackingService : Service() {
 
         SensorState.isTracking.value = true
         SensorState.status.value = "연결 중..."
+        currentRequestId?.let { sendControlStatus(this, it, "started") }
 
         serviceScope.launch {
             // Tear down after an *established* connection drops, so the wake lock and foreground
@@ -117,7 +141,10 @@ class SensorTrackingService : Service() {
                     state == HealthSensorManager.ConnectionState.ERROR
                 if (wasConnected && lost) {
                     wasConnected = false
-                    stopAndClean()
+                    stopAndClean(
+                        terminalStatus = "error",
+                        terminalErrorCode = "sensor_disconnected",
+                    )
                 }
             }
         }
@@ -168,7 +195,7 @@ class SensorTrackingService : Service() {
             while (isActive) {
                 delay(FLUSH_INTERVAL_MS)
                 // The tracker flush() calls are Samsung binder IPC; run them off the collection
-                // thread so the ~200ms cadence never blocks it. The buffers are not touched here —
+                // thread so the flush cadence never blocks it. The buffers are not touched here —
                 // flushChannel below reads them on the confined thread — so no race is introduced.
                 withContext(Dispatchers.IO) { sensorManager.flushAllTrackers() }
                 delay(CALLBACK_GRACE_MS)
@@ -195,7 +222,12 @@ class SensorTrackingService : Service() {
         phoneSender.sendBatch(path, batch)
     }
 
-    private fun stopAndClean() {
+    private fun stopAndClean(
+        terminalStatus: String = "stopped",
+        terminalErrorCode: String? = null,
+    ) {
+        if (stopping) return
+        stopping = true
         trackingStarted = false
         if (wakeLock?.isHeld == true) wakeLock?.release()
         wakeLock = null
@@ -205,6 +237,32 @@ class SensorTrackingService : Service() {
         SensorState.status.value = "중지됨"
         SensorState.resetSensorValues()
         serviceScope.coroutineContext.cancelChildren()
+
+        val requestId = currentRequestId
+        if (requestId == null) {
+            finishStop()
+            return
+        }
+
+        // Keep the service alive until exactly one terminal acknowledgement is handed to Google
+        // Play services. An explicit stop reports "stopped"; a sensor disconnect reports "error"
+        // and must not be overwritten by a later stop acknowledgement.
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching {
+                sendControlStatusAndWait(
+                    context = this@SensorTrackingService,
+                    requestId = requestId,
+                    status = terminalStatus,
+                    errorCode = terminalErrorCode,
+                )
+            }.onFailure {
+                Log.w(TAG, "측정 종료 상태 전달 실패: ${it.message}")
+            }
+            withContext(Dispatchers.Main) { finishStop() }
+        }
+    }
+
+    private fun finishStop() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -239,28 +297,92 @@ class SensorTrackingService : Service() {
     }
 
     companion object {
+        private const val TAG = "SensorTrackingService"
         const val ACTION_START = "com.neurotruth.mobile.wear.action.START"
         const val ACTION_STOP = "com.neurotruth.mobile.wear.action.STOP"
+        const val EXTRA_REQUEST_ID = "measurementRequestId"
 
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "sensor_ch"
         private const val WAKE_LOCK_TAG = "NeuroTruthWear:tracking"
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1000L
 
-        /** ~200 ms total per cycle: flush, then let the callbacks land before shipping. */
-        private const val FLUSH_INTERVAL_MS = 180L
-        private const val CALLBACK_GRACE_MS = 20L
+        /** Two seconds total per cycle: flush, then let the callbacks land before shipping. */
+        private const val FLUSH_INTERVAL_MS = 1_800L
+        private const val CALLBACK_GRACE_MS = 200L
 
-        fun start(context: Context) {
+        fun start(context: Context, requestId: String) {
             context.startForegroundService(
-                Intent(context, SensorTrackingService::class.java).apply { action = ACTION_START },
+                Intent(context, SensorTrackingService::class.java).apply {
+                    action = ACTION_START
+                    putExtra(EXTRA_REQUEST_ID, requestId)
+                },
             )
         }
 
-        fun stop(context: Context) {
+        fun stop(context: Context, requestId: String? = SensorState.activeRequestId.value) {
             context.startService(
-                Intent(context, SensorTrackingService::class.java).apply { action = ACTION_STOP },
+                Intent(context, SensorTrackingService::class.java).apply {
+                    action = ACTION_STOP
+                    requestId?.let { putExtra(EXTRA_REQUEST_ID, it) }
+                },
             )
         }
+
+        fun sendControlStatus(
+            context: Context,
+            requestId: String,
+            status: String,
+            errorCode: String? = null,
+        ) {
+            val payload = controlStatusPayload(requestId, status, errorCode)
+            Wearable.getNodeClient(context).connectedNodes
+                .addOnSuccessListener { nodes ->
+                    nodes.forEach { node ->
+                        Wearable.getMessageClient(context)
+                            .sendMessage(node.id, CONTROL_STATUS_PATH, payload)
+                    }
+                }
+                .addOnFailureListener {
+                    Log.w("SensorTrackingService", "측정 상태 전달 실패: ${it.message}")
+                }
+        }
+
+        private fun sendControlStatusAndWait(
+            context: Context,
+            requestId: String,
+            status: String,
+            errorCode: String? = null,
+        ) {
+            val payload = controlStatusPayload(requestId, status, errorCode)
+            val nodes = Tasks.await(
+                Wearable.getNodeClient(context).connectedNodes,
+                CONTROL_ACK_TIMEOUT_SECONDS,
+                TimeUnit.SECONDS,
+            )
+            nodes.forEach { node ->
+                Tasks.await(
+                    Wearable.getMessageClient(context)
+                        .sendMessage(node.id, CONTROL_STATUS_PATH, payload),
+                    CONTROL_ACK_TIMEOUT_SECONDS,
+                    TimeUnit.SECONDS,
+                )
+            }
+        }
+
+        private fun controlStatusPayload(
+            requestId: String,
+            status: String,
+            errorCode: String?,
+        ): ByteArray =
+            JSONObject()
+                .put("requestId", requestId)
+                .put("status", status)
+                .apply { errorCode?.let { put("errorCode", it) } }
+                .toString()
+                .toByteArray(Charsets.UTF_8)
+
+        private const val CONTROL_STATUS_PATH = "/control/measurement/status"
+        private const val CONTROL_ACK_TIMEOUT_SECONDS = 5L
     }
 }

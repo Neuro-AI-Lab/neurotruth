@@ -28,18 +28,18 @@ object SensorBatchCodec {
     const val HEADER_BYTES: Int = 4
     const val SAMPLE_BYTES: Int = 12
 
-    /** A single flush cycle is ~200 ms; anything near this cap is a corrupt length field. */
+    /** A single two-second flush remains far below this cap; anything near it is corrupt. */
     const val MAX_SAMPLES: Int = 10_000
 
-    const val PATH_HR = "/sensor/hr"
-    const val PATH_PPG = "/sensor/ppg"
-    const val PATH_PPG_IR = "/sensor/ppg_ir"
-    const val PATH_PPG_RED = "/sensor/ppg_red"
-    const val PATH_EDA = "/sensor/eda"
-    const val PATH_ACCEL_X = "/sensor/accel_x"
-    const val PATH_ACCEL_Y = "/sensor/accel_y"
-    const val PATH_ACCEL_Z = "/sensor/accel_z"
-    const val PATH_SKIN_TEMP = "/sensor/skin_temp"
+    const val PATH_HR = "/sensor-v2/hr"
+    const val PATH_PPG = "/sensor-v2/ppg"
+    const val PATH_PPG_IR = "/sensor-v2/ppg_ir"
+    const val PATH_PPG_RED = "/sensor-v2/ppg_red"
+    const val PATH_EDA = "/sensor-v2/eda"
+    const val PATH_ACCEL_X = "/sensor-v2/accel_x"
+    const val PATH_ACCEL_Y = "/sensor-v2/accel_y"
+    const val PATH_ACCEL_Z = "/sensor-v2/accel_z"
+    const val PATH_SKIN_TEMP = "/sensor-v2/skin_temp"
 
     private val CHANNEL_BY_PATH: Map<String, String> = mapOf(
         PATH_HR to SensorChannel.HR,

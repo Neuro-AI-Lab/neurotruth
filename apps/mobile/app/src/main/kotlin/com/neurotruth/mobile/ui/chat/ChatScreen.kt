@@ -145,13 +145,17 @@ fun ChatScreen(
             )
             OutlinedButton(
                 onClick = viewModel::finishSession,
-                enabled = state.sessionId != null,
+                enabled = state.sessionId != null && !state.isSending && !state.isFinishing,
                 shape = CircleShape,
                 modifier = Modifier
                     .heightIn(min = NeuroTruthSpacing.minTouchTarget)
                     .semantics { contentDescription = "대화 종료" },
             ) {
-                Text("종료", style = MaterialTheme.typography.labelLarge)
+                if (state.isFinishing) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("종료", style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
 
@@ -249,7 +253,8 @@ fun ChatScreen(
             }
         }
 
-        // STT status sits above the field it writes into. It never blocks typing.
+        // STT status is independent of the typed draft: a successful transcript is sent as its own
+        // voice bubble, while failures leave this field usable and unchanged.
         state.voiceNotice?.let { notice ->
             Text(
                 text = notice,

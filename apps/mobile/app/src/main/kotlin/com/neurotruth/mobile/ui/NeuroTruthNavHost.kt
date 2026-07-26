@@ -144,7 +144,7 @@ fun NeuroTruthNavHost(
 
             composable(NeuroTruthRoutes.CHAT) {
                 ChatScreen(
-                    onFinished = { navController.switchTab(NeuroTruthRoutes.DASHBOARD) },
+                    onFinished = { navController.leaveFinishedChat() },
                     onRequiresAuq = {
                         navController.navigate(NeuroTruthRoutes.AUQ) { launchSingleTop = true }
                     },
@@ -153,8 +153,8 @@ fun NeuroTruthNavHost(
 
             composable(NeuroTruthRoutes.AUQ) {
                 AuqScreen(
-                    // Submitting and skipping both land here. Chat re-enters ensureSession, which
-                    // returns the same active session, so NT-06 is not offered again.
+                    // Skip continues immediately; a persisted response first remains on the
+                    // neutral result screen until the patient explicitly continues.
                     onContinueToChat = {
                         navController.navigate(NeuroTruthRoutes.CHAT) {
                             popUpTo(NeuroTruthRoutes.AUQ) { inclusive = true }
@@ -180,8 +180,8 @@ fun NeuroTruthNavHost(
 
             composable(NeuroTruthRoutes.RPPG) {
                 RppgCaptureScreen(
-                    // A completed job has already been routed once and the session ensured, so this
-                    // only moves the user to the conversation.
+                    // The completed job arms an rPPG session entry. Chat creates or resumes the
+                    // session and offers AUQ only when the backend actually created a new one.
                     onCompleted = {
                         navController.navigate(NeuroTruthRoutes.CHAT) {
                             popUpTo(NeuroTruthRoutes.RPPG) { inclusive = true }
@@ -209,5 +209,21 @@ private fun NavHostController.switchTab(route: String) {
         popUpTo(NeuroTruthRoutes.HOME) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/**
+ * A finished conversation must not be restored from the bottom-tab saved state.
+ *
+ * Keeping the completed Chat ViewModel made the next Chat-tab visit reuse its old session id and
+ * bypass the AUQ that belongs to a newly created session. The dashboard is intentionally refreshed
+ * after finish, and a later Chat visit constructs a new ViewModel and asks the server to create or
+ * resume the correct session.
+ */
+private fun NavHostController.leaveFinishedChat() {
+    navigate(NeuroTruthRoutes.DASHBOARD) {
+        popUpTo(NeuroTruthRoutes.HOME) { saveState = false }
+        launchSingleTop = true
+        restoreState = false
     }
 }

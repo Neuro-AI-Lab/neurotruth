@@ -8,9 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.ConsentGates
@@ -19,6 +21,7 @@ import com.neurotruth.mobile.core.LatestPredictionPolicy
 import com.neurotruth.mobile.core.SOURCE_WATCH
 import com.neurotruth.mobile.core.WatchConnectionState
 import com.neurotruth.mobile.core.WatchConnectionTracker
+import com.neurotruth.mobile.data.DashboardRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +32,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.UUID
 
 /** Why measurement is not running, for the Home banner. Never a craving value. */
 enum class MonitoringBlocker {
@@ -42,6 +50,86 @@ enum class MonitoringBlocker {
     /** startForeground was refused by the OS (e.g. a missing FGS-type prerequisite permission). */
     SERVICE_START_FAILED,
 }
+
+enum class MeasurementControlStatus {
+    STOPPED,
+    REQUESTING_START,
+    STARTED,
+    REQUESTING_STOP,
+    CONFIRMATION_REQUIRED,
+    ERROR,
+}
+
+data class MeasurementControlSnapshot(
+    val status: MeasurementControlStatus = MeasurementControlStatus.STOPPED,
+    val requestId: String? = null,
+    val errorCode: String? = null,
+)
+
+/**
+ * Process-wide Phone view of the acknowledged Watch measurement state.
+ *
+ * A connected node is not the same thing as an active sensor stream. The Phone foreground service
+ * starts only after [acceptStatus] receives a matching `started` acknowledgement.
+ */
+object MeasurementControlState {
+    private val _snapshot = MutableStateFlow(MeasurementControlSnapshot())
+    val snapshot: StateFlow<MeasurementControlSnapshot> = _snapshot.asStateFlow()
+
+    internal fun begin(start: Boolean, requestId: String) {
+        _snapshot.value = MeasurementControlSnapshot(
+            status = if (start) {
+                MeasurementControlStatus.REQUESTING_START
+            } else {
+                MeasurementControlStatus.REQUESTING_STOP
+            },
+            requestId = requestId,
+        )
+    }
+
+    internal fun fail(requestId: String, errorCode: String) {
+        if (_snapshot.value.requestId != requestId) return
+        _snapshot.value = MeasurementControlSnapshot(
+            status = MeasurementControlStatus.ERROR,
+            requestId = requestId,
+            errorCode = errorCode,
+        )
+    }
+
+    /** Returns true only for a well-formed status belonging to the current request/run. */
+    fun acceptStatus(path: String, data: ByteArray): Boolean {
+        if (path != WATCH_CONTROL_STATUS_PATH) return false
+        return runCatching {
+            val json = JSONObject(String(data, Charsets.UTF_8))
+            val requestId = json.getString("requestId")
+            val current = _snapshot.value
+            // A process with no active request must not accept a delayed/stale "started" message
+            // and silently recreate the old auto-start behavior.
+            if (current.requestId == null || current.requestId != requestId) return false
+            val status = when (json.getString("status")) {
+                "started" -> MeasurementControlStatus.STARTED
+                "stopped" -> MeasurementControlStatus.STOPPED
+                "confirmation_required" -> MeasurementControlStatus.CONFIRMATION_REQUIRED
+                "error" -> MeasurementControlStatus.ERROR
+                else -> return false
+            }
+            _snapshot.value = MeasurementControlSnapshot(
+                status = status,
+                requestId = requestId,
+                errorCode = json.optString("errorCode").takeIf(String::isNotBlank),
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    internal fun reset() {
+        _snapshot.value = MeasurementControlSnapshot()
+    }
+}
+
+internal const val WATCH_CONTROL_REQUEST_PATH = "/control/measurement/request"
+internal const val WATCH_CONTROL_STATUS_PATH = "/control/measurement/status"
+internal const val WATCH_DASHBOARD_SNAPSHOT_PATH = "/dashboard/snapshot"
 
 /**
  * What [MonitoringService] publishes to the UI.
@@ -103,7 +191,7 @@ object MonitoringState {
  *
  * The 10-second upload cadence and the SSE connection are P0 requirements that must survive the
  * screen going off, so they live here rather than in a ViewModel scope. The service owns
- * [SensorWindowScheduler] and [PredictionStreamClient] and nothing else does.
+ * [SensorWindowScheduler], [PredictionStreamClient] and the live Watch MessageClient listener.
  *
  * | Item | Value |
  * |---|---|
@@ -129,6 +217,7 @@ class MonitoringService : Service() {
     private lateinit var notifier: CravingAlertNotifier
     private lateinit var scheduler: SensorWindowScheduler
     private lateinit var streamClient: PredictionStreamClient
+    private lateinit var dashboardRepository: DashboardRepository
 
     // Written on the main thread, read from the watchdog on Dispatchers.Default — needs a
     // happens-before so the watchdog observes a stop promptly.
@@ -137,6 +226,40 @@ class MonitoringService : Service() {
 
     @Volatile
     private var shuttingDown = false
+
+    @Volatile
+    private var wearListenerRegistered = false
+
+    @Volatile
+    private var lastReceiptLogElapsedMs = 0L
+
+    private val wearMessageListener = MessageClient.OnMessageReceivedListener { event ->
+        if (MeasurementControlState.acceptStatus(event.path, event.data)) {
+            when (MeasurementControlState.snapshot.value.status) {
+                MeasurementControlStatus.STOPPED,
+                MeasurementControlStatus.ERROR,
+                -> shutdown(MonitoringBlocker.NONE)
+                else -> Unit
+            }
+            return@OnMessageReceivedListener
+        }
+        val receipt = WearSensorMessageHandler.record(
+            path = event.path,
+            data = event.data,
+            nowMs = System.currentTimeMillis(),
+        ) ?: return@OnMessageReceivedListener
+
+        // Metadata-only heartbeat: never log physiological values or the wire payload.
+        val elapsedMs = SystemClock.elapsedRealtime()
+        if (elapsedMs - lastReceiptLogElapsedMs >= RECEIPT_LOG_INTERVAL_MS) {
+            lastReceiptLogElapsedMs = elapsedMs
+            Log.i(
+                TAG,
+                "센서 배치 수신 path=${receipt.path} count=${receipt.count} " +
+                    "newestTimestampMs=${receipt.newestTimestampMs}",
+            )
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -157,6 +280,7 @@ class MonitoringService : Service() {
             listener = streamListener,
             scope = serviceScope,
         )
+        dashboardRepository = DashboardRepository(app.apiClient, app.endpoints)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
@@ -211,10 +335,32 @@ class MonitoringService : Service() {
         MonitoringState.setBlocker(MonitoringBlocker.NONE)
         MonitoringState.setRunning(true)
 
+        // A new monitoring run starts with a fresh rolling window. Historical Data Layer messages
+        // are rejected by WearSensorMessageHandler as a second line of defence.
+        SensorSampleRepository.clear()
+        registerWearListener()
         scheduler.start()
         streamClient.start()
         serviceScope.launch { watchWatchdog() }
+        serviceScope.launch { relayDashboardSnapshots() }
         return true
+    }
+
+    private fun registerWearListener() {
+        if (wearListenerRegistered) return
+        wearListenerRegistered = true
+        Wearable.getMessageClient(this)
+            .addListener(wearMessageListener)
+            .addOnFailureListener { error ->
+                wearListenerRegistered = false
+                Log.w(TAG, "워치 센서 listener 등록 실패: ${error.message}")
+            }
+    }
+
+    private fun unregisterWearListener() {
+        if (!wearListenerRegistered) return
+        wearListenerRegistered = false
+        Wearable.getMessageClient(this).removeListener(wearMessageListener)
     }
 
     /**
@@ -302,6 +448,71 @@ class MonitoringService : Service() {
         }
     }
 
+    /**
+     * Relays a display-safe recent-hour/today snapshot. Exact probabilities and raw sensor samples
+     * stay on Phone; Watch receives only stage codes, timestamps, event count, and AUQ score.
+     */
+    private suspend fun relayDashboardSnapshots() {
+        while (serviceScope.isActive && started) {
+            runCatching {
+                val timezone = ZoneId.systemDefault().id
+                val series = dashboardRepository.recentHourSeries()
+                val dashboard = dashboardRepository.cravingDashboard(
+                    timezone = timezone,
+                    eventRange = DashboardRepository.EVENT_RANGE_7D,
+                    auqRange = DashboardRepository.AUQ_RANGE_TODAY,
+                )
+                val today = LocalDate.now(ZoneId.of(timezone)).toString()
+                val eventCount = dashboard.events
+                    .firstOrNull { it.localDate == today }
+                    ?.totalCount
+                    ?: 0
+                val weightedAuq = dashboard.auq
+                    .filter { it.hasData }
+                    .let { buckets ->
+                        val samples = buckets.sumOf { it.sampleCount }
+                        if (samples == 0) {
+                            null
+                        } else {
+                            buckets.sumOf {
+                                (it.averageScore ?: 0f).toDouble() * it.sampleCount
+                            }.toFloat() / samples
+                        }
+                    }
+                val payload = JSONObject()
+                    .put(
+                        "stages",
+                        JSONArray().apply {
+                            series.points.forEach { point ->
+                                put(
+                                    JSONObject()
+                                        .put("timestampMs", point.atMs)
+                                        .put("stageCode", point.stage.stageCountsKey),
+                                )
+                            }
+                        },
+                    )
+                    .put("todayEventCount", eventCount)
+                    .apply {
+                        if (weightedAuq != null) put("todayAuqScore", weightedAuq)
+                    }
+                    .toString()
+                    .toByteArray(Charsets.UTF_8)
+                sendToWatch(WATCH_DASHBOARD_SNAPSHOT_PATH, payload)
+            }.onFailure {
+                Log.w(TAG, "워치 대시보드 요약 전달 실패: ${it.message}")
+            }
+            delay(DASHBOARD_RELAY_INTERVAL_MS)
+        }
+    }
+
+    private suspend fun sendToWatch(path: String, payload: ByteArray) {
+        val nodes = Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+        nodes.forEach { node ->
+            Tasks.await(Wearable.getMessageClient(this).sendMessage(node.id, path, payload))
+        }
+    }
+
     private fun consentGates(): ConsentGates = ConsentGates(app.apiClient.consent())
 
     private fun shutdown(blocker: MonitoringBlocker) {
@@ -310,6 +521,7 @@ class MonitoringService : Service() {
         if (shuttingDown) return
         shuttingDown = true
         started = false
+        unregisterWearListener()
         scheduler.stop()
         streamClient.stop()
         MonitoringState.setRunning(false)
@@ -321,6 +533,7 @@ class MonitoringService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         started = false
+        unregisterWearListener()
         scheduler.stop()
         streamClient.stop()
         MonitoringState.setRunning(false)
@@ -379,6 +592,8 @@ class MonitoringService : Service() {
         private const val NOTIFICATION_TEXT = "생체 신호를 측정하고 있어요"
         private const val WATCH_PREDICTION_PATH = "/prediction/class"
         private const val WATCH_POLL_INTERVAL_MS = 3_000L
+        private const val RECEIPT_LOG_INTERVAL_MS = 5_000L
+        private const val DASHBOARD_RELAY_INTERVAL_MS = 60_000L
 
         /**
          * Starts only when the Watch is connected and `biosignal` consent is granted. The service
@@ -387,7 +602,15 @@ class MonitoringService : Service() {
         fun start(context: Context, watchState: WatchConnectionState, gates: ConsentGates) {
             if (watchState != WatchConnectionState.CONNECTED) return
             if (!gates.canUploadBiosignal) return
-            context.startForegroundService(Intent(context, MonitoringService::class.java))
+            try {
+                context.startForegroundService(Intent(context, MonitoringService::class.java))
+            } catch (error: RuntimeException) {
+                // Android 12+ can reject an FGS start if the activity lost foreground status
+                // between the lifecycle callback and this call. Surface the pause; never crash.
+                Log.w(TAG, "Foreground monitoring start was rejected", error)
+                MonitoringState.setRunning(false)
+                MonitoringState.setBlocker(MonitoringBlocker.SERVICE_START_FAILED)
+            }
         }
 
         /** Called on logout, on consent withdrawal, and on confirmed disconnection. */
@@ -399,6 +622,30 @@ class MonitoringService : Service() {
                     Intent(context, MonitoringService::class.java).apply { action = ACTION_STOP },
                 )
             }
+        }
+
+        /** Sends a user-requested start/stop command. It does not start Phone monitoring. */
+        suspend fun requestMeasurement(context: Context, start: Boolean): String {
+            val requestId = UUID.randomUUID().toString()
+            MeasurementControlState.begin(start, requestId)
+            val payload = JSONObject()
+                .put("action", if (start) "start" else "stop")
+                .put("requestId", requestId)
+                .toString()
+                .toByteArray(Charsets.UTF_8)
+            runCatching {
+                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+                require(nodes.isNotEmpty()) { "watch_disconnected" }
+                nodes.forEach { node ->
+                    Tasks.await(
+                        Wearable.getMessageClient(context)
+                            .sendMessage(node.id, WATCH_CONTROL_REQUEST_PATH, payload),
+                    )
+                }
+            }.onFailure {
+                MeasurementControlState.fail(requestId, "control_delivery_failed")
+            }
+            return requestId
         }
     }
 }

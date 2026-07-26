@@ -192,14 +192,8 @@ class SqlAlchemyRppgRepository:
                     "continuous_value": prediction.get("cravingProbability"),
                     "quality": json.dumps({"score": values.get("quality_score"), "passed": True}),
                     "metadata": json.dumps(prediction, separators=(",", ":"))})
-            if alert_id is not None:
-                await conn.execute(text("""
-                    INSERT INTO craving_alerts
-                      (id,patient_id,trigger_prediction_id,rule_code,rule_version,trigger_reason,status)
-                    VALUES (:id,:patient,:prediction,:rule,'v1',CAST(:reason AS jsonb),'triggered')
-                """), {"id": alert_id, "patient": patient_id, "prediction": prediction_id,
-                        "rule": str(alert.get("triggerReason") or "camera_rppg")[:64],
-                        "reason": json.dumps(alert, separators=(",", ":"))})
+            # Camera rPPG predictions are persisted for history and dialogue
+            # handoff only. Alert creation is intentionally Watch-only.
 
     async def create_retry(self, patient_id: UUID, job_id: UUID, new_job_id: UUID) -> dict[str, Any]:
         async with self.engine.begin() as conn:

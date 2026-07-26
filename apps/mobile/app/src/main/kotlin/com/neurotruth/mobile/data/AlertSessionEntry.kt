@@ -13,26 +13,29 @@ import com.neurotruth.mobile.core.SessionEntryPoint
 object AlertSessionEntry {
 
     @Volatile
-    private var pendingAlertId: String? = null
+    private var pendingEntry: Pair<SessionEntryPoint, String?>? = null
 
     @Synchronized
     fun arm(alertId: String) {
-        if (alertId.isNotBlank()) pendingAlertId = alertId
+        if (alertId.isNotBlank()) pendingEntry = SessionEntryPoint.ALERT to alertId
+    }
+
+    /** Carries a non-alert entry such as a completed rPPG measurement into ChatViewModel. */
+    @Synchronized
+    fun arm(entryPoint: SessionEntryPoint) {
+        require(entryPoint != SessionEntryPoint.ALERT) { "alert entry requires an alert id" }
+        pendingEntry = entryPoint to null
     }
 
     @Synchronized
     fun consume(): Pair<SessionEntryPoint, String?> {
-        val alertId = pendingAlertId
-        pendingAlertId = null
-        return if (alertId != null) {
-            SessionEntryPoint.ALERT to alertId
-        } else {
-            SessionEntryPoint.CHAT_TAB to null
-        }
+        val entry = pendingEntry
+        pendingEntry = null
+        return entry ?: (SessionEntryPoint.CHAT_TAB to null)
     }
 
     @Synchronized
     fun clear() {
-        pendingAlertId = null
+        pendingEntry = null
     }
 }

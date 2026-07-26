@@ -9,6 +9,7 @@ import com.neurotruth.mobile.core.RppgRouteReceiptStore
 import com.neurotruth.mobile.core.SOURCE_CAMERA
 import com.neurotruth.mobile.core.net.ApiEndpoints
 import com.neurotruth.mobile.core.net.ApiHttpException
+import com.neurotruth.mobile.core.net.AuthenticationRequiredException
 import com.neurotruth.mobile.core.net.ApiRequest
 import com.neurotruth.mobile.core.net.ApiResponse
 import com.neurotruth.mobile.core.net.AuthenticatedApiClient
@@ -263,6 +264,13 @@ object RppgPollPlan {
         if (isSlow(elapsedMs)) RppgContract.SLOW_ANALYSIS_NOTICE else null
 }
 
+/** Only transport and server-side failures are eligible for background polling. */
+internal fun shouldRetryRppgPolling(error: Throwable): Boolean = when (error) {
+    is AuthenticationRequiredException -> false
+    is ApiHttpException -> error.statusCode >= 500
+    else -> true
+}
+
 /** Progress reported while a job is still `queued` or `running`. */
 data class RppgPollProgress(val elapsedMs: Long, val slowNotice: String?)
 
@@ -394,7 +402,12 @@ class RppgRepository(
     ): RppgJobSnapshot {
         while (true) {
             val elapsed = System.currentTimeMillis() - startedAtMs
-            val snapshot = runCatching { withContext(Dispatchers.IO) { job(jobId) } }.getOrNull()
+            val snapshot = try {
+                withContext(Dispatchers.IO) { job(jobId) }
+            } catch (error: Throwable) {
+                if (!shouldRetryRppgPolling(error)) throw error
+                null
+            }
             if (snapshot != null && snapshot.isTerminal) {
                 store.saveResult(ownerUserId, snapshot)
                 store.clearPending()

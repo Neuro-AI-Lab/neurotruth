@@ -56,8 +56,8 @@ object SessionCreationPolicy {
     /**
      * A newly created session offers the AUQ first; a resumed one goes straight back to dialogue.
      *
-     * [auqScreenAvailable] is false until NT-06 ships, which routes new sessions directly to
-     * dialogue while still exercising the discriminator.
+     * [auqScreenAvailable] remains explicit so stripped-down test clients can omit the AUQ screen
+     * without changing how new and resumed sessions are distinguished.
      */
     fun requiresAuq(assistantText: String?, auqScreenAvailable: Boolean): Boolean =
         auqScreenAvailable && wasCreated(assistantText)

@@ -26,6 +26,7 @@ data class AuqUiState(
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
     val submitted: Boolean = false,
+    val resultScore: Int? = null,
     val skipped: Boolean = false,
 ) {
     val question: AuqQuestion get() = Auq.QUESTIONS[index]
@@ -48,12 +49,12 @@ data class AuqUiState(
 
     val canSubmit: Boolean get() = allAnswered && !isSubmitting
 
-    /** Completing and skipping both hand control to NT-07. */
-    val done: Boolean get() = submitted || skipped
+    /** Skip goes directly to Chat; a persisted result remains visible until explicit continuation. */
+    val shouldOpenChat: Boolean get() = skipped
 }
 
 /**
- * NT-06 · 자가보고 (AUQ).
+ * NT-06 · 자기설문 (AUQ).
  *
  * Every rule lives in `:core`: the items and the seven sentence labels in [Auq], the "does this post
  * anything at all" decision and the attempt numbering in [AuqSubmissionPolicy], and the request body
@@ -154,7 +155,13 @@ class AuqViewModel(
             outcome
                 .onSuccess { response ->
                     if (response.isSuccessful) {
-                        _state.update { it.copy(isSubmitting = false, submitted = true) }
+                        _state.update {
+                            it.copy(
+                                isSubmitting = false,
+                                submitted = true,
+                                resultScore = result.totalScore,
+                            )
+                        }
                     } else {
                         _state.update {
                             it.copy(isSubmitting = false, errorMessage = messageFor(response.statusCode))

@@ -56,7 +56,7 @@ NeuroTruth 모바일 앱은 CBT 치료 중이거나 치료 의지가 있는 사�
 | 구분 | 설명 | 앱에서의 함의 |
 |---|---|---|
 | 주 사용자 | CBT 치료 중이거나 치료 의지가 있는 성인 환자 | 낙인·판정 어휘 금지, 큰 글자·단순 동선 |
-| Watch 보유자 | Galaxy Watch 연동 | 상시 수동적 측정, 알림 중심 흐름 |
+| Watch 보유자 | Galaxy Watch 연동 | Phone에서 시작하는 지속 측정, 알림 중심 흐름 |
 | Watch 미보유자 | 스마트폰만 사용 | 얼굴 20초 측정이 주 측정 경로 |
 | 간접 이해관계자 | 연구자·임상가 | 앱에 화면 없음, 웹 콘솔로만 접근 |
 
@@ -120,7 +120,7 @@ apps/mobile
 | FGS type | `health` (Wear 쪽과 동일) |
 | 권한 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_HEALTH`, `POST_NOTIFICATIONS`, 필요 시 `HIGH_SAMPLING_RATE_SENSORS` |
 | 알림 채널 | 낮은 중요도, 무음. 문구는 측정 중이라는 사실만 알리고 갈망 값을 담지 않음 |
-| 시작 조건 | Watch 연결됨 **그리고** `biosignal` 동의 허용 |
+| 시작 조건 | `biosignal` 동의 허용 + Phone 사용자 시작 요청 + Watch `started` ack |
 | 중지 조건 | Watch 연결 해제, 동의 철회, 로그아웃 |
 | 부팅 후 자동 재시작 | P0 범위 아님 — 사용자가 앱을 다시 엽니다 |
 
@@ -148,7 +148,7 @@ flowchart LR
 
   NT04 -->|"챗봇 탭"| ENSURE
   ENSURE -->|"기존 활성 세션"| NT07["NT-07 자유대화 재개"]
-  ENSURE -->|"신규 세션"| NT06["NT-06 자가설문"]
+  ENSURE -->|"신규 세션"| NT06["NT-06 자기설문"]
   NT06 -->|"제출 또는 건너뛰기"| NT07
   NT07 -->|"종료·timeout"| NT08["NT-08 대시보드"]
 
@@ -176,7 +176,7 @@ flowchart LR
 | NT-04 | 홈 | 인증 완료 후 기본 | P0 |
 | NT-04R | 얼굴 rPPG 측정 | 홈의 `카메라로 측정` | P1 |
 | NT-05 | 갈망 알림 | 시스템 알림·팝업 | P0 |
-| NT-06 | 자가설문(AUQ) | 신규 세션 생성 시 | P1 |
+| NT-06 | 자기설문(AUQ) | 신규 세션 생성 시 | P1 |
 | NT-07 | AI 챗봇 | 알림·챗봇 탭·rPPG 완료 | P0 |
 | NT-08 | 대시보드 | 하단 탭, 대화 종료 후 | P1 |
 | NT-09 | 설정 | 홈 우측 상단 | P1 |
@@ -283,7 +283,7 @@ flowchart LR
 
 1. **프로필 요약** — 표시명, 계정 요약, 우측 상단 `설정`
 2. **갈망 상태 카드** — 4단계 문구, 안내 문구, 우측 하단에 측정 시각·측정 기기
-3. **Watch 상태 및 카메라 측정** — 연결 상태와 `[카메라로 측정]`
+3. **Watch 상태 및 측정 제어** — 연결 상태, `[측정 시작/중지]`, 연결 중 비활성인 `[카메라로 측정]`
 
 **홈에 넣지 않는 것.** PPG 파형, 원시 신호, 서버 상태, 권한 확인 버튼, 개발자 버튼, 정확한 확률 퍼센트. 원시 신호와 상세 그래프는 대시보드에서만 봅니다.
 
@@ -293,16 +293,16 @@ flowchart LR
 
 | `cravingProbability` | `stageCounts` key (대시보드 전용) | 단계 | 사용자 표시 문장 |
 |---:|---|---|---|
-| `0.00 ≤ p < 0.25` | `low` | 안전 | 아무 문제 없어요! |
+| `0.00 ≤ p < 0.25` | `low` | 안정 | 아무 문제 없어요! |
 | `0.25 ≤ p < 0.50` | `observe` | 관찰 | 관찰이 필요해요, 심각하진 않아요! |
 | `0.50 ≤ p < 0.75` | `caution` | 주의 | 주의가 필요해요, 술이 드시고 싶으신가요? |
-| `0.75 ≤ p ≤ 1.00` | `high` | 심각 | 갈망이 심해보여요. 챗봇과 대화를 시작할까요? |
+| `0.75 ≤ p ≤ 1.00` | `high` | 위험 | 갈망이 높게 감지됐어요. 챗봇과 대화를 시작할까요? |
 
-**단계는 `cravingProbability` 하나만으로 클라이언트에서 계산합니다.** `class`, `classCode`, `classProbabilities`에서 유도하면 안 됩니다. 이들은 **이진** 분류기의 출력이라 p ≥ 0.5이면 `classCode`가 이미 `"high"`입니다. 단계를 `classCode`에 묶으면 p ≥ 0.5인 모든 값이 심각으로 표시되어 주의 구간 전체가 틀립니다. 위 표의 `low|observe|caution|high` 키는 `GET /api/me/craving-dashboard`의 `stageCounts` 키로만 존재하며 prediction payload에는 들어 있지 않습니다. `p = 0.60 → 주의`를 unit test로 고정합니다.
+**단계는 `cravingProbability` 하나만으로 클라이언트에서 계산합니다.** `class`, `classCode`, `classProbabilities`에서 유도하면 안 됩니다. 이들은 **이진** 분류기의 출력이라 p ≥ 0.5이면 `classCode`가 이미 `"high"`입니다. 단계를 `classCode`에 묶으면 p ≥ 0.5인 모든 값이 위험으로 표시되어 주의 구간 전체가 틀립니다. 위 표의 `low|observe|caution|high` 키는 `GET /api/me/craving-dashboard`와 calendar 응답의 `stageCounts` 키로만 존재합니다. `p = 0.60 → 주의`를 unit test로 고정합니다.
 
 - 이 4단계는 **연구 화면 표시 규칙이지 임상 위험도나 진단 cutoff가 아닙니다.** 카드에 이 취지의 문구를 함께 둡니다.
 - 정확한 퍼센트를 크게 노출하지 않습니다.
-- `alertLevel`이 `recommend` 또는 `required`이면 확률 문구와 **별도로** `대화 권장`을 표시합니다.
+- 서버 응답에 persisted `alertId`와 `alertAction=required_intervention`이 있으면 단계 문구와 **별도로** `대화 권장`을 표시합니다.
 - 측정값이 없으면 0%나 "낮음"으로 표시하지 않고 **측정 데이터 없음**으로 표시합니다.
 
 #### 최신 상태 결정 규칙
@@ -385,12 +385,15 @@ flowchart LR
 - 같은 `alertId`로 중복 알림을 만들지 않습니다.
 - Watch는 서버가 준 `alertAction`/`alertLevel`을 따르며, class가 1이라는 이유만으로 자체 알림을 만들지 않습니다.
 - `notification` 동의가 꺼져 있으면 알림을 표시하지 않되 결과는 정상 기록합니다.
+- `source=watch_sensor`에서 `p≥0.75`가 **3회 연속**이고 각 간격이 20초 이하여야 서버가 알림을 만듭니다. 낮은 단계나 긴 공백은 streak를 초기화합니다.
+- 한 번 생성되면 환자 단위로 **900초** 동안 추가 Watch 알림을 억제합니다. Phone과 Watch는 같은 persisted `alertId`를 각각 중복 제거합니다.
+- `source=camera_rppg` 결과는 상태·이력·챗봇 흐름에는 남지만 알림 생성 대상이 아닙니다.
 
 **인수 기준.** 같은 alert가 SSE와 업로드 응답 양쪽으로 들어와도 알림은 1회만 뜬다. `나중에`를 눌렀을 때 서버에 세션이 생성되지 않는다.
 
 ---
 
-### NT-06 · 자가설문 (AUQ)
+### NT-06 · 자기설문 (AUQ)
 
 **목적.** 그 순간의 자기보고를 남기되, **대화를 막지 않습니다.**
 
@@ -398,6 +401,8 @@ flowchart LR
 - 8문항, 한 화면에 한 문항, 상단에 `1 / 8` 진행 표시.
 - 각 문항은 7개 문장형 선택지이며 화면에 숫자를 노출하지 않습니다.
 - `[건너뛰고 대화하기]`는 **항상** 제공하며, 건너뛰어도 챗봇이 차단되지 않습니다.
+- 제목의 정보 아이콘은 “AUQ를 참고한 8문항·7점 연구용 한국어 adaptation이며 공식 검증 한국어판·진단 도구가 아님”을 설명합니다.
+- 일반 휴대폰 글꼴에서는 질문·7개 선택지·이전/다음이 한 화면에 보이고, 큰 접근성 글꼴에서만 스크롤 fallback을 허용합니다.
 
 | API 값 | 화면 문구 |
 |---:|---|
@@ -443,8 +448,9 @@ flowchart LR
 - 임의의 낮음·중간·높음 cutoff를 만들지 않습니다.
 - 설명은 "점수가 높을수록 당시 음주 욕구 관련 응답이 높았습니다" 수준으로 제한합니다.
 - 다른 AUQ 판본의 채점 규칙을 임의로 적용하지 않습니다. 현재 한국어 연구판은 8문항 모두 같은 채점 방향입니다.
+- 서버 저장이 확인되면 `총점 X/48`과 중립 설명을 보여준 뒤 사용자가 챗봇으로 이동합니다. 건너뛰기는 결과 화면 없이 바로 챗봇으로 이동합니다.
 
-**인수 기준.** 8문항 모두 0을 선택하면 총점 0으로 정상 저장된다(빈 응답으로 취급하지 않는다). 건너뛰면 placeholder 요청을 보내지 않고 바로 대화로 진입한다.
+**인수 기준.** 8문항 모두 0을 선택하면 총점 0으로 정상 저장되고 결과 화면을 거친다(빈 응답으로 취급하지 않는다). 건너뛰면 placeholder 요청을 보내지 않고 바로 대화로 진입한다.
 
 ---
 
@@ -470,8 +476,8 @@ flowchart LR
 **STT.**
 - 마이크 버튼으로 녹음 시작·정지, **최대 30초**.
 - `POST /api/sessions/{sessionId}/transcriptions` 멀티파트(`audio`: `.m4a` 또는 `.wav`, `language=ko`). `voice` 동의와 활성 세션이 필요합니다.
-- 서버 transcript를 **입력창에 넣고 사용자가 편집·확인**하게 합니다. 자동 전송하지 않습니다.
-- 확인 후 전송은 일반 메시지 경로에 `inputModality="voice"`로 들어갑니다. 텍스트와 완전히 같은 경로·같은 재시도 계약입니다.
+- 성공한 transcript는 기존 텍스트 draft를 합치거나 지우지 않고, 새 `clientMessageId`와 `inputModality="voice"`로 **즉시 전송**합니다.
+- 음성 전송 실패 시 사용자 말풍선을 유지하고 같은 ID로 기존 1회 재시도를 제공합니다.
 - 음성 동의·권한이 없거나 STT가 실패해도 **텍스트 입력은 계속 가능**해야 합니다.
 - 원본 음성 임시 파일은 업로드 종료·취소·화면 이탈 시 즉시 삭제합니다.
 
@@ -480,6 +486,7 @@ flowchart LR
 - AI 말풍선마다 `[듣기]` / `[정지]`를 제공합니다.
 - 동시에 한 응답만 재생하며, 다른 응답 재생·화면 이탈·로그아웃 시 기존 재생을 중지합니다.
 - 전체 자동 읽기 스위치는 기본 **OFF**입니다.
+- 음성 메시지에 대응하는 AI 답변은 설정과 무관하게 한 번 자동 재생합니다. 텍스트 메시지 답변은 기존 자동 읽기 설정을 따릅니다.
 - TTS 사용 불가·실패 시에도 텍스트 답변은 그대로 유지합니다.
 
 **인수 기준.** 502가 떠도 사용자 말풍선이 사라지거나 중복되지 않으며, 재시도 후 대화에 메시지가 한 벌만 남는다. 마이크 권한을 거부해도 텍스트 대화가 정상 동작한다. 화면을 벗어나면 TTS 재생이 멈춘다.
@@ -492,26 +499,27 @@ flowchart LR
 
 | 영역 | 기본 기간 | 표현 | 빈 데이터 처리 |
 |---|---|---|---|
-| 최근 갈망 변화 | 최근 1시간 | 0~100% 선 그래프, 10초 bucket, 최대 360점 | 선을 연결하지 않고 공백 |
-| 시간대별 갈망 가능성 | 오늘 24시간 | 4단계 100% 중첩 막대 | 회색 빈 막대 |
-| 갈망 이벤트 | 최근 7일 / 30일 | 일별 `recommend|required` 발생 건수 | 데이터 없음과 유효한 0건을 구분 |
-| 자가설문 | 오늘 / 7일 / 30일 | 오늘은 시간별, 나머지는 일별 0~48 평균 | 응답 없음 = 데이터 없음 |
+| 최근 갈망 변화 | 최근 1시간 | 안정·관찰·주의·위험 4단계 step timeline, 10초 실제 측정 | 누락 구간 단절 |
+| 기간별 갈망 단계 | 선택 일 / 주 / 월 | 일간 시간별·주간·월간 일별 4단계 구성 | 회색 빈 막대 |
+| 갈망 이벤트 | 선택 일 / 주 / 월 | 시간별·일별 발생 건수 | 데이터 없음과 유효한 0건을 구분 |
+| 자기설문 | 선택 일 / 주 / 월 | 시간별·일별 0~48 평균 | 응답 없음 = 데이터 없음 |
 | PPG | 실시간 · 선택 prediction | Watch 실시간 신호와 최대 512점 preview | 연결/자료 없음 문구 |
 
 **환자 대시보드에는 상태 추론 카드와 리포트 상태 카드를 렌더링하지 않습니다.** 백엔드의 생성·저장·조회 계약은 호환성을 위해 유지됩니다.
 
-#### 최근 1시간 그래프
+#### 최근 1시간 단계 timeline
 
-- class-1 softmax를 0~100%로 표시합니다.
-- **smoothing과 누락 구간 보간을 하지 않습니다.**
-- 실제 표본이 있는 시각만 점으로 찍고, 연속된 데이터 사이에서만 선을 잇습니다.
-- 최신 값과 그래프 끝점이 같은 시각을 가리켜야 합니다.
+- class-1 softmax를 안정·관찰·주의·위험의 네 수평 단계로 매핑합니다.
+- **smoothing과 누락 구간 보간을 하지 않으며**, 10초보다 큰 공백은 연결하지 않습니다.
+- 선택 상세에는 시각과 단계만 표시하고 정확한 확률은 노출하지 않습니다.
 - `GET /api/me/craving-probability-series?range=1h` 사용. 최근 60분, 10초 bucket, 최대 360점. **24시간 데이터를 잘라서 대체하지 않습니다.**
 
-#### 오늘 24시간 중첩 막대
+#### 선택 일·주·월 집계
 
-- 각 시간 막대는 그 시간대 예측을 안전·관찰·주의·심각 **비율로 100% 스택**합니다.
-- `GET /api/me/craving-dashboard?timezone=<IANA>`의 `stageCounts`(`low|observe|caution|high`)를 정규화해 사용합니다. 유효한 IANA 타임존이 필요합니다.
+- `GET /api/me/craving-calendar?timezone=<IANA>&view=day|week|month&anchor=YYYY-MM-DD`를 사용합니다.
+- 일간은 선택 날짜의 24개 시간 bucket, 주간은 anchor가 속한 현지 월요일~일요일의 7개 일별 bucket, 월간은 선택 월의 일별 bucket을 사용합니다.
+- 일간·주간·월간 선택은 단계·이벤트·자기설문 세 영역에 항상 함께 적용됩니다.
+- 각 막대는 해당 bucket의 안정·관찰·주의·위험 비율을 100% 스택합니다.
 - 막대를 누르면 시간, 표본 수, 단계별 비율을 간단한 상세 카드로 보여줍니다.
 - 표본이 0인 시간을 "0%"로 오인시키지 않습니다.
 
@@ -520,7 +528,7 @@ flowchart LR
 - 막대를 누르면 날짜와 발생 횟수를 보여줍니다.
 - prediction 자체가 없으면 **빈 구간**, prediction은 있었지만 이벤트가 없으면 **유효한 0건**(점으로 표시)으로 구분합니다.
 
-#### 자가설문
+#### 자기설문
 
 - UI 기준은 0~48점입니다.
 - 막대를 누르면 `평균 X/48`, 응답 횟수, 기간을 보여줍니다.
@@ -550,6 +558,9 @@ sequenceDiagram
   participant A as Mobile App
   participant B as Backend
 
+  A->>W: /control/measurement/request (start, requestId)
+  W-->>A: /control/measurement/status (started)
+  Note over A: started ack 뒤 MonitoringService 시작
   W->>A: PPG/GSR sample stream
   Note over A: 최초 20초 warm-up
   loop 10초마다
@@ -568,6 +579,8 @@ sequenceDiagram
 - 한 window의 재시도에는 **같은 `clientWindowId`와 완전히 같은 payload**를 씁니다. 내용이 다른 재사용은 409입니다.
 - Watch 미연결 / 준비 중 / 수집 중 / 전송 실패를 서로 다른 상태로 표시합니다.
 - Watch는 백엔드 credential을 갖지 않으며 직접 호출하지 않습니다. 인증과 전송은 Phone이 소유합니다.
+- 연결만으로 자동 시작하지 않습니다. Phone의 시작 요청 후 Watch가 `started`를 응답해야 Phone 수집·업로드가 시작됩니다.
+- Wear OS가 원격 health FGS 시작을 막으면 Watch가 `confirmation_required`와 한 번의 확인 알림을 제공하며, 중지는 Phone과 Watch 양쪽에서 가능합니다.
 
 ### 5.2 예측 SSE
 
@@ -614,8 +627,8 @@ ensureSession(entryPoint):
 ### 5.4 문구 원칙
 
 - 알림·상태·대시보드 어디에서도 진단, 확정 판정, 치료 효과, 응급 대응을 암시하지 않습니다.
-- 안전·관찰·주의·심각은 연구용 표시 구간임을 화면에서 밝힙니다.
-- 즉각적 위험 대화에서는 119와 자살예방 상담전화 109를 안내합니다. **한 번 묻는 절차와 감사 기록은 대화 턴 안에서 서버가 수행합니다.** 이를 위한 클라이언트 엔드포인트는 없으며 42개 route 목록에도 존재하지 않습니다. 앱의 의무는 `safety.supportResources`(각 항목은 `{label, contact}`)를 그대로 렌더링하고, 연락처를 탭할 수 있게 하며, 항목을 숨기거나 순서를 바꾸거나 문구를 고치지 않는 것뿐입니다. 또한 이 기록이 실시간 모니터링이 아니며 연락이나 대응을 보장하지 않는다고 화면에서 명시합니다.
+- 안정·관찰·주의·위험은 연구용 표시 구간임을 화면에서 밝힙니다.
+- 즉각적 위험 대화에서는 119와 자살예방 상담전화 109를 안내합니다. **한 번 묻는 절차와 감사 기록은 대화 턴 안에서 서버가 수행합니다.** 이를 위한 별도 클라이언트 엔드포인트는 없습니다. 앱의 의무는 `safety.supportResources`(각 항목은 `{label, contact}`)를 그대로 렌더링하고, 연락처를 탭할 수 있게 하며, 항목을 숨기거나 순서를 바꾸거나 문구를 고치지 않는 것뿐입니다. 또한 이 기록이 실시간 모니터링이 아니며 연락이나 대응을 보장하지 않는다고 화면에서 명시합니다.
 
 ### 5.5 Phone ↔ Watch Data Layer 계약
 
@@ -630,7 +643,9 @@ total bytes = 4 + count * 12
 
 `count <= 0`, `count > 10000`, 또는 남은 버퍼 길이가 정확히 `count * 12`가 아닌 경우는 거부합니다. Watch는 약 200ms 주기로 tracker를 flush하고, flush마다 채널당 배치 하나를 보냅니다.
 
-**Phone → Watch.** 경로는 `/prediction/class` 하나이며, `class`, `timestampMs`, `hasAlertMetadata`는 항상 포함하고 `sessionId`, `confidence`, `sequence`와 alert 필드는 있을 때 포함하는 JSON 객체를 보냅니다. `cravingProbability`와 `classProbabilities`는 의도적으로 relay하지 **않습니다** — Watch는 확률이 아니라 거친 상태만 보여줍니다. 카메라 rPPG 결과는 Watch로 relay하지 않습니다.
+**제어·상태.** Phone은 `/control/measurement/request`로 `start|stop`과 `requestId`를 보내고, Watch는 `/control/measurement/status`로 `started|stopped|confirmation_required|error`를 응답합니다. `started` 전에는 Phone `MonitoringService`를 시작하지 않습니다. `/dashboard/snapshot`은 최근 1시간 단계와 오늘 이벤트·AUQ 요약을 전달합니다.
+
+**Phone → Watch.** `/prediction/class`에는 stage code·timestamp와 선택적 `alertId`/alert metadata만, `/dashboard/snapshot`에는 단계·요약만 보냅니다. `cravingProbability`, `classProbabilities`, 원시 생체신호, backend credential은 relay하지 **않습니다**. 카메라 rPPG 결과는 Watch로 relay하지 않습니다.
 
 **샘플링 레이트 소유권.** Watch는 tracker의 네이티브 레이트로 내보내고, **고정 격자는 Phone이 소유합니다.** Phone은 업로드 전에 채널별 PPG를 40ms 간격 정확히 500개, EDA를 1000ms 간격 20개로 resample합니다. 이때 앞뒤 표본 사이는 선형 보간, 세 간격보다 긴 공백은 최근접 값 유지, 경계는 edge hold를 적용합니다. 업로드 본문의 `sync` 블록이 선언하는 내용이 이것입니다.
 
@@ -661,7 +676,7 @@ window 하나가 PPG 500 × 3개와 EDA 20개를 담으므로, 상한이 없으�
 | 홈 | 프로필·갈망·Watch | 사용자/상태 조회 중 | 측정 데이터 없음 | 서버 연결 실패 | 새로고침, 로그인 복구 |
 | Watch | 연결됨/수집 중 | 20초 warm-up, 업로드 중 | 연결 안 됨 | 권한·통신 오류 | 다시 연결, 같은 window 재전송 |
 | 알림 | 지금 대화/나중에 | 세션 확인 중 | 해당 없음 | 세션 생성 실패 | 다시 시도 또는 홈 |
-| 자가설문 | 문항·7개 선택지 | 제출 중 | 해당 없음 | 제출 결과 불명확 | 상태 확인 후 재제출 |
+| 자기설문 | 문항·7개 선택지·결과 | 제출 중 | 해당 없음 | 제출 결과 불명확 | 상태 확인 후 재제출 |
 | 챗봇 | 입력 가능 | 전송·STT·TTS | 대화 시작 안내 | AI 응답 실패 | 같은 메시지로 1회 재시도 |
 | rPPG | 촬영 준비 | 안정화·촬영·업로드·분석 | 해당 없음 | 품질/통신/권한 오류 | 새 촬영 또는 허용된 job 재분석 |
 | 대시보드 | 그래프·상세 | 기간 집계 중 | 회색 빈 구간 | 조회 실패 | 같은 조건으로 새로고침 |
@@ -734,16 +749,16 @@ pending 챗봇 요청에는 갈망 상황에 대한 환자의 발화 원문이, 
 - Watch 20초 warm-up, 10초 cadence, 센서 업로드
 - 갈망 알림의 `지금 대화하기` / `나중에`
 - NT-07 자유대화, 같은 메시지 1회 재시도, 수동 종료
-- 텍스트 입력, STT transcript 편집, 기기 TTS
+- 텍스트 입력, STT 즉시 전송, 음성 답변 자동 TTS
 - 최신 상태와 최근 1시간 그래프만(§NT-08의 첫 번째 영역). 나머지 4개 대시보드 영역은 P1입니다.
 
 **NT-06이 나오기 전까지는** `ensureSession()`의 신규 세션 분기가 AUQ와 placeholder 요청 없이 곧바로 NT-07로 이동합니다. 신규/기존 판별 규칙(§5.3)은 P0부터 그대로 동작시켜, NT-06이 들어올 때 분기가 옳게 작동하도록 합니다.
 
 ### P1 — 통합 완성
 
-- NT-06 8문항·7점 문장형 자가설문과 건너뛰기
+- NT-06 8문항·7점 문장형 자기설문, 결과 화면과 건너뛰기
 - NT-04R 얼굴 20초 rPPG 촬영·job 복구·완료 후 챗봇 이동
-- 오늘 24시간 중첩 막대, 갈망 이벤트, 자가설문 그래프, PPG preview
+- 일·주·월 단계 구성, 갈망 이벤트, 자기설문 그래프, PPG preview
 - NT-09 설정의 선택 동의·권한·로그아웃
 - 프로세스 종료 후 세션·rPPG polling 복구
 
@@ -759,7 +774,7 @@ pending 챗봇 요청에는 갈망 상황에 대한 환자의 발화 원문이, 
 
 1. 신규 사용자가 안내 확인 → 가입 → 동의 → 홈까지 도달한다.
 2. Watch 연결 후 20초를 수집하고 이후 10초마다 prediction이 갱신된다.
-3. 알림에서 자가설문을 작성하거나 건너뛴 뒤 **같은** 자유대화로 진입한다.
+3. 알림에서 자기설문을 작성해 결과를 확인하거나 건너뛴 뒤 **같은** 자유대화로 진입한다.
 4. 텍스트와 STT 입력이 모두 전송되고 AI 응답을 텍스트와 TTS로 확인한다.
 5. AI 실패 시 사용자 메시지가 중복되지 않은 채 정확히 한 번 재시도된다.
 6. 얼굴을 1초 안정화하고 20초 촬영한 뒤 분석 완료 시 챗봇으로 이동한다.
@@ -785,11 +800,12 @@ pending 챗봇 요청에는 갈망 상황에 대한 환자의 발화 원문이, 
 | NT-04·NT-08 실시간 prediction | `GET /api/predictions/stream` (SSE) | `source=watch_sensor` / `camera_rppg` |
 | 세션 시작·복원 | `POST /api/sessions` · `GET /api/sessions/{id}` | 신규는 AUQ 후 대화, 활성은 즉시 재개 |
 | NT-07 메시지 | `POST /api/sessions/{id}/messages` | `clientMessageId`, `inputModality` |
-| NT-06 자가설문 | `POST /api/sessions/{id}/assessments` | `version=2.0`, 8×`0..6`, 총점 `0..48` |
+| NT-06 자기설문 | `POST /api/sessions/{id}/assessments` | `version=2.0`, 8×`0..6`, 저장 후 총점 `0..48` 결과 |
 | 세션 종료 | `POST /api/sessions/{id}/finish` | |
-| STT | `GET /api/stt/status` · `POST /api/sessions/{id}/transcriptions` | 서버 unavailable 시 텍스트 유지 |
+| STT | `GET /api/stt/status` · `POST /api/sessions/{id}/transcriptions` | 성공 시 voice 메시지 즉시 전송, 실패 시 텍스트 유지 |
 | TTS | 기기 로컬 음성 합성 | **서버 API 없음** |
 | NT-08 통합 대시보드 | `GET /api/me/craving-dashboard` | IANA timezone 필수, `stageCounts` |
+| NT-08 일·주·월 선택 | `GET /api/me/craving-calendar` | `view=day|week|month`, 단계·이벤트·자기설문 동기화 |
 | NT-08 확률 시계열 | `GET /api/me/craving-probability-series?range=1h` | 10초 bucket, 최대 360점, 보간 없음 |
 | NT-08 이력 | `GET /api/me/dashboard?range=24h|7d|30d` | |
 | NT-08 PPG preview | `GET /api/me/predictions/{id}/ppg-preview` | 최대 512점, `no-store` |
@@ -803,7 +819,7 @@ pending 챗봇 요청에는 갈망 상황에 대한 환자의 발화 원문이, 
 
 | ID | 항목 | 내용 | 제안 | 상태 |
 |---|---|---|---|---|
-| O-001 | 4단계 문구 | PPT 6페이지 대시보드 범례는 `위험`, 핸드오프 md와 API 문서는 `심각` | **`심각`으로 통일**하고 PPT 범례를 수정 대상으로 기록. 이 PRD는 `심각`을 기준으로 함 | 확인 필요 |
+| O-001 | 4단계 문구 | 내부 wire key는 유지하고 사용자 문구만 변경 | **안정·관찰·주의·위험**과 NT-04의 확정 문구를 사용 | 결정됨 |
 | O-002 | 스택 확정 | Kotlin 네이티브 권고(§2.1). V22 스펙 D-002는 "기존 Kotlin 앱 수정"을 결정했으나 신규 앱은 `apps/mobile`에 새로 만듦 | 신규 앱도 Kotlin으로, `apps/test_mobile_app`은 계약 검증용으로 유지 | 확인 필요 |
 | O-003 | Wear OS UI 범위 | 신규 앱에서 Wear UI를 새로 만들지, 기존 relay를 이식할지 | 기존 Wear relay를 그대로 이식하고 UI 재설계는 범위 밖 | 확인 필요 |
 | O-004 | 리포트 노출 | `REPORT_AI_ENABLED=false`가 기본이라 리포트 상태가 항상 `not_started` | 환자 화면에 리포트 카드를 렌더링하지 않음(§NT-08). 플래그가 켜져도 앱 변경 없음 | 결정됨 |
@@ -824,12 +840,12 @@ pending 챗봇 요청에는 갈망 상황에 대한 환자의 발화 원문이, 
 | 1 | NT-01~NT-08 전체 흐름과 하단 3탭 |
 | 2 | 제품 안내 → 가입·로그인 → 동의·권한 |
 | 3 | 홈 3개 영역, 선택형 Watch/카메라 측정, 측정 시각·기기 |
-| 4 | 갈망 알림 → 자가설문 작성 또는 건너뛰기 → 챗봇 |
+| 4 | 갈망 알림 → 자기설문 작성·결과 또는 건너뛰기 → 챗봇 |
 | 5 | 텍스트·STT 입력과 기기 TTS를 같은 대화에서 제공 |
-| 6 | 최근 1시간, 시간대별 단계, 이벤트, 자가설문 대시보드 |
+| 6 | 최근 1시간 단계 timeline, 일·주·월 단계·이벤트·자기설문 대시보드 |
 | 7 | 얼굴 안정화·20초 rPPG·결과 저장·챗봇 이동 |
 | 8 | 최초 진입과 홈 측정 분기 |
-| 9 | 알림·자가설문·대화 결정 흐름 |
+| 9 | 알림·자기설문·대화 결정 흐름 |
 | 10 | 텍스트와 음성을 하나의 확정 메시지 경로로 저장 |
 | 11 | rPPG 성공·품질 미달·통신 실패와 챗봇 연결 |
 | 13~17 | 현재 Kotlin 테스트 앱 구현 스크린샷. **목표 화면이 아님** |

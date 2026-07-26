@@ -74,3 +74,24 @@ def test_series_excludes_future_rows_and_caps_most_recent_points_in_ascending_or
         assert points[-1]["averageCravingProbability"] == 0.604
 
     asyncio.run(scenario())
+
+
+def test_series_exposes_sensor_linked_prediction_for_ppg_preview() -> None:
+    async def scenario() -> None:
+        prediction_id = uuid4()
+
+        def rows(since, _until):
+            return [{
+                "bucket_at": since + timedelta(seconds=10),
+                "average_probability": 0.4,
+                "sample_count": 1,
+                "prediction_id": prediction_id,
+            }]
+
+        result = await DashboardService(
+            ProbabilityRepository(rows), None, None,
+        ).craving_probability_series(uuid4(), "1h")
+
+        assert result["points"][0]["predictionId"] == str(prediction_id)
+
+    asyncio.run(scenario())

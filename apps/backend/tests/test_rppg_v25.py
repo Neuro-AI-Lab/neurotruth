@@ -4,6 +4,7 @@ import asyncio
 import json
 import shutil
 from datetime import datetime, timezone
+from inspect import getsource
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -16,6 +17,7 @@ from app.core.security.crypto import AesGcmKeyring, DecryptionError, EncryptedEn
 from app.adapters.rppg_dgx import DgxClient, DgxResponse
 from app.adapters.rppg_media import VideoInspection
 from app.services.rppg import RppgService, RppgUnavailable
+from app.repositories.rppg import SqlAlchemyRppgRepository
 from app.storage.rppg import EncryptedRppgStorage
 
 
@@ -211,6 +213,14 @@ def test_success_supplies_1024_ppg_and_literal_zero_eda(workdir: Path) -> None:
     assert repo.success["prediction"]["class"] == 1
     assert not any(key.startswith("_") for key in repo.success["prediction"])
     assert repo.success["checkpoint"] == "PURE.pth"
+    assert repo.success["alert_id"] is None
+    assert repo.success["prediction"]["alertAction"] == "none"
+    assert repo.success["prediction"]["triggerReason"] == "camera_rppg_alert_excluded"
+
+
+def test_rppg_repository_has_no_alert_insert_path() -> None:
+    source = getsource(SqlAlchemyRppgRepository.finish_success)
+    assert "INSERT INTO craving_alerts" not in source
 
 
 def test_legacy_ten_second_completed_job_remains_readable(workdir: Path) -> None:

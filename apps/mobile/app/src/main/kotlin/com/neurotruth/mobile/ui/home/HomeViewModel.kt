@@ -2,6 +2,7 @@ package com.neurotruth.mobile.ui.home
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -18,11 +19,16 @@ import com.neurotruth.mobile.core.SOURCE_WATCH
 import com.neurotruth.mobile.core.WatchConnectionState
 import com.neurotruth.mobile.core.WatchConnectionTracker
 import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
 import com.neurotruth.mobile.data.ProfileRepository
 import com.neurotruth.mobile.data.RppgJobStore
 import com.neurotruth.mobile.data.RppgRepository
 import com.neurotruth.mobile.service.MonitoringBlocker
+import com.neurotruth.mobile.service.MeasurementControlSnapshot
+import com.neurotruth.mobile.service.MeasurementControlState
+import com.neurotruth.mobile.service.MeasurementControlStatus
+import com.neurotruth.mobile.service.MonitoringService
 import com.neurotruth.mobile.service.MonitoringState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -52,6 +58,8 @@ data class HomeUiState(
     // Region 3 — watch state and camera measurement
     val watchState: WatchConnectionState = WatchConnectionState.CHECKING,
     val cameraEnabled: Boolean = false,
+    val measurementControl: MeasurementControlSnapshot = MeasurementControlSnapshot(),
+    val monitoringRunning: Boolean = false,
 
     /** The blocking reason, or the note that the capture screen will ask for the permission. */
     val cameraNotice: String? = CameraActionPolicy.REASON_WATCH_UNKNOWN,
@@ -76,6 +84,25 @@ data class HomeUiState(
             WatchConnectionState.CHECKING -> "확인 중"
             WatchConnectionState.ERROR -> "상태를 확인할 수 없어요"
         }
+
+    val measurementButtonLabel: String
+        get() = when (measurementControl.status) {
+            MeasurementControlStatus.STARTED -> "측정 중지"
+            MeasurementControlStatus.REQUESTING_START -> "시작 요청 중"
+            MeasurementControlStatus.REQUESTING_STOP -> "중지 요청 중"
+            MeasurementControlStatus.CONFIRMATION_REQUIRED -> "Watch에서 확인"
+            MeasurementControlStatus.ERROR,
+            MeasurementControlStatus.STOPPED,
+            -> "측정 시작"
+        }
+
+    val measurementButtonEnabled: Boolean
+        get() = watchState == WatchConnectionState.CONNECTED &&
+            measurementControl.status !in setOf(
+                MeasurementControlStatus.REQUESTING_START,
+                MeasurementControlStatus.REQUESTING_STOP,
+                MeasurementControlStatus.CONFIRMATION_REQUIRED,
+            )
 }
 
 /**
@@ -94,6 +121,35 @@ internal fun MonitoringBlocker.notice(): String? = when (this) {
     MonitoringBlocker.UPLOAD_PAUSED -> "네트워크 문제로 전송이 잠시 멈췄어요."
     MonitoringBlocker.AUTHENTICATION_REQUIRED -> "다시 로그인하면 측정을 이어갑니다."
     MonitoringBlocker.SERVICE_START_FAILED -> "측정을 시작하지 못했어요. 기기 권한을 확인해 주세요."
+}
+
+internal enum class MonitoringCommand {
+    START,
+    STOP,
+    NONE,
+}
+
+/**
+ * Maps the confirmed Watch/consent state to the foreground-service action.
+ *
+ * CHECKING and ERROR deliberately preserve the current service state. A transient Data Layer query
+ * must not tear down an otherwise healthy measurement session.
+ */
+internal fun monitoringCommand(
+    watchState: WatchConnectionState,
+    canUploadBiosignal: Boolean,
+    watchStatus: MeasurementControlStatus,
+    isRunning: Boolean,
+): MonitoringCommand = when {
+    !canUploadBiosignal && isRunning -> MonitoringCommand.STOP
+    !canUploadBiosignal -> MonitoringCommand.NONE
+    watchState == WatchConnectionState.DISCONNECTED && isRunning -> MonitoringCommand.STOP
+    watchState == WatchConnectionState.CONNECTED &&
+        watchStatus == MeasurementControlStatus.STARTED &&
+        !isRunning -> MonitoringCommand.START
+    watchStatus in setOf(MeasurementControlStatus.STOPPED, MeasurementControlStatus.ERROR) &&
+        isRunning -> MonitoringCommand.STOP
+    else -> MonitoringCommand.NONE
 }
 
 /**
@@ -115,6 +171,9 @@ class HomeViewModel(
     private val profileRepository = ProfileRepository(app.apiClient, app.endpoints)
     private val rppgRepository = RppgRepository(app.apiClient, app.endpoints, RppgJobStore(app))
     private val watchTracker = WatchConnectionTracker()
+    private val controlMessageListener = MessageClient.OnMessageReceivedListener { event ->
+        MeasurementControlState.acceptStatus(event.path, event.data)
+    }
 
     private var latest: CravingPrediction? = null
     private var gates: ConsentGates = ConsentGates(app.apiClient.consent())
@@ -124,6 +183,7 @@ class HomeViewModel(
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     init {
+        Wearable.getMessageClient(app).addListener(controlMessageListener)
         refresh()
         observeMonitoring()
         pollWatchConnection()
@@ -150,6 +210,18 @@ class HomeViewModel(
                 _state.update { it.copy(droppedNotice = notice) }
             }
         }
+        viewModelScope.launch {
+            MonitoringState.running.collect { running ->
+                _state.update { it.copy(monitoringRunning = running) }
+                recompute()
+            }
+        }
+        viewModelScope.launch {
+            MeasurementControlState.snapshot.collect { snapshot ->
+                _state.update { it.copy(measurementControl = snapshot) }
+                reconcileMonitoring(watchTracker.current(), snapshot.status)
+            }
+        }
     }
 
     /**
@@ -159,10 +231,11 @@ class HomeViewModel(
      */
     /** True while the Home screen is on-screen; the poll pauses off-tab and while backgrounded. */
     @Volatile
-    private var screenActive: Boolean = true
+    private var screenActive: Boolean = false
 
     fun onScreenActive(active: Boolean) {
         screenActive = active
+        if (active) recompute()
     }
 
     private fun pollWatchConnection() {
@@ -243,6 +316,9 @@ class HomeViewModel(
 
     fun onWatchNodesQueried(connectedNodeCount: Int, nowMs: Long = System.currentTimeMillis()) {
         watchTracker.onNodesQueried(nowMs, connectedNodeCount)
+        if (watchTracker.current() == WatchConnectionState.DISCONNECTED) {
+            MeasurementControlState.reset()
+        }
         recompute()
     }
 
@@ -262,6 +338,26 @@ class HomeViewModel(
 
     fun onDeveloperEntryDismissed() =
         _state.update { it.copy(developerEntryUnlocked = false) }
+
+    /** Explicit patient action; connection alone never starts either service. */
+    fun requestMeasurement(start: Boolean) {
+        if (watchTracker.current() != WatchConnectionState.CONNECTED) return
+        if (!gates.canUploadBiosignal) return
+        if (start) {
+            val canPostNotification = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            if (!canPostNotification) {
+                MonitoringState.setBlocker(MonitoringBlocker.NOTIFICATION_PERMISSION_REVOKED)
+                return
+            }
+        } else {
+            MonitoringService.stop(app)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            MonitoringService.requestMeasurement(app, start)
+        }
+    }
 
     private fun recompute() {
         val watchState = watchTracker.current()
@@ -296,6 +392,46 @@ class HomeViewModel(
                 cameraNotice = entry.notice,
             )
         }
+        if (screenActive) {
+            reconcileMonitoring(watchState, _state.value.measurementControl.status)
+        }
+    }
+
+    /**
+     * The Home connection poll is the process-level trigger for the long-lived monitoring service.
+     * Previously it only rendered "연결됨", leaving both sensor uploads and prediction SSE stopped.
+     */
+    private fun reconcileMonitoring(
+        watchState: WatchConnectionState,
+        watchStatus: MeasurementControlStatus,
+    ) {
+        when (
+            monitoringCommand(
+                watchState = watchState,
+                canUploadBiosignal = gates.canUploadBiosignal,
+                watchStatus = watchStatus,
+                isRunning = MonitoringState.running.value,
+            )
+        ) {
+            MonitoringCommand.START -> {
+                val canPostNotification = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (canPostNotification) {
+                    MonitoringService.start(app, watchState, gates)
+                } else {
+                    MonitoringState.setBlocker(MonitoringBlocker.NOTIFICATION_PERMISSION_REVOKED)
+                }
+            }
+
+            MonitoringCommand.STOP -> MonitoringService.stop(app)
+            MonitoringCommand.NONE -> Unit
+        }
+    }
+
+    override fun onCleared() {
+        Wearable.getMessageClient(app).removeListener(controlMessageListener)
+        super.onCleared()
     }
 
     /** `실시간 · Watch` while the Watch is streaming; otherwise the stored timestamp and device. */

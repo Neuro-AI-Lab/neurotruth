@@ -1,6 +1,7 @@
 package com.neurotruth.mobile.wear
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
@@ -23,7 +24,7 @@ import java.nio.ByteBuffer
  *
  * One message per sample is not an option: at 25 Hz across nine channels it saturates the
  * `MessageClient` queue and lets a single sensor starve the rest. The watch therefore sends one
- * batch per channel per flush cycle.
+ * batch per channel on the service's two-second flush cycle.
  *
  * `ByteBuffer` is big-endian by default, and the phone decoder reads it the same way.
  */
@@ -39,6 +40,10 @@ class PhoneDataSender(private val context: Context) {
         scope.launch {
             runCatching {
                 val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+                Log.i(
+                    TAG,
+                    "연결 노드 ${nodes.joinToString { "${it.displayName}:${it.id}:nearby=${it.isNearby}" }}",
+                )
                 phoneNodeId = nodes.firstOrNull()?.id
             }.onFailure { Log.e(TAG, "폰 노드 검색 실패: ${it.message}") }
         }
@@ -47,7 +52,7 @@ class PhoneDataSender(private val context: Context) {
     fun sendBatch(path: String, samples: List<Pair<Long, Float>>) {
         if (samples.isEmpty()) return
         // Split so no single message approaches the ~100KB MessageClient limit. Today's flow
-        // capacities and 200ms drain keep batches tiny, but this removes the implicit coupling so a
+        // capacities and two-second drain keep batches small, but this removes the implicit coupling so a
         // future cadence/capacity change can't silently start dropping oversized messages.
         samples.chunked(MAX_SAMPLES_PER_MESSAGE).forEach { chunk ->
             val buffer = ByteBuffer.allocate(HEADER_BYTES + chunk.size * SAMPLE_BYTES)
@@ -74,6 +79,7 @@ class PhoneDataSender(private val context: Context) {
                         ?.also { phoneNodeId = it }
                     ?: return@runCatching
                 Tasks.await(Wearable.getMessageClient(context).sendMessage(nodeId, path, payload))
+                logDelivery(path)
             }.onFailure {
                 // A dropped batch is acceptable: the watch buffers only within a flush cycle and
                 // gapped data is preferable to stale data presented as current.
@@ -83,6 +89,14 @@ class PhoneDataSender(private val context: Context) {
         }
     }
 
+    /** Metadata-only heartbeat; physiological values and payload bytes are never logged. */
+    private fun logDelivery(path: String) {
+        val elapsedMs = SystemClock.elapsedRealtime()
+        if (elapsedMs - lastDeliveryLogElapsedMs < DELIVERY_LOG_INTERVAL_MS) return
+        lastDeliveryLogElapsedMs = elapsedMs
+        Log.i(TAG, "센서 배치 전달 완료 path=$path")
+    }
+
     private companion object {
         const val TAG = "PhoneDataSender"
         const val HEADER_BYTES = 4
@@ -90,18 +104,22 @@ class PhoneDataSender(private val context: Context) {
 
         /** 6000 samples = ~72KB, comfortably under the ~100KB Data Layer message limit. */
         const val MAX_SAMPLES_PER_MESSAGE = 6000
+        const val DELIVERY_LOG_INTERVAL_MS = 5_000L
+
+        @Volatile
+        var lastDeliveryLogElapsedMs: Long = 0L
     }
 }
 
 /** The nine Data Layer channel paths of PRD §5.5. */
 object WatchSensorPaths {
-    const val HR = "/sensor/hr"
-    const val PPG = "/sensor/ppg"
-    const val PPG_IR = "/sensor/ppg_ir"
-    const val PPG_RED = "/sensor/ppg_red"
-    const val EDA = "/sensor/eda"
-    const val ACCEL_X = "/sensor/accel_x"
-    const val ACCEL_Y = "/sensor/accel_y"
-    const val ACCEL_Z = "/sensor/accel_z"
-    const val SKIN_TEMP = "/sensor/skin_temp"
+    const val HR = "/sensor-v2/hr"
+    const val PPG = "/sensor-v2/ppg"
+    const val PPG_IR = "/sensor-v2/ppg_ir"
+    const val PPG_RED = "/sensor-v2/ppg_red"
+    const val EDA = "/sensor-v2/eda"
+    const val ACCEL_X = "/sensor-v2/accel_x"
+    const val ACCEL_Y = "/sensor-v2/accel_y"
+    const val ACCEL_Z = "/sensor-v2/accel_z"
+    const val SKIN_TEMP = "/sensor-v2/skin_temp"
 }
