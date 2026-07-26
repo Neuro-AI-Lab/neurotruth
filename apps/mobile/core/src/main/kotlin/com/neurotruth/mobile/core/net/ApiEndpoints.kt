@@ -57,6 +57,12 @@ class ApiEndpoints(baseUrl: String) {
             "&eventRange=${encode(eventRange)}" +
             "&auqRange=${encode(auqRange)}"
 
+    fun cravingCalendar(timezone: String, view: String, anchor: String): String =
+        "$base/api/me/craving-calendar" +
+            "?timezone=${encode(timezone)}" +
+            "&view=${encode(view)}" +
+            "&anchor=${encode(anchor)}"
+
     /** Malformed ids fail here rather than reaching the network as a 404 or a path injection. */
     private fun uuid(value: String): String = UUID.fromString(value).toString()
 

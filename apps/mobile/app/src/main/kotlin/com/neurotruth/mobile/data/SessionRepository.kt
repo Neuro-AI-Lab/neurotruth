@@ -89,9 +89,7 @@ class SessionRepository(
             sessionId = sessionId,
             assistantText = assistantText,
             wasCreated = SessionCreationPolicy.wasCreated(assistantText),
-            // NT-06 does not exist yet, so a new session goes straight to dialogue with no AUQ and
-            // no placeholder request. The discriminator above is still exercised from P0 so the
-            // branch is already correct when NT-06 lands.
+            // A new session visits AUQ first; a resumed session returns directly to dialogue.
             requiresAuq = SessionCreationPolicy.requiresAuq(assistantText, AUQ_SCREEN_AVAILABLE),
             inactivityTimeoutSeconds = json.optInt(
                 "inactivityTimeoutSeconds",
@@ -111,7 +109,7 @@ class SessionRepository(
     fun clearActiveSession() = activeSessionStore.clear()
 
     companion object {
-        /** Flip to true when NT-06 ships; nothing else in the flow has to change. */
+        /** NT-06 is part of the shipped Phone flow. */
         const val AUQ_SCREEN_AVAILABLE: Boolean = true
         const val DEFAULT_INACTIVITY_TIMEOUT_SECONDS: Int = 3_600
     }

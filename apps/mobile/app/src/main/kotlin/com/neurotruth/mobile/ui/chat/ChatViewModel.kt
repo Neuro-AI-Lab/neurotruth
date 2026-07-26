@@ -32,6 +32,27 @@ import java.util.Locale
 import java.util.UUID
 import org.json.JSONObject
 
+/**
+ * FastAPI serializes HTTPException payloads under `detail`. Accept the unwrapped shape as well so
+ * fake transports and older servers remain compatible.
+ */
+internal fun dialogueFailure(response: ApiResponse): DialogueFailure? {
+    if (response.statusCode != 502) return null
+    val root = runCatching { JSONObject(response.body) }.getOrNull()
+    val json = root?.optJSONObject("detail") ?: root
+    return DialogueFailure(
+        code = json?.optString("code")?.takeIf { it.isNotBlank() } ?: "provider_failure",
+        clientMessageId = json?.optString("clientMessageId")?.takeIf { it.isNotBlank() },
+        userMessageId = json?.optString("userMessageId")?.takeIf { it.isNotBlank() },
+        retryable = json?.optBoolean("retryable", true) ?: true,
+        attemptsRemaining = json?.optInt("attemptsRemaining", 1) ?: 1,
+    )
+}
+
+/** A voice reply is read once even when the global text-reply switch is off. */
+internal fun shouldAutoReadReply(inputModality: String, autoReadEnabled: Boolean): Boolean =
+    inputModality == INPUT_MODALITY_VOICE || autoReadEnabled
+
 data class ChatMessage(
     val id: String,
     val fromUser: Boolean,
@@ -46,10 +67,11 @@ data class ChatUiState(
     val autoReadEnabled: Boolean = false,
     val isPreparing: Boolean = true,
     val isSending: Boolean = false,
+    val isFinishing: Boolean = false,
     val pendingRetry: PendingChatRetry? = null,
     val speakingMessageId: String? = null,
     val ttsAvailable: Boolean = false,
-    /** The modality the current draft will be sent with; a confirmed transcript makes it voice. */
+    /** Typed drafts are always text; STT bypasses this field and dispatches a separate voice bubble. */
     val draftInputModality: String = INPUT_MODALITY_TEXT,
     val voiceConsentGranted: Boolean = false,
     val micPermissionGranted: Boolean = false,
@@ -66,7 +88,7 @@ data class ChatUiState(
     val finished: Boolean = false,
 ) {
     val canSend: Boolean
-        get() = sessionId != null && !isSending && !isPreparing && draft.isNotBlank() &&
+        get() = sessionId != null && !isSending && !isFinishing && !isPreparing && draft.isNotBlank() &&
             pendingRetry == null && !isRecording && !isTranscribing
 
     /**
@@ -74,7 +96,7 @@ data class ChatUiState(
      * voice consent is missing, and typing stays available in every state below.
      */
     val micEnabled: Boolean
-        get() = voiceConsentGranted && sessionId != null && !isPreparing && !isSending &&
+        get() = voiceConsentGranted && sessionId != null && !isPreparing && !isSending && !isFinishing &&
             !isTranscribing
 }
 
@@ -162,10 +184,16 @@ class ChatViewModel(
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
+    /** One voice-correlated response waiting for the device TTS engine to finish initialization. */
+    private var pendingAutoReadMessage: ChatMessage? = null
+
     private val tts = ChatTtsController(
         context = app,
         onSpeakingChanged = { id -> _state.update { it.copy(speakingMessageId = id) } },
-        onReady = { available -> _state.update { it.copy(ttsAvailable = available) } },
+        onReady = { available ->
+            _state.update { it.copy(ttsAvailable = available) }
+            if (available) playPendingAutoRead()
+        },
     )
 
     init {
@@ -179,9 +207,7 @@ class ChatViewModel(
 
     /**
      * PRD §5.3. The 챗봇 tab is a `manual_checkin`; the entry point, not this call site, carries the
-     * type. NT-06 has not shipped, so a newly created session goes straight to dialogue with no AUQ
-     * and no placeholder request — the discriminator is still evaluated so the branch is already
-     * correct when NT-06 lands.
+     * type. A newly created session routes through AUQ, while an active one resumes dialogue.
      */
     private fun openSession() {
         _state.update { it.copy(isPreparing = true, errorMessage = null) }
@@ -241,15 +267,12 @@ class ChatViewModel(
     fun onDraftChanged(value: String) {
         // Editing the body abandons the pending retry: an edited message is a new message with a
         // new id, never the same id with different content.
-        // Editing a transcript keeps it a voice-originated message; clearing the field returns the
-        // draft to plain text so a later typed message is not mislabelled.
-        val modality = if (value.isBlank()) INPUT_MODALITY_TEXT else _state.value.draftInputModality
         _state.update {
             if (it.pendingRetry != null) {
                 app.pendingChatStore.clear()
-                it.copy(draft = value, draftInputModality = modality, pendingRetry = null)
+                it.copy(draft = value, draftInputModality = INPUT_MODALITY_TEXT, pendingRetry = null)
             } else {
-                it.copy(draft = value, draftInputModality = modality)
+                it.copy(draft = value, draftInputModality = INPUT_MODALITY_TEXT)
             }
         }
     }
@@ -271,9 +294,7 @@ class ChatViewModel(
         if (content.isEmpty()) return
 
         val clientMessageId = UUID.randomUUID().toString()
-        // A confirmed transcript travels the same route, with the same idempotency key and the same
-        // one-shot retry as typed text; only the modality label differs.
-        val inputModality = current.draftInputModality
+        val inputModality = INPUT_MODALITY_TEXT
         _state.update {
             it.copy(
                 draft = "",
@@ -306,15 +327,33 @@ class ChatViewModel(
 
     fun finishSession() {
         val sessionId = _state.value.sessionId ?: return
+        if (_state.value.isFinishing) return
         tts.stop()
+        _state.update { it.copy(isFinishing = true, errorMessage = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { runCatching { sessionRepository.finish(sessionId) } }
-            app.pendingChatStore.clear()
-            _state.update { it.copy(finished = true) }
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching { sessionRepository.finish(sessionId) }
+            }
+            outcome
+                .onSuccess {
+                    app.pendingChatStore.clear()
+                    _state.update { it.copy(isFinishing = false, finished = true) }
+                }
+                .onFailure {
+                    _state.update {
+                        it.copy(
+                            isFinishing = false,
+                            errorMessage = "대화를 종료하지 못했어요. 잠시 후 다시 시도해 주세요.",
+                        )
+                    }
+                }
         }
     }
 
-    fun stopPlaybackForNavigation() = tts.stop()
+    fun stopPlaybackForNavigation() {
+        pendingAutoReadMessage = null
+        tts.stop()
+    }
 
     // -----------------------------------------------------------------------------------------
     // NT-07 STT
@@ -407,15 +446,30 @@ class ChatViewModel(
                     }
                     return@onSuccess
                 }
-                // Never auto-sent: the transcript lands in the editable field for confirmation.
+                val content = text.trim()
+                val clientMessageId = UUID.randomUUID().toString()
+                // The existing typed draft is deliberately untouched. STT creates its own voice
+                // bubble and follows the same idempotent one-retry route as a typed message.
                 _state.update {
                     it.copy(
                         isTranscribing = false,
-                        draft = mergeDraft(it.draft, text),
-                        draftInputModality = INPUT_MODALITY_VOICE,
-                        voiceNotice = TRANSCRIPT_READY_NOTICE,
+                        isSending = true,
+                        voiceNotice = VOICE_SENT_NOTICE,
+                        errorMessage = null,
+                        messages = it.messages + ChatMessage(
+                            id = clientMessageId,
+                            fromUser = true,
+                            text = content,
+                        ),
                     )
                 }
+                dispatch(
+                    sessionId = sessionId,
+                    clientMessageId = clientMessageId,
+                    content = content,
+                    inputModality = INPUT_MODALITY_VOICE,
+                    isRetry = false,
+                )
             }
             .onFailure { error ->
                 _state.update {
@@ -423,9 +477,6 @@ class ChatViewModel(
                 }
             }
     }
-
-    private fun mergeDraft(existing: String, transcript: String): String =
-        if (existing.isBlank()) transcript else "${existing.trimEnd()} $transcript"
 
     /** STT never blocks the conversation: every branch leaves the text field usable. */
     private fun voiceNoticeFor(error: Throwable): String = when {
@@ -464,23 +515,52 @@ class ChatViewModel(
                 .onSuccess { apiResponse ->
                     if (apiResponse.isSuccessful) {
                         app.pendingChatStore.clear()
-                        applyAssistantReply(apiResponse)
+                        applyAssistantReply(apiResponse, inputModality)
                     } else {
                         applyFailure(apiResponse, clientMessageId, content, inputModality, isRetry)
                     }
                 }
                 .onFailure {
+                    val pending = if (isRetry) {
+                        null
+                    } else {
+                        ChatRetryPolicy.pending(
+                            failure = DialogueFailure(
+                                code = "network_failure",
+                                clientMessageId = clientMessageId,
+                                userMessageId = null,
+                                retryable = true,
+                                attemptsRemaining = 1,
+                            ),
+                            clientMessageId = clientMessageId,
+                            content = content,
+                            inputModality = inputModality,
+                        )
+                    }
+                    if (pending != null) {
+                        app.pendingChatStore.save(
+                            pending.clientMessageId,
+                            pending.content,
+                            pending.inputModality,
+                        )
+                    }
                     _state.update {
                         it.copy(
                             isSending = false,
-                            errorMessage = "네트워크 상태를 확인하고 다시 시도해 주세요.",
+                            pendingRetry = pending,
+                            voiceNotice = if (inputModality == INPUT_MODALITY_VOICE) null else it.voiceNotice,
+                            errorMessage = if (pending == null) {
+                                "네트워크 상태를 확인하고 다시 시도해 주세요."
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
         }
     }
 
-    private fun applyAssistantReply(response: ApiResponse) {
+    private fun applyAssistantReply(response: ApiResponse, inputModality: String) {
         val json = runCatching { JSONObject(response.body) }.getOrNull()
         val text = json?.optString("assistantText")?.takeIf { it.isNotBlank() }
         val id = json?.optString("assistantMessageId")?.takeIf { it.isNotBlank() }
@@ -491,8 +571,26 @@ class ChatViewModel(
             return
         }
         val message = ChatMessage(id = id, fromUser = false, text = text)
-        _state.update { it.copy(isSending = false, messages = it.messages + message) }
-        if (_state.value.autoReadEnabled) tts.speak(message.id, message.text)
+        _state.update {
+            it.copy(
+                isSending = false,
+                voiceNotice = if (inputModality == INPUT_MODALITY_VOICE) null else it.voiceNotice,
+                messages = it.messages + message,
+            )
+        }
+        if (shouldAutoReadReply(inputModality, _state.value.autoReadEnabled)) {
+            if (_state.value.ttsAvailable) {
+                tts.speak(message.id, message.text)
+            } else if (inputModality == INPUT_MODALITY_VOICE) {
+                pendingAutoReadMessage = message
+            }
+        }
+    }
+
+    private fun playPendingAutoRead() {
+        val message = pendingAutoReadMessage ?: return
+        pendingAutoReadMessage = null
+        tts.speak(message.id, message.text)
     }
 
     /**
@@ -506,7 +604,7 @@ class ChatViewModel(
         inputModality: String,
         isRetry: Boolean,
     ) {
-        val failure = parseDialogueFailure(response)
+        val failure = dialogueFailure(response)
         val pending = if (isRetry) {
             null
         } else {
@@ -525,21 +623,10 @@ class ChatViewModel(
             it.copy(
                 isSending = false,
                 pendingRetry = pending,
+                voiceNotice = if (inputModality == INPUT_MODALITY_VOICE) null else it.voiceNotice,
                 errorMessage = if (pending != null) null else messageFor(response.statusCode),
             )
         }
-    }
-
-    private fun parseDialogueFailure(response: ApiResponse): DialogueFailure? {
-        if (response.statusCode != HTTP_BAD_GATEWAY) return null
-        val json = runCatching { JSONObject(response.body) }.getOrNull()
-        return DialogueFailure(
-            code = json?.optString("code")?.takeIf { it.isNotBlank() } ?: "provider_failure",
-            clientMessageId = json?.optString("clientMessageId")?.takeIf { it.isNotBlank() },
-            userMessageId = json?.optString("userMessageId")?.takeIf { it.isNotBlank() },
-            retryable = json?.optBoolean("retryable", true) ?: true,
-            attemptsRemaining = json?.optInt("attemptsRemaining", 1) ?: 1,
-        )
     }
 
     private fun restorePendingRetry() {
@@ -578,19 +665,19 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        pendingAutoReadMessage = null
         tts.shutdown()
         recorder.cancel()
         super.onCleared()
     }
 
     companion object {
-        private const val HTTP_BAD_GATEWAY = 502
         private const val RESUMED_NOTICE = "이전 대화를 이어서 진행할게요."
         private const val MIC_PERMISSION_NOTICE =
             "마이크 권한이 없어 음성 입력을 사용할 수 없어요. 직접 입력해도 괜찮아요."
         private const val RECORD_FAILED_NOTICE = "녹음을 시작하지 못했어요. 직접 입력해 주세요."
         private const val EMPTY_TRANSCRIPT_NOTICE = "음성을 인식하지 못했어요. 직접 입력해 주세요."
-        private const val TRANSCRIPT_READY_NOTICE = "인식한 문장을 확인하고 전송해 주세요."
+        private const val VOICE_SENT_NOTICE = "인식한 음성 메시지를 바로 전송했어요."
 
         fun factory(app: NeuroTruthApp): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

@@ -53,15 +53,13 @@ object PredictionPayloadParser {
      * never relayed at all — the caller filters on source before calling this.
      */
     fun toWatchPayload(prediction: CravingPrediction): String = JSONObject()
-        .put("class", if (prediction.cravingProbability >= CLASS_ONE_THRESHOLD) 1 else 0)
+        .put("stageCode", prediction.stage.stageCountsKey)
         .put("timestampMs", prediction.timestampMs)
         .put("hasAlertMetadata", prediction.alertAction != null || prediction.alertId != null)
         .apply {
+            prediction.alertId?.let { put("alertId", it) }
             prediction.alertAction?.let { put("alertAction", it) }
             prediction.sequence?.let { put("sequence", it) }
         }
         .toString()
-
-    /** The server's binary classifier reports class 1 from p >= 0.5. */
-    const val CLASS_ONE_THRESHOLD: Float = 0.5f
 }

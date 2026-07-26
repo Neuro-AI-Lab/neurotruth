@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -8,7 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from app.api.v1.dependencies import get_runtime, patient_user
 from app.core.runtime import BackendRuntime
 from app.models.records import UserRecord
-from app.schemas.dashboard import DashboardAuqRange, DashboardEventRange
+from app.schemas.dashboard import (
+    DashboardAuqRange,
+    DashboardCalendarView,
+    DashboardEventRange,
+)
 from app.services.dashboard import (
     DashboardRangeError,
     DashboardTimezoneError,
@@ -75,6 +80,35 @@ async def craving_dashboard(
         raise HTTPException(
             status_code=422,
             detail={"code": "invalid_dashboard_range", "message": "Unsupported dashboard range"},
+        ) from exc
+    except DashboardUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dashboard_unavailable", "message": "Dashboard data is unavailable"},
+        ) from exc
+
+
+@router.get("/craving-calendar")
+async def craving_calendar(
+    runtime: Annotated[BackendRuntime, Depends(get_runtime)],
+    user: Annotated[UserRecord, Depends(patient_user)],
+    timezone: str,
+    view: DashboardCalendarView,
+    anchor: date,
+) -> dict[str, Any]:
+    try:
+        return await runtime.dashboard_service.craving_calendar(
+            user.id, timezone, view, anchor,
+        )
+    except DashboardTimezoneError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_timezone", "message": "Invalid IANA timezone"},
+        ) from exc
+    except DashboardRangeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_dashboard_range", "message": "Unsupported calendar view"},
         ) from exc
     except DashboardUnavailable as exc:
         raise HTTPException(

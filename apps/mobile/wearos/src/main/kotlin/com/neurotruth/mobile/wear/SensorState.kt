@@ -27,12 +27,17 @@ object SensorState {
     val accelZText = MutableStateFlow(NO_VALUE)
     val skinTempText = MutableStateFlow(NO_VALUE)
 
-    /** The coarse binary state the phone relays. Never a probability. */
+    /** The four-stage code the phone relays. Never a probability. */
     val cravingClass = MutableStateFlow<Int?>(null)
+    val stageCode = MutableStateFlow<String?>(null)
     val cravingText = MutableStateFlow(NO_VALUE)
     val cravingUpdatedAt = MutableStateFlow(0L)
     val alertLevel = MutableStateFlow("none")
     val alertText = MutableStateFlow("알림 없음")
+    val activeRequestId = MutableStateFlow<String?>(null)
+    val stageTimeline = MutableStateFlow<List<StageSample>>(emptyList())
+    val todayEventCount = MutableStateFlow<Int?>(null)
+    val todayAuqScore = MutableStateFlow<Float?>(null)
 
     fun resetSensorValues() {
         hrText.value = NO_VALUE
@@ -46,3 +51,8 @@ object SensorState {
         skinTempText.value = NO_VALUE
     }
 }
+
+data class StageSample(
+    val timestampMs: Long,
+    val stageCode: String,
+)

@@ -22,7 +22,9 @@ data class CravingSeriesPoint(
     val probability: Float,
     val sampleCount: Int,
     val predictionId: String? = null,
-)
+) {
+    val stage: CravingStage get() = CravingStage.of(probability)
+}
 
 /**
  * The recent-hour series.
@@ -165,6 +167,48 @@ data class CravingDashboard(
     val hasAuqData: Boolean get() = auq.any { it.hasData }
 }
 
+/**
+ * One bucket of the patient-selected local day or month.
+ *
+ * The server includes empty buckets. [hasPredictionData] distinguishes a measurement-free bucket
+ * from a measured bucket whose alert count is a valid zero.
+ */
+data class CravingCalendarBucket(
+    val localKey: String,
+    val label: String,
+    val hasPredictionData: Boolean,
+    val sampleCount: Int,
+    val stageCounts: Map<CravingStage, Int>,
+    val eventCount: Int,
+    val auqAverageScore: Float?,
+    val auqResponseCount: Int,
+) {
+    val countedSamples: Int get() = stageCounts.values.sum()
+    val hasStageData: Boolean get() = hasPredictionData && countedSamples > 0
+    val hasAuqData: Boolean get() = auqAverageScore != null && auqResponseCount > 0
+
+    fun proportions(): List<Pair<CravingStage, Float>> {
+        val total = countedSamples
+        if (total <= 0) return emptyList()
+        return CravingStage.entries.map { stage ->
+            stage to (stageCounts[stage] ?: 0).toFloat() / total.toFloat()
+        }
+    }
+}
+
+data class CravingCalendar(
+    val timezone: String,
+    val view: String,
+    val anchor: String,
+    val bucketUnit: String,
+    val localStartIso: String,
+    val localEndIso: String,
+    val buckets: List<CravingCalendarBucket>,
+) {
+    val hasStageData: Boolean get() = buckets.any { it.hasStageData }
+    val hasAuqData: Boolean get() = buckets.any { it.hasAuqData }
+}
+
 /** `GET /api/me/craving-probability-series`. */
 object CravingProbabilitySeriesParser {
 
@@ -304,6 +348,60 @@ object CravingDashboardParser {
             )
         }
         return buckets
+    }
+
+    private fun shortDate(localDate: String): String {
+        val parts = localDate.split('-')
+        return if (parts.size == 3) "${parts[1].trimStart('0')}/${parts[2]}" else localDate
+    }
+}
+
+/** `GET /api/me/craving-calendar`. */
+object CravingCalendarParser {
+
+    fun parse(body: String): CravingCalendar {
+        val root = JSONObject(body)
+        val bucketUnit = root.optString("bucketUnit")
+        val period = root.optJSONObject("period")
+        val array = root.optJSONArray("buckets")
+        val buckets = ArrayList<CravingCalendarBucket>(array?.length() ?: 0)
+        for (index in 0 until (array?.length() ?: 0)) {
+            val item = array?.optJSONObject(index) ?: continue
+            val localStart = stringOrNull(item, "localStart")
+            val localDate = stringOrNull(item, "localDate")
+            val localKey = localStart ?: localDate ?: continue
+            val counts = item.optJSONObject("stageCounts")
+            val stageCounts = CravingStage.entries.associateWith { stage ->
+                counts?.optInt(stage.stageCountsKey, 0) ?: 0
+            }
+            val average = floatOrNull(item, "auqAverageScore")
+                ?.coerceIn(Auq.SCALE_MIN.toFloat(), Auq.SCALE_MAX.toFloat())
+            buckets.add(
+                CravingCalendarBucket(
+                    localKey = localKey,
+                    label = if (bucketUnit == "hour") {
+                        "%02d시".format(hourOf(localStart) ?: index)
+                    } else {
+                        shortDate(localDate.orEmpty())
+                    },
+                    hasPredictionData = item.optBoolean("hasPredictionData", false),
+                    sampleCount = item.optInt("sampleCount", 0),
+                    stageCounts = stageCounts,
+                    eventCount = item.optInt("eventCount", 0).coerceAtLeast(0),
+                    auqAverageScore = average,
+                    auqResponseCount = item.optInt("auqResponseCount", 0).coerceAtLeast(0),
+                ),
+            )
+        }
+        return CravingCalendar(
+            timezone = root.optString("timezone"),
+            view = root.optString("view"),
+            anchor = root.optString("anchor"),
+            bucketUnit = bucketUnit,
+            localStartIso = period?.optString("localStart").orEmpty(),
+            localEndIso = period?.optString("localEnd").orEmpty(),
+            buckets = buckets,
+        )
     }
 
     private fun shortDate(localDate: String): String {
@@ -455,6 +553,22 @@ class DashboardRepository(
         return CravingDashboardParser.parse(response.body)
     }
 
+    fun cravingCalendar(timezone: String, view: String, anchor: String): CravingCalendar {
+        require(timezone.isNotBlank()) { "a valid IANA timezone is required" }
+        require(
+            view == CALENDAR_VIEW_DAY ||
+                view == CALENDAR_VIEW_WEEK ||
+                view == CALENDAR_VIEW_MONTH,
+        ) {
+            "view must be day, week, or month"
+        }
+        val response = client.execute(
+            ApiRequest("GET", endpoints.cravingCalendar(timezone, view, anchor)),
+        )
+        if (!response.isSuccessful) throw ApiHttpException(response.statusCode, response.body)
+        return CravingCalendarParser.parse(response.body)
+    }
+
     /**
      * The preview is served `Cache-Control: no-store` over a temporarily decrypted window, so the
      * result is handed straight to the caller's screen state and is never cached or persisted. A 404
@@ -483,5 +597,8 @@ class DashboardRepository(
         const val AUQ_RANGE_TODAY: String = "today"
         const val AUQ_RANGE_7D: String = "7d"
         const val AUQ_RANGE_30D: String = "30d"
+        const val CALENDAR_VIEW_DAY: String = "day"
+        const val CALENDAR_VIEW_WEEK: String = "week"
+        const val CALENDAR_VIEW_MONTH: String = "month"
     }
 }

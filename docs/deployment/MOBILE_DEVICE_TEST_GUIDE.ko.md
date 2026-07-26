@@ -1,11 +1,11 @@
 # NeuroTruth 모바일 — 실기기(폰 + Galaxy Watch) 연동·테스트 가이드
 
-최종 업데이트: 2026-07-24
+최종 업데이트: 2026-07-25
 대상: `apps/mobile` (신규 환자 Android 앱 + Wear OS relay)
 
 이 문서는 에뮬레이터로는 검증할 수 없는 기능 — **Watch 생체신호 수집·업로드, 예측 SSE·갈망 알림, 카메라 rPPG** — 을 실제 기기에서 세팅하고 테스트하는 절차입니다. 에뮬레이터에서 확인 가능한 흐름(온보딩·챗봇·대시보드·설정)도 함께 체크리스트로 정리합니다.
 
-> 관련 문서: 화면·계약은 [`docs/prd/PRD_neurotruth_mobile.md`], 통신 계약은 [`apps/test_mobile_app/SERVER_API_SPEC.md`], 백엔드 배포는 [`docs/deployment/DGX_SPARK_DEPLOYMENT.ko.md`].
+> 관련 문서: 화면·계약은 [`docs/prd/PRD_neurotruth_mobile.ko.md`], 통신 계약은 [`apps/test_mobile_app/SERVER_API_SPEC.md`], 백엔드 배포는 [`docs/deployment/DGX_SPARK_DEPLOYMENT.ko.md`].
 
 ---
 
@@ -73,7 +73,7 @@ adb -s <WATCH_SERIAL> install -r wearos/build/outputs/apk/debug/wearos-debug.apk
 1. 폰·워치를 **같은 삼성 계정**으로 Galaxy Wearable에서 페어링.
 2. 워치 Samsung Health 앱을 최소 1회 실행(초기화).
 3. **Samsung Health 개발자 모드 활성화** — 워치 Samsung Health → 설정 진입점에서 개발자 모드 ON (기기·버전에 따라 진입 방식이 다르며, 삼성 Health Sensor SDK 문서의 "developer mode" 절차를 따르세요).
-4. 워치 앱 최초 실행 시 요청되는 신체 센서 권한을 모두 허용(§4).
+4. 설치 직후 **워치 앱을 한 번 직접 실행**하고, 누락된 신체 센서·백그라운드 센서·활동 인식·알림 권한을 모두 허용(§4). 이 준비가 되어야 Phone `[측정 시작]`과 원격 시작 제한 시 한 번 탭하는 확인 알림이 동작합니다.
 
 ---
 
@@ -110,15 +110,18 @@ adb -s <WATCH_SERIAL> install -r wearos/build/outputs/apk/debug/wearos-debug.apk
 
 ```
 Galaxy Watch (SensorTrackingService, FGS)
+  ↑ Phone /control/measurement/request (start/stop + requestId)
+  └─ Watch /control/measurement/status (started/stopped/confirmation_required/error)
   └─ Samsung HealthTracker → 채널 버퍼 → PhoneDataSender
         └─ Wear Data Layer (배치 바이너리)  paths: /sensor/{hr,ppg,ppg_ir,ppg_red,eda,accel_x,accel_y,accel_z,skin_temp}
-             └─ 폰 WearSensorListenerService → SensorSampleRepository
+             └─ 폰 MonitoringService (MessageClient + WearSensorMessageHandler) → SensorSampleRepository
                   └─ SensorWindowScheduler  (20초 warm-up → 10초마다 최신 20초 window)
                        └─ POST /api/sensor-windows  (PPG 25Hz×500, EDA 1Hz×20)
                             └─ 예측 응답 + 알림 메타
   폰 PredictionStreamClient  ←  GET /api/predictions/stream (SSE)
        └─ 중복 제거 → 홈/대시보드 갱신 + 갈망 알림
-  폰 → 워치  path: /prediction/class  (class·alertAction만; 확률은 미전송)
+  폰 → 워치  /prediction/class + /dashboard/snapshot
+               (단계·시각·요약·alertId만; 확률·원시 신호·credential 미전송)
 ```
 
 핵심 계약(검증 기준):
@@ -137,11 +140,11 @@ Galaxy Watch (SensorTrackingService, FGS)
 | A1 | 최초 실행 → 제품 안내(NT-01) | 뒤로가기로 못 건너뜀, "확인하고 계속" → 가입 |
 | A2 | 가입(NT-02) → 동의(NT-03) → 홈 | 가입은 동의 저장 시 `POST /api/auth/patient/signup` 1회, 비밀번호는 메모리에만 |
 | A3 | 로그인 → 홈 | `POST /api/auth/login` 후 `GET /api/me`로 최신 동의 확인 |
-| A4 | 챗봇(NT-07) 진입 | 새 세션이면 자가설문(NT-06) → 대화, 활성 세션이면 바로 재개(중복 자가설문 없음) |
+| A4 | 챗봇(NT-07) 진입 | 새 세션이면 자기설문(NT-06) → 결과 → 대화, 활성 세션이면 바로 재개(중복 자기설문 없음) |
 | A5 | 메시지 전송 → AI 응답 | 502면 말풍선 유지 + "응답 다시 받기"로 **1회** 재시도 |
-| A6 | 자가설문 8문항 / 건너뛰기 | 건너뛰어도 대화 진입, 모두 0 응답도 총점 0으로 저장 |
-| A7 | STT 마이크 | transcript가 입력창에 들어가고 **자동 전송 안 됨**, 확인 후 전송 |
-| A8 | 대시보드(NT-08) | 데이터 없음과 "유효한 0건" 구분, 최근 1시간은 보간 없음 |
+| A6 | 자기설문 8문항 / 건너뛰기 | 저장 성공 시 `총점 X/48` 결과 후 대화, 건너뛰기는 바로 대화 |
+| A7 | STT 마이크 | transcript가 기존 draft를 보존한 채 즉시 voice 메시지로 전송되고 해당 AI 답변만 자동 TTS |
+| A8 | 대시보드(NT-08) | 1시간 4단계 timeline, 일·월 선택, 데이터 없음과 "유효한 0건" 구분 |
 | A9 | 설정(NT-09) 권한 "허용" | OS 권한 다이얼로그가 뜨고 상태가 "허용됨"으로 갱신 |
 | A10 | 로그아웃 | SSE·업로드·녹음·TTS·polling 정리, 다른 계정 로그인 시 이전 캐시 없음 |
 
@@ -149,16 +152,19 @@ Galaxy Watch (SensorTrackingService, FGS)
 
 | # | 시나리오 | 기대 | 확인 방법 |
 |---|---|---|---|
-| B1 | 워치 앱 "시작" → 측정 | 워치 상태 "측정 중", 폰 홈 Watch "연결됨" | 워치 화면 / 폰 홈 |
+| B1 | 폰 홈 `[측정 시작]` | Watch `started` ack 뒤 Phone MonitoringService와 센서 수집 시작 | 폰 홈 / 워치 화면 / logcat |
 | B2 | 20초 warm-up 후 첫 업로드 | 첫 `POST /api/sensor-windows` ~20초 후, 이후 10초마다 | `adb logcat` / 서버 로그 |
-| B3 | 갈망 가능성 갱신 | 홈 갈망 카드가 4단계로 갱신, 측정 시각 "실시간 · Watch" | 폰 홈 |
+| B3 | 갈망 가능성 갱신 | 홈·Watch가 `안정·관찰·주의·위험`으로 갱신, 위험 문구는 `갈망이 높게 감지됐어요. 챗봇과 대화를 시작할까요?` | 양쪽 화면 |
 | B4 | 예측 SSE | `GET /api/predictions/stream` 유지, 예측 반영 | logcat `PredictionStream` |
-| B5 | 갈망 알림(NT-05) | 시스템 알림 "지금 대화하기 / 나중에", 같은 `alertId` 중복 없음 | 폰 알림창 |
+| B5 | Watch 위험 3회(각 간격 ≤20초) | Phone·Watch에 같은 `alertId` 알림 1회, 이후 15분 추가 알림 없음 | 양쪽 알림창 / 서버 DB |
 | B6 | "지금 대화하기" | 챗봇으로 진입, 세션이 `alert_checkin`으로 생성 | 폰 / 서버 |
 | B7 | "나중에" | 세션 생성 안 됨, 현재 화면 유지 | 폰 |
 | B8 | 워치 연결 중 카메라 버튼 | **비활성** + "Watch 연결을 해제해야…" 안내 | 폰 홈 |
 | B9 | 워치 연결 끊기(앱 종료) | 확립된 연결이 끊기면 폰 측정 배너, 워치 FGS·wake lock 정리 | 폰 홈 / 워치 |
 | B10 | 재시도 idempotency | 네트워크 순단 후 같은 window가 같은 `clientWindowId`로 재전송 | 서버(409 없이 1회 저장) |
+| B11 | 원격 시작 제한 fallback | Watch가 `confirmation_required`를 보내고 Watch 알림 1회 확인 후 `started` | 양쪽 상태 / 워치 알림 |
+| B12 | 폰·Watch에서 각각 중지 | 어느 쪽에서 중지해도 Watch FGS와 Phone 업로드가 종료되고 `stopped` 표시 | 양쪽 화면 / 로그 |
+| B13 | Watch 3개 요약 화면 | 측정·현재 단계 / 최근 1시간 timeline / 오늘 이벤트·AUQ를 스와이프 확인 | 워치 화면 |
 
 ### C. 카메라 rPPG 필요 (Watch 미연결 상태)
 
@@ -171,6 +177,7 @@ Galaxy Watch (SensorTrackingService, FGS)
 | C5 | 완료 → 챗봇 | job당 1회만 세션 생성·이동 |
 | C6 | 앱 강제종료 후 재실행 | job 중복 생성 없이 기존 결과 이어받음 |
 | C7 | 품질 미달(`retry_required`) | 같은 job 재시도가 아니라 **새 촬영** 유도 |
+| C8 | rPPG 위험 결과 | 상태·DB·챗봇 흐름에는 남지만 Phone/Watch 갈망 알림은 생성되지 않음 |
 
 ---
 
@@ -198,15 +205,18 @@ curl -s http://223.194.33.26:58441/model/status
 PRD 인수 시나리오와 매핑됩니다. 아래가 모두 통과하면 P0/P1이 실기기에서 동작하는 것으로 봅니다.
 
 - [ ] 신규 사용자 안내→가입→동의→홈 (A1–A3)
-- [ ] Watch 20초 수집 후 10초마다 예측 갱신 (B2–B3)
-- [ ] 알림에서 자가설문 작성/건너뛰기 후 같은 대화 진입 (B5–B6, A4)
-- [ ] 텍스트·STT 입력 전송, TTS로 응답 확인 (A5, A7)
+- [ ] Phone 시작 → Watch ack·센서 → Phone 자동 업로드(20초/10초) → 서버 예측 (B1–B3)
+- [ ] 위험 3회에서 Phone·Watch 동시 알림, 같은 ID 중복 제거와 15분 cooldown (B5)
+- [ ] 알림에서 자기설문 작성·결과/건너뛰기 후 같은 대화 진입 (B5–B6, A4–A6)
+- [ ] STT 즉시 전송과 해당 음성 답변 1회 자동 TTS (A5, A7)
 - [ ] AI 실패 시 중복 없이 1회 재시도 (A5)
 - [ ] 얼굴 1초 안정화 후 20초 촬영, 완료 시 챗봇 이동 (C3–C5)
 - [ ] 앱 재시작 후 대화·rPPG job 중복 생성 없이 복구 (C6)
 - [ ] 대시보드에서 데이터 없음과 유효한 0건 구분 (A8)
 - [ ] 로그아웃 시 SSE·센서·녹음·TTS·polling·캐시 정리 (A10)
 - [ ] Watch 연결 중 카메라 비활성, 확정 미연결 시 활성 (B8, C1)
+- [ ] 원격 시작 확인 fallback과 Phone·Watch 양쪽 중지 (B11–B12)
+- [ ] rPPG 결과가 갈망 알림을 만들지 않음 (C8)
 
 ---
 
@@ -254,7 +264,8 @@ adb -s <PHONE> install -r app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :wearos:assembleDebug
 adb -s <WATCH> install -r wearos/build/outputs/apk/debug/wearos-debug.apk
 
-# 3) 워치: Samsung Health 개발자 모드 ON + 신체센서 권한 허용 → 워치 앱 "시작"
-# 4) 폰: 가입/로그인 → 동의(생체신호·AI분석·알림 ON) → 홈에서 Watch "연결됨" 확인
-# 5) 20초 후 첫 업로드, 이후 10초마다 갈망 갱신 관찰 (§6-B, §7 로그)
+# 3) 워치: Samsung Health 개발자 모드 ON → 워치 앱 1회 직접 실행
+#          → 신체센서·백그라운드 센서·활동 인식·알림 권한 허용
+# 4) 폰: 가입/로그인 → 동의(생체신호·AI분석·알림 ON) → 홈 Watch `[측정 시작]`
+# 5) Watch started ack → 20초 후 첫 업로드 → 이후 10초마다 갈망 갱신 (§6-B, §7 로그)
 ```

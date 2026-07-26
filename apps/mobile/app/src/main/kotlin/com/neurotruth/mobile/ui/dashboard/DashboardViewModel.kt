@@ -8,8 +8,10 @@ import com.google.android.gms.wearable.Wearable
 import com.neurotruth.mobile.NeuroTruthApp
 import com.neurotruth.mobile.core.WatchConnectionState
 import com.neurotruth.mobile.core.WatchConnectionTracker
+import com.neurotruth.mobile.data.CravingCalendar
 import com.neurotruth.mobile.data.CravingDashboard
 import com.neurotruth.mobile.data.CravingSeries
+import com.neurotruth.mobile.data.CravingSeriesPoint
 import com.neurotruth.mobile.data.DashboardRepository
 import com.neurotruth.mobile.data.LivePpgSource
 import com.neurotruth.mobile.data.LivePpgState
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.time.ZoneId
 
 data class DashboardUiState(
@@ -30,8 +33,14 @@ data class DashboardUiState(
     val timezone: String = "",
     val series: CravingSeries? = null,
     val seriesError: String? = null,
+    val selectedSeriesAtMs: Long? = null,
     val dashboard: CravingDashboard? = null,
     val dashboardError: String? = null,
+    val calendarView: String = DashboardRepository.CALENDAR_VIEW_DAY,
+    val calendarAnchor: LocalDate = LocalDate.now(),
+    val calendar: CravingCalendar? = null,
+    val calendarError: String? = null,
+    val selectedCalendarIndex: Int? = null,
     val eventRange: String = DashboardRepository.EVENT_RANGE_7D,
     val auqRange: String = DashboardRepository.AUQ_RANGE_TODAY,
     val selectedHour: Int? = null,
@@ -46,7 +55,8 @@ data class DashboardUiState(
     val isPpgLoading: Boolean = false,
     val ppgError: String? = null,
 ) {
-    val hasAnyError: Boolean get() = seriesError != null || dashboardError != null
+    val hasAnyError: Boolean
+        get() = seriesError != null || dashboardError != null || calendarError != null
 
     /** No point carries a `predictionId`, so there is nothing the user could select. */
     val hasPpgSelectionPath: Boolean get() = series?.hasSelectablePoints == true
@@ -130,6 +140,58 @@ class DashboardViewModel(
         load(current.eventRange, current.auqRange)
     }
 
+    fun onCalendarViewChanged(view: String) {
+        if (view !in setOf(
+                DashboardRepository.CALENDAR_VIEW_DAY,
+                DashboardRepository.CALENDAR_VIEW_WEEK,
+                DashboardRepository.CALENDAR_VIEW_MONTH,
+            ) || view == _state.value.calendarView
+        ) {
+            return
+        }
+        _state.update {
+            it.copy(calendarView = view, selectedCalendarIndex = null, calendarError = null)
+        }
+        loadCalendar()
+    }
+
+    fun onCalendarPrevious() {
+        _state.update {
+            val anchor = when (it.calendarView) {
+                DashboardRepository.CALENDAR_VIEW_DAY -> it.calendarAnchor.minusDays(1)
+                DashboardRepository.CALENDAR_VIEW_WEEK -> it.calendarAnchor.minusDays(7)
+                else -> it.calendarAnchor.minusMonths(1)
+            }
+            it.copy(calendarAnchor = anchor, selectedCalendarIndex = null)
+        }
+        loadCalendar()
+    }
+
+    fun onCalendarNext() {
+        _state.update {
+            val anchor = when (it.calendarView) {
+                DashboardRepository.CALENDAR_VIEW_DAY -> it.calendarAnchor.plusDays(1)
+                DashboardRepository.CALENDAR_VIEW_WEEK -> it.calendarAnchor.plusDays(7)
+                else -> it.calendarAnchor.plusMonths(1)
+            }
+            it.copy(calendarAnchor = anchor, selectedCalendarIndex = null)
+        }
+        loadCalendar()
+    }
+
+    fun onCalendarAnchorChanged(anchor: LocalDate) {
+        _state.update {
+            it.copy(calendarAnchor = anchor, selectedCalendarIndex = null, calendarError = null)
+        }
+        loadCalendar()
+    }
+
+    fun onCalendarBucketSelected(index: Int?) {
+        _state.update {
+            it.copy(selectedCalendarIndex = if (it.selectedCalendarIndex == index) null else index)
+        }
+    }
+
     fun onEventRangeChanged(range: String) {
         if (range == _state.value.eventRange) return
         _state.update { it.copy(eventRange = range, selectedEventIndex = null) }
@@ -195,6 +257,11 @@ class DashboardViewModel(
         }
     }
 
+    fun onSeriesPointSelected(point: CravingSeriesPoint?) {
+        _state.update { it.copy(selectedSeriesAtMs = point?.atMs) }
+        onPredictionSelected(point?.predictionId)
+    }
+
     private fun load(eventRange: String, auqRange: String) {
         val timezone = ZoneId.systemDefault().id
         _state.update {
@@ -207,16 +274,37 @@ class DashboardViewModel(
             val dashboard = withContext(Dispatchers.IO) {
                 runCatching { repository.cravingDashboard(timezone, eventRange, auqRange) }
             }
+            val currentState = _state.value
+            val calendar = withContext(Dispatchers.IO) {
+                runCatching {
+                    repository.cravingCalendar(
+                        timezone = timezone,
+                        view = currentState.calendarView,
+                        anchor = currentState.calendarAnchor.toString(),
+                    )
+                }
+            }
             _state.update {
+                val acceptedCalendar = it.calendarView == currentState.calendarView &&
+                    it.calendarAnchor == currentState.calendarAnchor
                 it.copy(
                     isLoading = false,
                     series = series.getOrNull(),
                     seriesError = if (series.isFailure) SERIES_ERROR else null,
                     dashboard = dashboard.getOrNull(),
                     dashboardError = if (dashboard.isFailure) DASHBOARD_ERROR else null,
+                    calendar = if (acceptedCalendar) calendar.getOrNull() else it.calendar,
+                    calendarError = if (!acceptedCalendar) {
+                        it.calendarError
+                    } else if (calendar.isFailure) {
+                        CALENDAR_ERROR
+                    } else {
+                        null
+                    },
                     selectedHour = if (dashboard.isSuccess) it.selectedHour else null,
                     // A refreshed series invalidates the selected measurement; nothing is retained.
                     selectedPredictionId = null,
+                    selectedSeriesAtMs = null,
                     ppg = null,
                     ppgError = null,
                     isPpgLoading = false,
@@ -225,9 +313,40 @@ class DashboardViewModel(
         }
     }
 
+    private fun loadCalendar() {
+        val current = _state.value
+        val timezone = ZoneId.systemDefault().id
+        _state.update { it.copy(isLoading = true, calendarError = null) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    repository.cravingCalendar(
+                        timezone = timezone,
+                        view = current.calendarView,
+                        anchor = current.calendarAnchor.toString(),
+                    )
+                }
+            }
+            _state.update {
+                if (it.calendarView != current.calendarView ||
+                    it.calendarAnchor != current.calendarAnchor
+                ) {
+                    return@update it
+                }
+                it.copy(
+                    isLoading = false,
+                    timezone = timezone,
+                    calendar = result.getOrNull(),
+                    calendarError = if (result.isFailure) CALENDAR_ERROR else null,
+                )
+            }
+        }
+    }
+
     companion object {
         private const val SERIES_ERROR = "최근 1시간 기록을 불러오지 못했어요."
         private const val DASHBOARD_ERROR = "기록을 불러오지 못했어요."
+        private const val CALENDAR_ERROR = "선택한 기간의 기록을 불러오지 못했어요."
         private const val PPG_ERROR = "신호 데이터를 불러오지 못했어요."
 
         /** Roughly the watch's own flush cadence; fast enough to look live, cheap enough to poll. */

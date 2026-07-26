@@ -5,7 +5,7 @@ package com.neurotruth.mobile.core
  *
  * The stage is derived from `cravingProbability` alone. A prediction payload also carries `class`,
  * `classCode` and `classProbabilities`, but those come from a *binary* classifier whose `classCode`
- * is already `"high"` at p >= 0.5. Deriving the stage from them would render 심각 across the whole
+ * is already `"high"` at p >= 0.5. Deriving the stage from them would render 위험 across the whole
  * 주의 band.
  *
  * [stageCountsKey] matches the `stageCounts` keys of `GET /api/me/craving-dashboard`. Those keys
@@ -18,10 +18,10 @@ enum class CravingStage(
     val label: String,
     val message: String,
 ) {
-    SAFE("low", "안전", "아무 문제 없어요!"),
+    SAFE("low", "안정", "아무 문제 없어요!"),
     OBSERVE("observe", "관찰", "관찰이 필요해요, 심각하진 않아요!"),
     CAUTION("caution", "주의", "주의가 필요해요, 술이 드시고 싶으신가요?"),
-    SEVERE("high", "심각", "갈망이 심해보여요. 챗봇과 대화를 시작할까요?"),
+    SEVERE("high", "위험", "갈망이 높게 감지됐어요. 챗봇과 대화를 시작할까요?"),
     ;
 
     companion object {

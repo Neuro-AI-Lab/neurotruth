@@ -18,12 +18,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +40,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -49,7 +58,9 @@ import com.neurotruth.mobile.core.Auq
 import com.neurotruth.mobile.core.CravingStage
 import com.neurotruth.mobile.core.WatchConnectionState
 import com.neurotruth.mobile.data.AuqBucket
+import com.neurotruth.mobile.data.CravingCalendarBucket
 import com.neurotruth.mobile.data.CravingSeries
+import com.neurotruth.mobile.data.CravingSeriesPoint
 import com.neurotruth.mobile.data.DailyEventBucket
 import com.neurotruth.mobile.data.DashboardRepository
 import com.neurotruth.mobile.data.HourlyCravingBucket
@@ -66,7 +77,9 @@ import com.neurotruth.mobile.ui.theme.SectionLabel
 import com.neurotruth.mobile.ui.theme.SecondaryButton
 import com.neurotruth.mobile.ui.theme.cravingAccent
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
@@ -76,7 +89,7 @@ private val AxisLabelWidth = 44.dp
 /**
  * NT-08 · 대시보드.
  *
- * One scroll, five sections: 최근 1시간, 시간대별 갈망 가능성, 갈망 이벤트, 자가설문, 신호 데이터(PPG).
+ * One scroll, five sections: 최근 1시간, 기간별 갈망 단계, 갈망 이벤트, 자기설문, 신호 데이터(PPG).
  *
  * The PPG section carries both sources the PRD names — the live Watch trace and the stored preview
  * of a selected prediction — under separate headings. Home stays waveform-free by design.
@@ -142,34 +155,24 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             RecentHourSection(
                 series = state.series,
                 errorMessage = state.seriesError,
-                selectedPredictionId = state.selectedPredictionId,
-                onSelectPrediction = viewModel::onPredictionSelected,
+                selectedAtMs = state.selectedSeriesAtMs,
+                onSelectPoint = viewModel::onSeriesPointSelected,
             )
 
-            HourlyStackSection(
-                buckets = state.dashboard?.hourly.orEmpty(),
-                errorMessage = state.dashboardError,
-                selectedHour = state.selectedHour,
-                onSelect = viewModel::onHourSelected,
+            CalendarControls(
+                view = state.calendarView,
+                anchor = state.calendarAnchor,
+                onViewChange = viewModel::onCalendarViewChanged,
+                onPrevious = viewModel::onCalendarPrevious,
+                onNext = viewModel::onCalendarNext,
+                onAnchorChange = viewModel::onCalendarAnchorChanged,
             )
-
-            EventSection(
-                buckets = state.dashboard?.events.orEmpty(),
-                range = state.eventRange,
-                errorMessage = state.dashboardError,
-                selectedIndex = state.selectedEventIndex,
-                onRangeChange = viewModel::onEventRangeChanged,
-                onSelect = viewModel::onEventSelected,
-            )
-
-            AuqSection(
-                buckets = state.dashboard?.auq.orEmpty(),
-                range = state.auqRange,
-                bucketUnit = state.dashboard?.auqBucketUnit ?: "day",
-                errorMessage = state.dashboardError,
-                selectedIndex = state.selectedAuqIndex,
-                onRangeChange = viewModel::onAuqRangeChanged,
-                onSelect = viewModel::onAuqSelected,
+            CalendarSummarySections(
+                buckets = state.calendar?.buckets.orEmpty(),
+                view = state.calendarView,
+                errorMessage = state.calendarError,
+                selectedIndex = state.selectedCalendarIndex,
+                onSelect = viewModel::onCalendarBucketSelected,
             )
 
             PpgSection(
@@ -211,8 +214,8 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
 private fun RecentHourSection(
     series: CravingSeries?,
     errorMessage: String?,
-    selectedPredictionId: String?,
-    onSelectPrediction: (String?) -> Unit,
+    selectedAtMs: Long?,
+    onSelectPoint: (CravingSeriesPoint?) -> Unit,
 ) {
     SectionBlock(label = "최근 1시간 변화") {
         when {
@@ -220,7 +223,7 @@ private fun RecentHourSection(
 
             series == null || !series.hasData -> {
                 EmptyLine("최근 1시간 측정 기록이 없어요.")
-                LineChartFrame(series = null, selectedPredictionId = null, onSelect = {})
+                StageTimelineFrame(series = null, selectedAtMs = null, onSelect = {})
             }
 
             else -> {
@@ -228,28 +231,30 @@ private fun RecentHourSection(
                 val stage = latest?.let { CravingStage.of(it.probability) }
                 Text(
                     text = buildString {
-                        append("최신 값 ")
-                        append(percentOf(latest?.probability))
-                        if (stage != null) append(" · ${stage.label}")
+                        append("최신 단계 ")
+                        append(stage?.label ?: CravingStage.NO_DATA_LABEL)
                         latest?.let { append(" · ${clockOf(it.atMs)}") }
                     },
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.semantics {
-                        contentDescription = "최신 갈망 가능성 ${percentOf(latest?.probability)}" +
-                            (stage?.let { ", ${it.label}" } ?: "")
+                        contentDescription = "최신 갈망 단계 ${stage?.label ?: CravingStage.NO_DATA_LABEL}"
                     },
                 )
-                LineChartFrame(
+                StageTimelineFrame(
                     series = series,
-                    selectedPredictionId = selectedPredictionId,
-                    onSelect = onSelectPrediction,
+                    selectedAtMs = selectedAtMs,
+                    onSelect = onSelectPoint,
                 )
+                selectedAtMs?.let { atMs ->
+                    series.points.firstOrNull { it.atMs == atMs }?.let { point ->
+                        Text(
+                            text = "${clockOf(point.atMs)} · ${point.stage.label}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 Text(
-                    text = if (series.hasSelectablePoints) {
-                        "10초 간격 · 측정이 없는 구간은 선을 잇지 않아요. 점을 누르면 그 측정의 신호를 볼 수 있어요."
-                    } else {
-                        "10초 간격 · 측정이 없는 구간은 선을 잇지 않아요."
-                    },
+                    text = "10초 간격 · 측정이 없는 구간은 연결하지 않아요. 구간을 누르면 시각과 단계를 확인할 수 있어요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -259,14 +264,14 @@ private fun RecentHourSection(
 }
 
 @Composable
-private fun LineChartFrame(
+private fun StageTimelineFrame(
     series: CravingSeries?,
-    selectedPredictionId: String?,
-    onSelect: (String?) -> Unit,
+    selectedAtMs: Long?,
+    onSelect: (CravingSeriesPoint?) -> Unit,
 ) {
     val grid = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-    val line = MaterialTheme.colorScheme.primary
     val selection = MaterialTheme.colorScheme.onSurface
+    val selectionHalo = MaterialTheme.colorScheme.surface
     val safe = cravingAccent(CravingStage.SAFE)
     val observe = cravingAccent(CravingStage.OBSERVE)
     val caution = cravingAccent(CravingStage.CAUTION)
@@ -279,9 +284,9 @@ private fun LineChartFrame(
     )
 
     Row(modifier = Modifier.fillMaxWidth()) {
-        AxisLabels(listOf("100%", "75%", "50%", "25%", "0%"))
+        AxisLabels(listOf("위험", "주의", "관찰", "안정"))
         Column(modifier = Modifier.fillMaxWidth()) {
-            val selectable = series?.selectablePoints.orEmpty()
+            val points = series?.points.orEmpty()
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -289,78 +294,128 @@ private fun LineChartFrame(
                     .semantics {
                         contentDescription = when {
                             series == null || !series.hasData ->
-                                "최근 1시간 갈망 가능성 그래프, 데이터 없음"
-
-                            selectable.isNotEmpty() ->
-                                "최근 1시간 갈망 가능성 그래프, ${series.points.size}개 측정, " +
-                                    "점을 눌러 신호를 볼 측정을 선택"
-
-                            else -> "최근 1시간 갈망 가능성 그래프, ${series.points.size}개 측정"
+                                "최근 1시간 갈망 단계 그래프, 데이터 없음"
+                            else -> "최근 1시간 갈망 단계 그래프, ${series.points.size}개 측정"
                         }
                     }
-                    .pointerInput(selectable.size, series?.fromMs) {
-                        if (selectable.isEmpty() || series == null) return@pointerInput
+                    .pointerInput(points.size, series?.fromMs) {
+                        if (points.isEmpty() || series == null) return@pointerInput
                         detectTapGestures { offset ->
-                            // Nearest selectable sample on the time axis; no id is ever invented.
                             val span = (series.toMs - series.fromMs).coerceAtLeast(1L).toFloat()
-                            val nearest = selectable.minByOrNull { point ->
-                                val x = ((point.atMs - series.fromMs) / span) * size.width
+                            val plotPadding = 8.dp.toPx()
+                            val plotWidth = (size.width - (plotPadding * 2f)).coerceAtLeast(0f)
+                            val nearest = points.minByOrNull { point ->
+                                val x = plotPadding +
+                                    (((point.atMs - series.fromMs) / span).coerceIn(0f, 1f) * plotWidth)
                                 kotlin.math.abs(x - offset.x)
                             }
-                            onSelect(nearest?.predictionId)
+                            onSelect(nearest)
                         }
                     },
             ) {
-                for (step in 0..4) {
-                    val y = size.height * step / 4f
+                val plotPadding = 8.dp.toPx().coerceAtMost(size.height / 2f)
+                val plotHeight = (size.height - (plotPadding * 2f)).coerceAtLeast(0f)
+                val plotWidth = (size.width - (plotPadding * 2f)).coerceAtLeast(0f)
+                fun yForLane(lane: Int): Float =
+                    plotPadding + (plotHeight * lane / 3f)
+
+                val laneStages = listOf(
+                    CravingStage.SEVERE,
+                    CravingStage.CAUTION,
+                    CravingStage.OBSERVE,
+                    CravingStage.SAFE,
+                )
+                laneStages.forEachIndexed { lane, stage ->
+                    val y = yForLane(lane)
                     drawLine(
-                        color = grid,
-                        start = Offset(0f, y),
-                        end = Offset(size.width, y),
-                        strokeWidth = 1f,
+                        color = (accents[stage] ?: grid).copy(alpha = 0.14f),
+                        start = Offset(plotPadding, y),
+                        end = Offset(size.width - plotPadding, y),
+                        strokeWidth = 1.dp.toPx(),
                     )
                 }
                 if (series == null || !series.hasData) return@Canvas
 
                 val span = (series.toMs - series.fromMs).coerceAtLeast(1L).toFloat()
                 fun xOf(atMs: Long): Float =
-                    (((atMs - series.fromMs).toFloat() / span).coerceIn(0f, 1f)) * size.width
+                    plotPadding +
+                        (((atMs - series.fromMs).toFloat() / span).coerceIn(0f, 1f) * plotWidth)
 
-                fun yOf(probability: Float): Float = size.height * (1f - probability.coerceIn(0f, 1f))
+                fun yOf(stage: CravingStage): Float {
+                    val lane = when (stage) {
+                        CravingStage.SEVERE -> 0
+                        CravingStage.CAUTION -> 1
+                        CravingStage.OBSERVE -> 2
+                        CravingStage.SAFE -> 3
+                    }
+                    return yForLane(lane)
+                }
 
                 for (segment in series.segments()) {
                     if (segment.size == 1) {
                         val point = segment.first()
                         drawCircle(
-                            color = accents[CravingStage.of(point.probability)] ?: line,
-                            radius = 3.dp.toPx(),
-                            center = Offset(xOf(point.atMs), yOf(point.probability)),
+                            color = accents[point.stage] ?: selection,
+                            radius = 4.5.dp.toPx(),
+                            center = Offset(xOf(point.atMs), yOf(point.stage)),
                         )
                         continue
                     }
-                    val path = Path()
-                    segment.forEachIndexed { index, point ->
-                        val x = xOf(point.atMs)
-                        val y = yOf(point.probability)
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    for (index in 0 until segment.lastIndex) {
+                        val point = segment[index]
+                        val next = segment[index + 1]
+                        val currentY = yOf(point.stage)
+                        val nextX = xOf(next.atMs)
+                        drawLine(
+                            color = accents[point.stage] ?: selection,
+                            start = Offset(xOf(point.atMs), currentY),
+                            end = Offset(nextX, currentY),
+                            strokeWidth = 9.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                        if (point.stage != next.stage) {
+                            val nextY = yOf(next.stage)
+                            val middleY = (currentY + nextY) / 2f
+                            drawLine(
+                                color = (accents[point.stage] ?: selection).copy(alpha = 0.78f),
+                                start = Offset(nextX, currentY),
+                                end = Offset(nextX, middleY),
+                                strokeWidth = 3.dp.toPx(),
+                                cap = StrokeCap.Round,
+                            )
+                            drawLine(
+                                color = (accents[next.stage] ?: selection).copy(alpha = 0.78f),
+                                start = Offset(nextX, middleY),
+                                end = Offset(nextX, nextY),
+                                strokeWidth = 3.dp.toPx(),
+                                cap = StrokeCap.Round,
+                            )
+                        }
                     }
-                    drawPath(path = path, color = line, style = Stroke(width = 2.dp.toPx()))
-                }
-
-                // The end point is the latest real sample, at its own timestamp.
-                series.latest?.let { point ->
+                    val last = segment.last()
                     drawCircle(
-                        color = accents[CravingStage.of(point.probability)] ?: line,
-                        radius = 4.dp.toPx(),
-                        center = Offset(xOf(point.atMs), yOf(point.probability)),
+                        color = accents[last.stage] ?: selection,
+                        radius = 4.5.dp.toPx(),
+                        center = Offset(xOf(last.atMs), yOf(last.stage)),
                     )
                 }
 
-                selectable.firstOrNull { it.predictionId == selectedPredictionId }?.let { point ->
+                series.points.firstOrNull { it.atMs == selectedAtMs }?.let { point ->
+                    val center = Offset(xOf(point.atMs), yOf(point.stage))
+                    drawCircle(
+                        color = selectionHalo,
+                        radius = 7.dp.toPx(),
+                        center = center,
+                    )
+                    drawCircle(
+                        color = accents[point.stage] ?: selection,
+                        radius = 4.5.dp.toPx(),
+                        center = center,
+                    )
                     drawCircle(
                         color = selection,
                         radius = 7.dp.toPx(),
-                        center = Offset(xOf(point.atMs), yOf(point.probability)),
+                        center = center,
                         style = Stroke(width = 2.dp.toPx()),
                     )
                 }
@@ -371,7 +426,353 @@ private fun LineChartFrame(
 }
 
 // ---------------------------------------------------------------------------------------------
-// 2 · 시간대별 갈망 가능성
+// 2 · 선택한 일/월의 갈망 단계·이벤트·자기설문
+// ---------------------------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CalendarControls(
+    view: String,
+    anchor: LocalDate,
+    onViewChange: (String) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onAnchorChange: (LocalDate) -> Unit,
+) {
+    var pickerVisible by remember { mutableStateOf(false) }
+    val weekStart = anchor.minusDays((anchor.dayOfWeek.value - 1).toLong())
+    val weekEnd = weekStart.plusDays(6)
+    SectionBlock(
+        label = "기간 선택",
+        trailing = {
+            RangeChips(
+                options = listOf(
+                    DashboardRepository.CALENDAR_VIEW_DAY to "일간",
+                    DashboardRepository.CALENDAR_VIEW_WEEK to "주간",
+                    DashboardRepository.CALENDAR_VIEW_MONTH to "월간",
+                ),
+                selected = view,
+                onSelect = onViewChange,
+            )
+        },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onPrevious) { Text("이전") }
+            TextButton(
+                onClick = { pickerVisible = true },
+                modifier = Modifier.semantics {
+                    contentDescription = when (view) {
+                        DashboardRepository.CALENDAR_VIEW_DAY -> "${anchor} 날짜 선택"
+                        DashboardRepository.CALENDAR_VIEW_WEEK ->
+                            "${weekStart}부터 ${weekEnd}까지 주 선택"
+                        else -> "${anchor.year}년 ${anchor.monthValue}월 선택"
+                    }
+                },
+            ) {
+                Text(
+                    when (view) {
+                        DashboardRepository.CALENDAR_VIEW_DAY ->
+                            "${anchor.monthValue}월 ${anchor.dayOfMonth}일"
+                        DashboardRepository.CALENDAR_VIEW_WEEK ->
+                            "${weekStart.monthValue}월 ${weekStart.dayOfMonth}일 - " +
+                                "${weekEnd.monthValue}월 ${weekEnd.dayOfMonth}일"
+                        else -> "${anchor.year}년 ${anchor.monthValue}월"
+                    },
+                )
+            }
+            TextButton(onClick = onNext) { Text("다음") }
+        }
+    }
+    if (pickerVisible) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = anchor.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickerVisible = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            onAnchorChange(
+                                Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate(),
+                            )
+                        }
+                        pickerVisible = false
+                    },
+                ) { Text("선택") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pickerVisible = false }) { Text("취소") }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+@Composable
+private fun CalendarSummarySections(
+    buckets: List<CravingCalendarBucket>,
+    view: String,
+    errorMessage: String?,
+    selectedIndex: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    CalendarStageSection(buckets, view, errorMessage, selectedIndex, onSelect)
+    CalendarEventSection(buckets, view, errorMessage, selectedIndex, onSelect)
+    CalendarAuqSection(buckets, view, errorMessage, selectedIndex, onSelect)
+}
+
+@Composable
+private fun CalendarStageSection(
+    buckets: List<CravingCalendarBucket>,
+    view: String,
+    errorMessage: String?,
+    selectedIndex: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    SectionBlock(label = if (view == DashboardRepository.CALENDAR_VIEW_DAY) "시간대별 갈망 단계" else "일별 갈망 단계") {
+        when {
+            errorMessage != null -> EmptyLine(errorMessage)
+            buckets.none { it.hasStageData } -> EmptyLine("선택한 기간에 측정 기록이 없어요.")
+            else -> {
+                CalendarStageChart(buckets, selectedIndex, onSelect)
+                selectedIndex?.let { index ->
+                    buckets.getOrNull(index)?.let { bucket ->
+                        val dominant = bucket.stageCounts.maxByOrNull { it.value }
+                            ?.takeIf { it.value > 0 }?.key
+                        SectionCard(tone = CardTone.Low, contentGap = 6.dp) {
+                            Text(bucket.label, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (dominant == null) {
+                                    "측정 데이터 없음"
+                                } else {
+                                    "가장 많이 측정된 단계 · ${dominant.label}"
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarStageChart(
+    buckets: List<CravingCalendarBucket>,
+    selectedIndex: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    val empty = MaterialTheme.colorScheme.surfaceContainerHighest
+    val selection = MaterialTheme.colorScheme.onSurface
+    val accents = CravingStage.entries.associateWith { stage -> cravingAccent(stage) }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ChartHeight)
+            .semantics { contentDescription = "선택한 기간 갈망 단계 구성 막대그래프" }
+            .pointerInput(buckets.size) {
+                detectTapGestures { offset ->
+                    val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
+                    onSelect((offset.x / slot).toInt().coerceIn(0, buckets.lastIndex))
+                }
+            },
+    ) {
+        if (buckets.isEmpty()) return@Canvas
+        val slot = size.width / buckets.size
+        val barWidth = (slot * 0.64f).coerceAtLeast(2f)
+        buckets.forEachIndexed { index, bucket ->
+            val left = index * slot + (slot - barWidth) / 2f
+            if (!bucket.hasStageData) {
+                drawRoundRect(
+                    color = empty,
+                    topLeft = Offset(left, 0f),
+                    size = Size(barWidth, size.height),
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                )
+            } else {
+                var bottom = size.height
+                bucket.proportions().forEach { (stage, proportion) ->
+                    if (proportion <= 0f) return@forEach
+                    val height = size.height * proportion
+                    drawRect(
+                        color = accents.getValue(stage),
+                        topLeft = Offset(left, bottom - height),
+                        size = Size(barWidth, height),
+                    )
+                    bottom -= height
+                }
+            }
+            if (index == selectedIndex) {
+                drawRoundRect(
+                    color = selection,
+                    topLeft = Offset(left - 2f, 0f),
+                    size = Size(barWidth + 4f, size.height),
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
+        }
+    }
+    AxisRow(edgeLabels(buckets.map { it.label }))
+}
+
+@Composable
+private fun CalendarEventSection(
+    buckets: List<CravingCalendarBucket>,
+    view: String,
+    errorMessage: String?,
+    selectedIndex: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    SectionBlock(label = "갈망 이벤트") {
+        when {
+            errorMessage != null -> EmptyLine(errorMessage)
+            buckets.none { it.hasPredictionData } -> EmptyLine("선택한 기간에 측정 기록이 없어요.")
+            else -> {
+                CalendarValueBars(
+                    buckets = buckets,
+                    values = buckets.map { it.eventCount.toFloat() },
+                    present = buckets.map { it.hasPredictionData },
+                    selectedIndex = selectedIndex,
+                    onSelect = onSelect,
+                    description = "선택한 기간 갈망 이벤트 막대그래프",
+                )
+                selectedIndex?.let { index ->
+                    buckets.getOrNull(index)?.let { bucket ->
+                        Text(
+                            "${bucket.label} · " +
+                                if (bucket.hasPredictionData) "${bucket.eventCount}건" else "측정 데이터 없음",
+                        )
+                    }
+                }
+                Text(
+                    if (view == DashboardRepository.CALENDAR_VIEW_DAY) "시간별 이벤트" else "일별 이벤트",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarAuqSection(
+    buckets: List<CravingCalendarBucket>,
+    view: String,
+    errorMessage: String?,
+    selectedIndex: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    SectionBlock(label = "자기설문") {
+        when {
+            errorMessage != null -> EmptyLine(errorMessage)
+            buckets.none { it.hasAuqData } -> EmptyLine("선택한 기간에 응답한 자기설문이 없어요.")
+            else -> {
+                CalendarValueBars(
+                    buckets = buckets,
+                    values = buckets.map { it.auqAverageScore ?: 0f },
+                    present = buckets.map { it.hasAuqData },
+                    selectedIndex = selectedIndex,
+                    onSelect = onSelect,
+                    description = "선택한 기간 자기설문 평균 막대그래프",
+                    fixedMaximum = Auq.SCALE_MAX.toFloat(),
+                )
+                selectedIndex?.let { index ->
+                    buckets.getOrNull(index)?.let { bucket ->
+                        Text(
+                            if (bucket.hasAuqData) {
+                                "${bucket.label} · 평균 ${bucket.auqAverageScore?.roundToInt()}/${Auq.SCALE_MAX}" +
+                                    " · 응답 ${bucket.auqResponseCount}회"
+                            } else {
+                                "${bucket.label} · 응답 없음"
+                            },
+                        )
+                    }
+                }
+                Text(
+                    if (view == DashboardRepository.CALENDAR_VIEW_DAY) "시간별 평균 (0-48)" else "일별 평균 (0-48)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarValueBars(
+    buckets: List<CravingCalendarBucket>,
+    values: List<Float>,
+    present: List<Boolean>,
+    selectedIndex: Int?,
+    onSelect: (Int?) -> Unit,
+    description: String,
+    fixedMaximum: Float? = null,
+) {
+    val bar = MaterialTheme.colorScheme.primary
+    val empty = MaterialTheme.colorScheme.surfaceContainerHighest
+    val selection = MaterialTheme.colorScheme.onSurface
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ChartHeight)
+            .semantics { contentDescription = description }
+            .pointerInput(buckets.size) {
+                detectTapGestures { offset ->
+                    val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
+                    onSelect((offset.x / slot).toInt().coerceIn(0, buckets.lastIndex))
+                }
+            },
+    ) {
+        if (buckets.isEmpty()) return@Canvas
+        val maximum = fixedMaximum ?: values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+        val slot = size.width / buckets.size
+        val barWidth = (slot * 0.58f).coerceAtLeast(2f)
+        buckets.forEachIndexed { index, _ ->
+            val left = index * slot + (slot - barWidth) / 2f
+            if (!present.getOrElse(index) { false }) {
+                drawRoundRect(
+                    color = empty,
+                    topLeft = Offset(left, 0f),
+                    size = Size(barWidth, size.height),
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                )
+            } else {
+                val value = values.getOrElse(index) { 0f }.coerceAtLeast(0f)
+                if (value == 0f) {
+                    drawCircle(bar, 3.dp.toPx(), Offset(left + barWidth / 2f, size.height - 3.dp.toPx()))
+                } else {
+                    val height = size.height * (value / maximum).coerceIn(0f, 1f)
+                    drawRoundRect(
+                        color = bar,
+                        topLeft = Offset(left, size.height - height),
+                        size = Size(barWidth, height),
+                        cornerRadius = CornerRadius(3.dp.toPx()),
+                    )
+                }
+            }
+            if (index == selectedIndex) {
+                drawRoundRect(
+                    color = selection,
+                    topLeft = Offset(left - 2f, 0f),
+                    size = Size(barWidth + 4f, size.height),
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+            }
+        }
+    }
+    AxisRow(edgeLabels(buckets.map { it.label }))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Legacy compatibility renderers for GET /api/me/craving-dashboard.
 // ---------------------------------------------------------------------------------------------
 
 @Composable
@@ -692,7 +1093,7 @@ private fun EventDetailCard(bucket: DailyEventBucket) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 4 · 자가설문
+// 4 · 자기설문
 // ---------------------------------------------------------------------------------------------
 
 @Composable
@@ -706,7 +1107,7 @@ private fun AuqSection(
     onSelect: (Int?) -> Unit,
 ) {
     SectionBlock(
-        label = "자가설문 평균",
+        label = "자기설문 평균",
         trailing = {
             RangeChips(
                 options = listOf(
@@ -724,7 +1125,7 @@ private fun AuqSection(
         when {
             errorMessage != null -> EmptyLine(errorMessage)
 
-            buckets.none { it.hasData } -> EmptyLine("아직 응답한 자가설문이 없어요.")
+            buckets.none { it.hasData } -> EmptyLine("아직 응답한 자기설문이 없어요.")
 
             else -> {
                 AuqChart(buckets = buckets, selectedIndex = selectedIndex, onSelect = onSelect)
@@ -759,7 +1160,7 @@ private fun AuqChart(
                     .fillMaxWidth()
                     .height(ChartHeight)
                     .semantics {
-                        contentDescription = "자가설문 평균 막대그래프, 막대를 눌러 구간을 선택"
+                        contentDescription = "자기설문 평균 막대그래프, 막대를 눌러 구간을 선택"
                     }
                     .pointerInput(buckets.size) {
                         detectTapGestures { offset ->

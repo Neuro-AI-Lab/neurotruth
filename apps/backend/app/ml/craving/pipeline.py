@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Conservative rule-based alert decisions for craving predictions."""
+"""Rule-based alert decisions for consecutive Watch craving predictions."""
 
 import os
 from collections import OrderedDict, deque
@@ -13,20 +13,18 @@ MAX_ALERT_SESSIONS = 256
 
 @dataclass(frozen=True)
 class AlertConfig:
-    window_size: int = 10
-    recommend_count: int = 6
-    high_streak: int = 3
-    cooldown_seconds: float = 30.0
-    downtrend_delta: float = 0.6
+    danger_threshold: float = 0.75
+    danger_streak: int = 3
+    max_gap_seconds: float = 20.0
+    cooldown_seconds: float = 900.0
 
     @classmethod
     def from_env(cls) -> "AlertConfig":
         return cls(
-            window_size=_env_int("ALERT_WINDOW_SIZE", cls.window_size),
-            recommend_count=_env_int("ALERT_RECOMMEND_COUNT", cls.recommend_count),
-            high_streak=_env_int("ALERT_HIGH_STREAK", cls.high_streak),
+            danger_threshold=_env_float("ALERT_DANGER_THRESHOLD", cls.danger_threshold),
+            danger_streak=_env_int("ALERT_DANGER_STREAK", cls.danger_streak),
+            max_gap_seconds=_env_float("ALERT_MAX_GAP_SECONDS", cls.max_gap_seconds),
             cooldown_seconds=_env_float("ALERT_COOLDOWN_SECONDS", cls.cooldown_seconds),
-            downtrend_delta=_env_float("ALERT_DOWNTREND_DELTA", cls.downtrend_delta),
         )
 
 
@@ -54,103 +52,93 @@ class AlertDecision:
 
 
 class AlertEvaluator:
-    """Stateful evaluator over the latest prediction classes."""
+    """Evaluate a bounded chronological Watch history.
+
+    The instance state exists only for compatibility with diagnostics. Production
+    persistence supplies history from PostgreSQL through :meth:`evaluate_history`.
+    """
 
     def __init__(self, config: AlertConfig | None = None) -> None:
         self.config = config or AlertConfig.from_env()
-        self._classes: Deque[int] = deque(maxlen=max(1, self.config.window_size))
-        self._last_action_ms_by_level: dict[str, int] = {}
+        self._samples: Deque[tuple[float, int]] = deque(
+            maxlen=max(1, self.config.danger_streak)
+        )
+        self._last_alert_ms: int | None = None
 
-    def evaluate(self, craving_class: int, now_ms: int) -> AlertDecision:
-        craving_class = int(craving_class)
-        if craving_class not in (0, 1):
-            raise ValueError("Binary craving class must be 0 or 1")
-        self._classes.append(craving_class)
-        values = list(self._classes)
-        window_mean = round(sum(values) / len(values), 3) if values else 0.0
+    def evaluate(self, craving_probability: float, now_ms: int) -> AlertDecision:
+        probability = self._probability(craving_probability)
+        self._samples.append((probability, int(now_ms)))
+        decision = self.evaluate_history(
+            list(self._samples),
+            last_alert_ms=self._last_alert_ms,
+            notification_allowed=True,
+        )
+        if decision.alertRequired:
+            self._last_alert_ms = int(now_ms)
+        return decision
 
-        warming_up = len(values) < (self._classes.maxlen or 1)
-        high_streak = self._has_high_streak(values)
-        if warming_up and not high_streak:
-            return AlertDecision(
-                alertLevel="none",
-                alertAction="none",
-                windowMean=window_mean,
-                triggerReason="window_warming_up",
-                alertRequired=False,
-            )
+    def evaluate_history(
+        self,
+        samples: list[tuple[float, int]],
+        *,
+        last_alert_ms: int | None,
+        notification_allowed: bool,
+    ) -> AlertDecision:
+        required = max(1, self.config.danger_streak)
+        recent = samples[-required:]
+        current_probability = self._probability(recent[-1][0]) if recent else 0.0
+        window_mean = round(
+            sum(self._probability(value) for value, _ in recent) / len(recent), 3
+        ) if recent else 0.0
 
-        if warming_up:
-            level = "required"
-            reason = "high_streak"
-        else:
-            level, reason = self._level_from_count(values)
-            if high_streak:
-                level = "required"
-                reason = "high_streak"
+        if not notification_allowed:
+            return self._none(window_mean, "notifications_disabled")
+        if not recent or current_probability < self.config.danger_threshold:
+            return self._none(window_mean, "below_danger_threshold")
+        if len(recent) < required:
+            return self._none(window_mean, "danger_streak_warming_up")
+        if any(
+            self._probability(value) < self.config.danger_threshold
+            for value, _ in recent
+        ):
+            return self._none(window_mean, "danger_streak_reset")
 
-        if not warming_up and level == "recommend" and self._is_downtrend(values):
-            level = "none"
-            reason = "downtrend_suppressed"
+        max_gap_ms = int(self.config.max_gap_seconds * 1000)
+        if any(
+            later_ms <= earlier_ms or later_ms - earlier_ms > max_gap_ms
+            for (_, earlier_ms), (_, later_ms) in zip(recent, recent[1:])
+        ):
+            return self._none(window_mean, "danger_gap_reset")
 
-        action = self._action_for(level)
-        if level != "none" and self._in_cooldown(level, now_ms):
-            action = "cooldown"
-            reason = "cooldown_active"
-        elif level != "none":
-            self._last_action_ms_by_level[level] = now_ms
+        now_ms = recent[-1][1]
+        cooldown_ms = int(self.config.cooldown_seconds * 1000)
+        if last_alert_ms is not None and now_ms - last_alert_ms < cooldown_ms:
+            return self._none(window_mean, "cooldown_active", action="cooldown")
 
         return AlertDecision(
-            alertLevel=level,
+            alertLevel="required",
+            alertAction="required_intervention",
+            windowMean=window_mean,
+            triggerReason="danger_streak",
+            alertRequired=True,
+        )
+
+    @staticmethod
+    def _probability(value: float) -> float:
+        probability = float(value)
+        if probability < 0.0 or probability > 1.0:
+            raise ValueError("Craving probability must be between 0 and 1")
+        return probability
+
+    @staticmethod
+    def _none(window_mean: float, reason: str, *, action: str = "none") -> AlertDecision:
+        return AlertDecision(
+            alertLevel="none",
             alertAction=action,
             windowMean=window_mean,
             triggerReason=reason,
-            alertRequired=(level == "required" and action == "required_intervention"),
+            alertRequired=False,
         )
-
-    def _level_from_count(self, values: list[int]) -> tuple[str, str]:
-        if sum(values) >= self.config.recommend_count:
-            return "recommend", "class_one_count_recommend"
-        return "none", "class_one_count_none"
-
-    def _has_high_streak(self, values: list[int]) -> bool:
-        if self.config.high_streak <= 0:
-            return False
-        streak = 0
-        for value in reversed(values):
-            if value == 1:
-                streak += 1
-                if streak >= self.config.high_streak:
-                    return True
-            else:
-                break
-        return False
-
-    def _is_downtrend(self, values: list[int]) -> bool:
-        if self.config.downtrend_delta <= 0 or len(values) < 4:
-            return False
-        split = len(values) // 2
-        first = values[:split]
-        second = values[split:]
-        if not first or not second:
-            return False
-        first_mean = sum(first) / len(first)
-        second_mean = sum(second) / len(second)
-        return (first_mean - second_mean) >= self.config.downtrend_delta
-
-    def _in_cooldown(self, level: str, now_ms: int) -> bool:
-        previous_ms = self._last_action_ms_by_level.get(level)
-        if previous_ms is None:
-            return False
-        return (now_ms - previous_ms) < int(self.config.cooldown_seconds * 1000)
-
-    @staticmethod
-    def _action_for(level: str) -> str:
-        if level == "required":
-            return "required_intervention"
-        if level == "recommend":
-            return "recommend_intervention"
-        return "none"
 
 
 class AlertEvaluatorRegistry:

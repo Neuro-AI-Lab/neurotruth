@@ -176,22 +176,19 @@ class SensorService:
             raise SensorModelUnavailable("Prediction model is unavailable") from exc
         if int(prediction.get("class", -1)) not in (0, 1):
             raise SensorModelUnavailable("Prediction model returned an incompatible class")
-        alert = self.alert_decider(patient_id, prediction) if notification_allowed else {
-            "alertRequired": False, "alertAction": "none",
-        }
         public_prediction = {
             key: value for key, value in {
-                **prediction, **alert, "source": "watch_sensor",
+                **prediction,
+                "alertRequired": False,
+                "alertAction": "none",
+                "source": "watch_sensor",
             }.items()
             if not str(key).startswith("_")
         }
-        alert_id = uuid4() if notification_allowed and (
-            bool(alert.get("alertRequired")) or alert.get("alertAction") not in (None, "none")
-        ) else None
         result = await self.repository.persist_sensor_prediction(
             recording_id=recording.recording_id,
             prediction_id=uuid4(),
-            alert_id=alert_id,
+            alert_id=None,
             patient_id=patient_id,
             model_version_id=model_version_id,
             modalities=self._modalities(payload),
@@ -203,7 +200,8 @@ class SensorService:
             class_probabilities=prediction.get("classProbabilities") or {},
             continuous_value=prediction.get("cravingProbability"),
             prediction=public_prediction,
-            alert=alert,
+            alert={"alertRequired": False, "alertAction": "none"},
+            notification_allowed=notification_allowed,
             predicted_at=self._timestamp(prediction.get("timestampMs")),
         )
         response = self._response(result, notification_allowed=notification_allowed)

@@ -105,17 +105,22 @@ class SseFrameParserTest {
     }
 
     @Test
-    fun `the watch payload carries no probability`() {
+    fun `the watch payload carries stage and alert metadata but no model or raw signal values`() {
         val prediction = PredictionPayloadParser.parse(
             """{"predictionId":"p-4","cravingProbability":0.91,"timestampMs":5,""" +
-                """"source":"watch_sensor","alertAction":"required","classProbabilities":[0.09,0.91]}""",
+                """"source":"watch_sensor","alertId":"a-4","alertAction":"required",""" +
+                """"classProbabilities":[0.09,0.91],"PPG_GREEN":[1,2],"EDA":[3]}""",
         )!!
         val relayed = PredictionPayloadParser.toWatchPayload(prediction)
 
         assertFalse(relayed.contains("cravingProbability"))
         assertFalse(relayed.contains("classProbabilities"))
+        assertFalse(relayed.contains(""""class""""))
+        assertFalse(relayed.contains("PPG_GREEN"))
+        assertFalse(relayed.contains("EDA"))
         assertFalse(relayed.contains("0.91"))
-        assertTrue(relayed.contains(""""class":1"""))
+        assertTrue(relayed.contains(""""stageCode":"high""""))
+        assertTrue(relayed.contains(""""alertId":"a-4""""))
         assertTrue(relayed.contains(""""hasAlertMetadata":true"""))
     }
 

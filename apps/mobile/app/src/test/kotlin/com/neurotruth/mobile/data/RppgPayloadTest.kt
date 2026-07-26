@@ -3,6 +3,8 @@ package com.neurotruth.mobile.data
 import com.neurotruth.mobile.core.RppgContract
 import com.neurotruth.mobile.core.RppgJobStatus
 import com.neurotruth.mobile.core.SOURCE_CAMERA
+import com.neurotruth.mobile.core.net.ApiHttpException
+import com.neurotruth.mobile.core.net.AuthenticationRequiredException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -200,5 +202,17 @@ class RppgPollPlanTest {
             RppgContract.SLOW_ANALYSIS_NOTICE,
             RppgPollPlan.notice(RppgContract.POLL_CEILING_MS + 1L),
         )
+    }
+
+    @Test
+    fun `authentication and permanent client errors stop polling`() {
+        assertFalse(shouldRetryRppgPolling(AuthenticationRequiredException()))
+        assertFalse(shouldRetryRppgPolling(ApiHttpException(404)))
+    }
+
+    @Test
+    fun `transport and server failures remain retryable`() {
+        assertTrue(shouldRetryRppgPolling(IllegalStateException("network")))
+        assertTrue(shouldRetryRppgPolling(ApiHttpException(503)))
     }
 }

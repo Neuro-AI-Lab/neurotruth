@@ -14,6 +14,7 @@ import com.neurotruth.mobile.core.SessionEntryPoint
 import com.neurotruth.mobile.core.net.ApiHttpException
 import com.neurotruth.mobile.core.net.AuthenticationRequiredException
 import com.neurotruth.mobile.data.ActiveSessionStore
+import com.neurotruth.mobile.data.AlertSessionEntry
 import com.neurotruth.mobile.data.ProfileRepository
 import com.neurotruth.mobile.data.RppgCaptureLengthException
 import com.neurotruth.mobile.data.RppgJobSnapshot
@@ -437,10 +438,9 @@ class RppgCaptureViewModel(
             }
             return
         }
-        // The session is opened before navigating so chat resumes it rather than creating a second.
-        withContext(Dispatchers.IO) {
-            runCatching { sessionRepository.ensureSession(SessionEntryPoint.RPPG_COMPLETION) }
-        }
+        // Let ChatViewModel create the session. Pre-creating it here makes Chat see a resumed
+        // session and incorrectly skip the AUQ offered to every newly created session.
+        AlertSessionEntry.arm(SessionEntryPoint.RPPG_COMPLETION)
         _state.update {
             it.copy(
                 phase = RppgCapturePhase.COMPLETED,

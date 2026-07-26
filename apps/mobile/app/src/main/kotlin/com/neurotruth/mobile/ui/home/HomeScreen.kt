@@ -79,12 +79,16 @@ fun HomeScreen(
     // Watch connection is re-confirmed on every return to the foreground rather than trusted from
     // before the app was backgrounded.
     DisposableEffect(lifecycleOwner, viewModel) {
-        viewModel.onScreenActive(true)
+        viewModel.onScreenActive(
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+        )
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> viewModel.onResumed()
-                Lifecycle.Event.ON_START -> viewModel.onScreenActive(true)
-                Lifecycle.Event.ON_STOP -> viewModel.onScreenActive(false)
+                Lifecycle.Event.ON_RESUME -> {
+                    viewModel.onScreenActive(true)
+                    viewModel.onResumed()
+                }
+                Lifecycle.Event.ON_PAUSE -> viewModel.onScreenActive(false)
                 else -> Unit
             }
         }
@@ -160,6 +164,12 @@ fun HomeScreen(
 
             WatchAndCameraCard(
                 state = state,
+                onMeasurementToggle = {
+                    viewModel.requestMeasurement(
+                        start = state.measurementControl.status !=
+                            com.neurotruth.mobile.service.MeasurementControlStatus.STARTED,
+                    )
+                },
                 onOpenCameraMeasurement = onOpenCameraMeasurement,
             )
 
@@ -352,6 +362,7 @@ private fun CravingStateCard(state: HomeUiState) {
 @Composable
 private fun WatchAndCameraCard(
     state: HomeUiState,
+    onMeasurementToggle: () -> Unit,
     onOpenCameraMeasurement: () -> Unit,
 ) {
     SectionCard(tone = CardTone.Low, contentGap = NeuroTruthSpacing.betweenRows) {
@@ -378,7 +389,42 @@ private fun WatchAndCameraCard(
                         contentDescription = "Watch 연결 상태: ${state.watchStateLabel}"
                     },
                 )
+                Text(
+                    text = when (state.measurementControl.status) {
+                        com.neurotruth.mobile.service.MeasurementControlStatus.STARTED ->
+                            if (state.monitoringRunning) "측정·자동 전송 중" else "Watch 응답 확인 중"
+                        com.neurotruth.mobile.service.MeasurementControlStatus.REQUESTING_START ->
+                            "Watch에 시작 요청 중"
+                        com.neurotruth.mobile.service.MeasurementControlStatus.REQUESTING_STOP ->
+                            "Watch에 중지 요청 중"
+                        com.neurotruth.mobile.service.MeasurementControlStatus.CONFIRMATION_REQUIRED ->
+                            "Watch 알림에서 시작을 확인해 주세요"
+                        com.neurotruth.mobile.service.MeasurementControlStatus.ERROR ->
+                            "측정 요청을 완료하지 못했어요"
+                        com.neurotruth.mobile.service.MeasurementControlStatus.STOPPED -> "측정 대기"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+            Button(
+                onClick = onMeasurementToggle,
+                enabled = state.measurementButtonEnabled,
+                modifier = Modifier
+                    .heightIn(min = NeuroTruthSpacing.minTouchTarget)
+                    .semantics {
+                        contentDescription = state.measurementButtonLabel
+                    },
+            ) {
+                Text(state.measurementButtonLabel)
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
+        ) {
             Button(
                 onClick = onOpenCameraMeasurement,
                 enabled = state.cameraEnabled,

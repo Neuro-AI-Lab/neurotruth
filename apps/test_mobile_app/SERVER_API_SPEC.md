@@ -24,7 +24,7 @@ schemas remain intentionally generic; a generated snapshot is not committed.
 
 ## Registered route inventory
 
-The current application registers the following 42 method/path pairs.
+The current application registers the method/path pairs listed below.
 
 | Area | Method and path |
 |---|---|
@@ -34,7 +34,7 @@ The current application registers the following 42 method/path pairs.
 | Sensor/prediction | `POST /api/sensor-windows`, `GET /api/predictions/stream` |
 | Sessions | `POST /api/sessions`, `GET /api/sessions/{session_id}`, `POST /api/sessions/{session_id}/messages`, `POST /api/sessions/{session_id}/assessments`, `POST /api/sessions/{session_id}/finish`, `POST /api/sessions/{session_id}/reports`, `GET /api/sessions/{session_id}/reports` |
 | Voice STT | `GET /api/stt/status`, `POST /api/sessions/{session_id}/transcriptions` |
-| Patient dashboards | `GET /api/me/dashboard`, `GET /api/me/craving-probability-series`, `GET /api/me/craving-dashboard`, `GET /api/me/predictions/{prediction_id}/ppg-preview` |
+| Patient dashboards | `GET /api/me/dashboard`, `GET /api/me/craving-probability-series`, `GET /api/me/craving-dashboard`, `GET /api/me/craving-calendar`, `GET /api/me/predictions/{prediction_id}/ppg-preview` |
 | Patient rPPG | `GET /api/rppg/status`, `POST /api/rppg/jobs`, `GET /api/rppg/jobs/{job_id}`, `POST /api/rppg/jobs/{job_id}/retry` |
 | Administrator | `GET /api/admin/patients`, `GET /api/admin/patients/{patient_id}/timeline`, `GET /api/admin/patients/{patient_id}/dashboard`, `POST /api/admin/resources/{resource_type}/{resource_id}/reveal`, `POST /api/admin/patients/{patient_id}/temporary-password`, `DELETE /api/admin/patients/{patient_id}`, `GET /api/admin/settings`, `PATCH /api/admin/settings` |
 | Administrator rPPG | `GET /api/admin/rppg/captures`, `POST /api/admin/rppg/captures/{capture_id}/reveal-video`, `DELETE /api/admin/rppg/captures/{capture_id}` |
@@ -160,10 +160,12 @@ contains `predictionId`, nullable `alertId`, and:
   "classProbabilities": {"low": 0.187655, "high": 0.812345},
   "timestampMs": 1784160000000,
   "source": "watch_sensor",
-  "alertLevel": "recommend",
-  "alertAction": "recommend_intervention",
-  "windowMean": 0.7,
-  "classOneRatio": 0.7
+  "alertLevel": "required",
+  "alertAction": "required_intervention",
+  "windowMean": 0.81,
+  "classOneRatio": 0.81,
+  "triggerReason": "danger_streak",
+  "alertRequired": true
 }
 ```
 
@@ -177,6 +179,13 @@ path with `source="watch_sensor"`. Camera results retain
 `source="camera_rppg"`; clients must compare `timestampMs` before replacing the
 latest Home state.
 
+Only `watch_sensor` predictions can create alerts. Three consecutive
+`cravingProbability >= 0.75` measurements, each no more than 20 seconds apart,
+create one persisted `required_intervention` alert. Any lower stage or longer
+gap resets the streak. The patient-wide cooldown is 900 seconds and survives
+backend restarts; Phone and Watch deduplicate the same persisted `alertId`.
+Camera rPPG predictions never create an alert.
+
 ### Prediction SSE
 
 `GET /api/predictions/stream` requires an access bearer and
@@ -186,7 +195,7 @@ latest Home state.
 : connected
 
 event: craving
-data: {"predictionSchema":"binary-craving-v1","class":1,"cravingProbability":0.812345,"source":"watch_sensor","alertLevel":"recommend"}
+data: {"predictionSchema":"binary-craving-v1","class":1,"cravingProbability":0.812345,"source":"watch_sensor","alertLevel":"required","alertAction":"required_intervention","alertId":"uuid"}
 
 : ping
 ```
@@ -194,6 +203,20 @@ data: {"predictionSchema":"binary-craving-v1","class":1,"cravingProbability":0.8
 The phone reconnects with a current token and relays display-safe metadata to
 the Watch. The Watch never authenticates directly and must follow server
 `alertAction`/`alertLevel`, not create an alert merely from class `1`.
+
+### Phone/Watch Data Layer control
+
+- Phone sends `start|stop` plus `requestId` on
+  `/control/measurement/request`.
+- Watch answers on `/control/measurement/status` with
+  `started|stopped|confirmation_required|error`. Phone starts
+  `MonitoringService` only after `started`.
+- `/dashboard/snapshot` carries the recent stage timeline and today's event/AUQ
+  summary. Watch receives stage/timestamp/summary/alert metadata only—never
+  backend credentials, raw biosignals, or exact craving probabilities.
+- When Wear OS blocks remote health-FGS startup, Watch displays one confirmation
+  action and returns `confirmation_required`. Measurement can be stopped from
+  either device.
 
 ## Free-dialogue sessions and AUQ
 
@@ -306,6 +329,11 @@ placeholder request. The UI does not assign unsupported low/medium/high AUQ
 cutoffs; a higher total only means more alcohol-urge-related responses at that
 time.
 
+The patient UI names this flow `자기설문` and describes it as an AUQ-informed
+research Korean adaptation, not an official validated Korean version. A
+persisted submission shows `총점 X/48` with neutral explanation before the user
+continues to Chat. Skip creates no result and goes directly to Chat.
+
 Legacy `1..7` / `8..56` AUQ rows are converted once by an operator from the
 backend working directory. The confirmed command decrypts each answer with its
 stored AAD, validates every row, re-encrypts with a fresh nonce/current key,
@@ -355,12 +383,14 @@ python -m app.maintenance.migrate_auq_zero_based --confirm CONVERT-AUQ-TO-0-48
 }
 ```
 
-Audio is handled in backend/DGX tmpfs and deleted after the request. The app
-places the transcript in an editable input field and sends only after explicit
-user confirmation. Only the final sent text is retained as an encrypted chat
-message through `POST /api/sessions/{sessionId}/messages` with
-`inputModality="voice"` and the normal retry/idempotency contract. AI speech
-output uses Android `TextToSpeech`; there is no server TTS route.
+Audio is handled in backend/DGX tmpfs and deleted after the request. A successful
+transcript is immediately sent as a new message through
+`POST /api/sessions/{sessionId}/messages` with `inputModality="voice"` and a new
+`clientMessageId`; an existing typed draft is preserved and never merged into
+the voice message. Failure keeps text input and recording retry available. The
+matching assistant reply is auto-played exactly once with Android
+`TextToSpeech`; replies to typed messages continue to follow the existing
+auto-read setting. There is no server TTS route.
 
 ## Patient dashboards
 
@@ -407,15 +437,30 @@ Patient-facing Korean stage copy is fixed even though the stable wire keys stay
 
 | Band | Stage | Patient copy |
 |---|---|---|
-| `p < 0.25` | `안전` | `아무 문제 없어요!` |
+| `p < 0.25` | `안정` | `아무 문제 없어요!` |
 | `0.25 ≤ p < 0.50` | `관찰` | `관찰이 필요해요, 심각하진 않아요!` |
 | `0.50 ≤ p < 0.75` | `주의` | `주의가 필요해요, 술이 드시고 싶으신가요?` |
-| `p ≥ 0.75` | `심각` | `갈망이 심해보여요. 챗봇과 대화를 시작할까요?` |
+| `p ≥ 0.75` | `위험` | `갈망이 높게 감지됐어요. 챗봇과 대화를 시작할까요?` |
 
 Each AUQ bucket contains `averageScore` on the `0..48` scale and
 `averageNormalizedScore` on `0..1` for compatibility. New clients render
 `averageScore`; they may fall back to `averageNormalizedScore * 48` only when
 the raw-scale field is absent during coordinated rollout.
+
+### Day/week/month calendar aggregation
+
+`GET /api/me/craving-calendar?timezone=Asia/Seoul&view=day|week|month&anchor=YYYY-MM-DD`
+keeps the existing dashboard APIs intact and applies one selected period to
+stage, event, and AUQ charts. `view=day` returns 24 local-hour buckets;
+`view=week` treats the anchor as a date inside its local IANA-timezone week,
+normalizes the period to Monday 00:00 through the next Monday 00:00, and returns
+exactly seven Monday-through-Sunday daily buckets. `view=month` returns one
+bucket per local calendar day in the anchor month.
+Each bucket includes `stageCounts`, `sampleCount`, `hasPredictionData`,
+`eventCount`, `auqAverageScore`, and `auqResponseCount`. A bucket with
+`hasPredictionData=false` is “no measurement”; a populated bucket with
+`eventCount=0` is a valid zero-event period. The same day, week, or month
+selection always drives the stage, event, and AUQ series together.
 
 ## Camera rPPG
 
@@ -454,7 +499,8 @@ the current upload API accepts only 20-second captures.
 
 rPPG is a user-initiated point-in-time measurement, not continuous/background
 monitoring. A successful result keeps source `camera_rppg`, remains Phone-only,
-and is routed once into the same active-or-new session flow. A new session
+never creates a craving alert, and is routed once into the same active-or-new
+session flow. A new session
 offers AUQ or skip before free dialogue; an existing active session resumes
 directly. The Phone compares measurement timestamps, so a delayed older camera
 result cannot replace a newer Watch result. Public

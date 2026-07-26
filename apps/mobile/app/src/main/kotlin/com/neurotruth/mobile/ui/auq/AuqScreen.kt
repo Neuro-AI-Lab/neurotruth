@@ -2,11 +2,17 @@ package com.neurotruth.mobile.ui.auq
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -16,11 +22,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurotruth.mobile.NeuroTruthApp
@@ -32,7 +43,7 @@ import com.neurotruth.mobile.ui.theme.SectionCard
 import com.neurotruth.mobile.ui.theme.SecondaryButton
 
 /**
- * NT-06 · 자가보고 (AUQ).
+ * NT-06 · 자기설문 (AUQ).
  *
  * One item per screen with `1 / 8` progress, seven sentence-form choices and no numbers anywhere on
  * screen. `[건너뛰고 대화하기]` is offered on every item and never blocks the conversation.
@@ -50,13 +61,27 @@ fun AuqScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(state.done) {
-        if (state.done) onContinueToChat()
+    LaunchedEffect(state.shouldOpenChat) {
+        if (state.shouldOpenChat) onContinueToChat()
     }
 
+    val resultScore = state.resultScore
+    if (resultScore != null) {
+        AuqResultScreen(
+            score = resultScore,
+            onContinueToChat = onContinueToChat,
+            modifier = modifier,
+        )
+        return
+    }
+
+    var infoVisible by remember { mutableStateOf(false) }
+    val accessibilityScroll = LocalDensity.current.fontScale > 1.2f
     ScreenScaffold(
-        title = "지금의 상태",
+        title = "자기설문",
         modifier = modifier,
+        scroll = accessibilityScroll,
+        contentGap = 8.dp,
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.background) {
                 Column(
@@ -82,12 +107,12 @@ fun AuqScreen(
                             )
                         }
                         PrimaryButton(
-                            text = if (state.isLastItem) "저장하고 대화하기" else "다음",
+                            text = if (state.isLastItem) "결과 확인" else "다음",
                             onClick = if (state.isLastItem) viewModel::onSubmit else viewModel::onNext,
                             enabled = if (state.isLastItem) state.canSubmit else state.canAdvance,
                             loading = state.isSubmitting,
                             contentDescription = if (state.isLastItem) {
-                                "응답을 저장하고 대화 시작"
+                                "응답을 저장하고 결과 확인"
                             } else {
                                 "다음 문항으로"
                             },
@@ -101,7 +126,7 @@ fun AuqScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = NeuroTruthSpacing.minTouchTarget)
-                            .semantics { contentDescription = "자가보고를 건너뛰고 대화 시작" },
+                            .semantics { contentDescription = "자기설문을 건너뛰고 대화 시작" },
                     ) {
                         Text("건너뛰고 대화하기", style = MaterialTheme.typography.labelLarge)
                     }
@@ -109,33 +134,54 @@ fun AuqScreen(
             }
         },
     ) {
-        Text(
-            text = state.progressLabel,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics {
-                contentDescription = "전체 ${Auq.ITEM_COUNT}문항 중 ${state.index + 1}번째 문항"
-            },
-        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = state.progressLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics {
+                        contentDescription = "전체 ${Auq.ITEM_COUNT}문항 중 ${state.index + 1}번째 문항"
+                    },
+            )
+            IconButton(
+                onClick = { infoVisible = true },
+                modifier = Modifier.semantics { contentDescription = "AUQ 자기설문 설명" },
+            ) {
+                Icon(Icons.Outlined.Info, contentDescription = null)
+            }
+        }
         LinearProgressIndicator(
             progress = { state.progressFraction },
             modifier = Modifier.fillMaxWidth(),
         )
 
-        SectionCard {
+        SectionCard(
+            contentPadding = PaddingValues(12.dp),
+            contentGap = 4.dp,
+        ) {
             Text(
                 text = state.question.text,
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Auq.RESPONSE_LABELS.forEachIndexed { value, label ->
-                ResponseRow(
-                    label = label,
-                    selected = state.selectedResponse == value,
-                    enabled = !state.isSubmitting,
-                    onSelect = { viewModel.onResponseSelected(value) },
-                )
+            Auq.RESPONSE_LABELS.withIndex().chunked(2).forEach { choices ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    choices.forEach { choice ->
+                        ResponseRow(
+                            label = choice.value,
+                            selected = state.selectedResponse == choice.index,
+                            enabled = !state.isSubmitting,
+                            onSelect = { viewModel.onResponseSelected(choice.index) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
 
@@ -159,6 +205,55 @@ fun AuqScreen(
             )
         }
     }
+    if (infoVisible) {
+        AlertDialog(
+            onDismissRequest = { infoVisible = false },
+            confirmButton = {
+                TextButton(onClick = { infoVisible = false }) { Text("확인") }
+            },
+            title = { Text("AUQ 자기설문 안내") },
+            text = {
+                Text(
+                    "AUQ는 음주 욕구를 확인하는 8문항·7점 척도입니다. " +
+                        "현재 문항은 AUQ를 참고한 연구용 한국어 adaptation이며, " +
+                        "결과는 진단이나 임상 판정이 아닙니다.",
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun AuqResultScreen(
+    score: Int,
+    onContinueToChat: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ScreenScaffold(title = "자기설문 결과", modifier = modifier, scroll = false) {
+        SectionCard {
+            Text(
+                text = "총점 $score/${Auq.SCALE_MAX}",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.semantics {
+                    contentDescription = "자기설문 총점 ${score}점, ${Auq.SCALE_MAX}점 만점"
+                },
+            )
+            Text(
+                text = "점수가 높을수록 당시 음주 욕구 관련 응답이 높았습니다.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = "이 결과는 연구용 기록이며 진단이나 임상 판정이 아닙니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        PrimaryButton(
+            text = "챗봇으로 이동",
+            onClick = onContinueToChat,
+            contentDescription = "자기설문 결과를 확인하고 챗봇으로 이동",
+        )
+    }
 }
 
 /** The sentence is the whole choice; the API value behind it is never rendered. */
@@ -168,6 +263,7 @@ private fun ResponseRow(
     selected: Boolean,
     enabled: Boolean,
     onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // if/else — never an early return — so this content lambda always runs to a balanced end.
     if (selected) {
@@ -175,7 +271,7 @@ private fun ResponseRow(
             onClick = onSelect,
             enabled = enabled,
             shape = MaterialTheme.shapes.large,
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .heightIn(min = NeuroTruthSpacing.minTouchTarget)
                 .semantics {
@@ -194,7 +290,7 @@ private fun ResponseRow(
             onClick = onSelect,
             enabled = enabled,
             shape = MaterialTheme.shapes.large,
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .heightIn(min = NeuroTruthSpacing.minTouchTarget)
                 .semantics {

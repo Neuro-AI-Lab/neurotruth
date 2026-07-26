@@ -121,11 +121,14 @@ class DashboardService:
             value = float(row["average_probability"])
             if not math.isfinite(value):
                 continue
-            points.append({
+            point = {
                 "at": bucket_at.isoformat(),
                 "averageCravingProbability": round(min(1.0, max(0.0, value)), 6),
                 "sampleCount": int(row["sample_count"]),
-            })
+            }
+            if row.get("prediction_id") is not None:
+                point["predictionId"] = str(row["prediction_id"])
+            points.append(point)
         points.sort(key=lambda item: item["at"])
         points = points[-max_points:]
         return {
@@ -265,6 +268,100 @@ class DashboardService:
                 "bucketUnit": auq_bucket_unit,
                 "buckets": auq_buckets,
             },
+        }
+
+    async def craving_calendar(
+        self,
+        patient_id: UUID,
+        timezone_name: str,
+        view: str,
+        anchor: date,
+    ) -> dict[str, Any]:
+        if view not in {"day", "week", "month"}:
+            raise DashboardRangeError("Unsupported calendar view")
+        try:
+            local_zone = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise DashboardTimezoneError("Invalid IANA timezone") from exc
+
+        if view == "day":
+            local_start_date = anchor
+            local_end_date = anchor + timedelta(days=1)
+            bucket_unit = "hour"
+        elif view == "week":
+            local_start_date = anchor - timedelta(days=anchor.weekday())
+            local_end_date = local_start_date + timedelta(days=7)
+            bucket_unit = "day"
+        else:
+            local_start_date = anchor.replace(day=1)
+            local_end_date = (
+                date(local_start_date.year + 1, 1, 1)
+                if local_start_date.month == 12
+                else date(local_start_date.year, local_start_date.month + 1, 1)
+            )
+            bucket_unit = "day"
+
+        local_start = datetime.combine(local_start_date, time.min, tzinfo=local_zone)
+        local_end = datetime.combine(local_end_date, time.min, tzinfo=local_zone)
+        rows = await self.repository.craving_calendar_rows(
+            patient_id,
+            timezone_name,
+            local_start.astimezone(timezone.utc),
+            local_end.astimezone(timezone.utc),
+            bucket_unit,
+        )
+        stage_rows = {row["bucket_key"]: row for row in rows["stages"]}
+        alert_rows = {row["bucket_key"]: row for row in rows["alerts"]}
+        auq_rows = {row["bucket_key"]: row for row in rows["auq"]}
+
+        buckets = []
+        count = 24 if bucket_unit == "hour" else (local_end_date - local_start_date).days
+        for offset in range(count):
+            if bucket_unit == "hour":
+                key: Any = offset
+                bucket_start = datetime.combine(
+                    local_start_date, time(hour=offset), tzinfo=local_zone,
+                )
+                identity = {"localStart": bucket_start.isoformat()}
+            else:
+                key = local_start_date + timedelta(days=offset)
+                identity = {"localDate": key.isoformat()}
+            stage = stage_rows.get(key)
+            alert = alert_rows.get(key)
+            auq = auq_rows.get(key)
+            sample_count = int(stage["sample_count"]) if stage else 0
+            response_count = int(auq["response_count"]) if auq else 0
+            average_score = (
+                round(min(48.0, max(0.0, float(auq["average_score"]))), 2)
+                if auq and auq.get("average_score") is not None else None
+            )
+            buckets.append({
+                **identity,
+                "hasPredictionData": sample_count > 0,
+                "sampleCount": sample_count,
+                "stageCounts": {
+                    "low": int(stage["low_count"]) if stage else 0,
+                    "observe": int(stage["observe_count"]) if stage else 0,
+                    "caution": int(stage["caution_count"]) if stage else 0,
+                    "high": int(stage["high_count"]) if stage else 0,
+                },
+                "eventCount": int(alert["event_count"]) if alert else 0,
+                "auqAverageScore": average_score,
+                "auqResponseCount": response_count,
+            })
+
+        return {
+            "timezone": timezone_name,
+            "view": view,
+            "anchor": anchor.isoformat(),
+            "bucketUnit": bucket_unit,
+            "period": {
+                "localStart": local_start.isoformat(),
+                "localEnd": local_end.isoformat(),
+                "from": local_start.astimezone(timezone.utc).isoformat(),
+                "to": local_end.astimezone(timezone.utc).isoformat(),
+            },
+            "buckets": buckets,
         }
 
     async def ppg_preview(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any]:

@@ -11,6 +11,7 @@ EXPECTED_PUBLIC_OPERATIONS = {
     ("get", "/api/admin/rppg/captures"),
     ("get", "/api/admin/settings"),
     ("get", "/api/me"),
+    ("get", "/api/me/craving-calendar"),
     ("get", "/api/me/craving-dashboard"),
     ("get", "/api/me/craving-probability-series"),
     ("get", "/api/me/dashboard"),

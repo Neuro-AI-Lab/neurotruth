@@ -291,9 +291,14 @@ class RppgService:
             await self.repository.finish_failure(job_id, code="RPPG_CRAVING_MODEL_FAILED", retry_allowed=False,
                                                  provider_encrypted=provider_encrypted, key_version=key_version)
             return
-        consent = await self.v25_repository.current_consent(patient_id)
-        notify = bool(consent and consent.notification)
-        alert = self.alert_decider(patient_id, prediction) if notify else {"alertRequired": False, "alertAction": "none"}
+        # Camera measurements remain available for history and chat handoff, but
+        # only Watch sensor predictions may create craving alerts.
+        alert = {
+            "alertLevel": "none",
+            "alertRequired": False,
+            "alertAction": "none",
+            "triggerReason": "camera_rppg_alert_excluded",
+        }
         public_prediction = {
             key: value
             for key, value in {
@@ -322,8 +327,7 @@ class RppgService:
         await self.repository.finish_success(
             job_id=job_id, patient_id=patient_id, prediction_id=uuid4(), model_version_id=craving_model,
             rppg_model_version_id=rppg_model, captured_at=row["captured_at"], duration_ms=row["duration_ms"],
-            prediction=public_prediction, alert_id=uuid4() if notify and (
-                alert.get("alertRequired") or alert.get("alertAction") not in {None, "none"}) else None,
+            prediction=public_prediction, alert_id=None,
             alert=alert, waveform_encrypted=waveform_encrypted, **common,
         )
 

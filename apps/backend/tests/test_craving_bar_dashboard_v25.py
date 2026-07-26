@@ -11,6 +11,7 @@ import pytest
 
 from app.core.security.crypto import AesGcmKeyring
 from app.services.dashboard import (
+    DashboardRangeError,
     DashboardService,
     DashboardTimezoneError,
 )
@@ -33,6 +34,10 @@ class Repo:
             "average_probability": Decimal("0.75"),
             "sample_count": 1,
         }]
+
+    async def craving_calendar_rows(self, *args):
+        self.calls.append(args)
+        return self.rows
 
 
 class Storage:
@@ -228,3 +233,162 @@ def test_invalid_timezone_is_rejected() -> None:
                 uuid4(), "Not/AZone", "7d", "today",
             )
     asyncio.run(scenario())
+
+
+def test_day_calendar_returns_complete_hour_buckets_and_zero_event_distinction() -> None:
+    async def scenario():
+        payload = {
+            "stages": [{
+                "bucket_key": 10,
+                "sample_count": 3,
+                "low_count": 1,
+                "observe_count": 1,
+                "caution_count": 0,
+                "high_count": 1,
+            }],
+            "alerts": [{"bucket_key": 10, "event_count": 1}],
+            "auq": [{
+                "bucket_key": 10,
+                "average_score": Decimal("24.5"),
+                "response_count": 2,
+            }],
+        }
+        repo = Repo(payload)
+        result = await DashboardService(repo, ring(), Storage()).craving_calendar(
+            uuid4(), "Asia/Seoul", "day", date(2026, 7, 16),
+        )
+        assert result["view"] == "day" and result["bucketUnit"] == "hour"
+        assert len(result["buckets"]) == 24
+        bucket = result["buckets"][10]
+        assert bucket["hasPredictionData"] is True
+        assert bucket["stageCounts"] == {
+            "low": 1, "observe": 1, "caution": 0, "high": 1,
+        }
+        assert bucket["eventCount"] == 1
+        assert bucket["auqAverageScore"] == 24.5
+        assert bucket["auqResponseCount"] == 2
+        empty = result["buckets"][11]
+        assert empty["hasPredictionData"] is False
+        assert empty["eventCount"] == 0
+        _, zone, start, end, unit = repo.calls[0]
+        assert zone == "Asia/Seoul" and unit == "hour"
+        assert (end - start).total_seconds() == 24 * 60 * 60
+
+    asyncio.run(scenario())
+
+
+def test_month_calendar_uses_actual_month_length_and_local_dates() -> None:
+    async def scenario():
+        payload = {
+            "stages": [{
+                "bucket_key": date(2028, 2, 29),
+                "sample_count": 1,
+                "low_count": 0,
+                "observe_count": 0,
+                "caution_count": 0,
+                "high_count": 1,
+            }],
+            "alerts": [],
+            "auq": [],
+        }
+        result = await DashboardService(Repo(payload), ring(), Storage()).craving_calendar(
+            uuid4(), "Asia/Seoul", "month", date(2028, 2, 12),
+        )
+        assert result["bucketUnit"] == "day"
+        assert len(result["buckets"]) == 29
+        assert result["buckets"][-1]["localDate"] == "2028-02-29"
+        assert result["buckets"][-1]["stageCounts"]["high"] == 1
+        assert result["period"]["localStart"].startswith("2028-02-01")
+        assert result["period"]["localEnd"].startswith("2028-03-01")
+
+    asyncio.run(scenario())
+
+
+def test_week_calendar_normalizes_to_monday_and_returns_seven_cross_month_days() -> None:
+    async def scenario():
+        payload = {
+            "stages": [{
+                "bucket_key": date(2026, 3, 1),
+                "sample_count": 2,
+                "low_count": 0,
+                "observe_count": 1,
+                "caution_count": 0,
+                "high_count": 1,
+            }],
+            "alerts": [{"bucket_key": date(2026, 3, 1), "event_count": 1}],
+            "auq": [{
+                "bucket_key": date(2026, 3, 1),
+                "average_score": Decimal("20"),
+                "response_count": 1,
+            }],
+        }
+        repo = Repo(payload)
+        result = await DashboardService(repo, ring(), Storage()).craving_calendar(
+            uuid4(), "Asia/Seoul", "week", date(2026, 2, 26),
+        )
+        assert result["view"] == "week" and result["bucketUnit"] == "day"
+        assert len(result["buckets"]) == 7
+        assert [row["localDate"] for row in result["buckets"]] == [
+            "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26",
+            "2026-02-27", "2026-02-28", "2026-03-01",
+        ]
+        assert result["buckets"][-1]["stageCounts"]["high"] == 1
+        assert result["buckets"][-1]["eventCount"] == 1
+        assert result["buckets"][-1]["auqAverageScore"] == 20.0
+        assert result["period"]["localStart"].startswith("2026-02-23")
+        assert result["period"]["localEnd"].startswith("2026-03-02")
+        _, zone, start, end, unit = repo.calls[0]
+        assert zone == "Asia/Seoul" and unit == "day"
+        assert (end - start).total_seconds() == 7 * 24 * 60 * 60
+
+    asyncio.run(scenario())
+
+
+def test_week_calendar_uses_timezone_aware_boundaries_across_dst() -> None:
+    async def scenario():
+        repo = Repo({"stages": [], "alerts": [], "auq": []})
+        result = await DashboardService(repo, ring(), Storage()).craving_calendar(
+            uuid4(), "America/New_York", "week", date(2026, 11, 1),
+        )
+        assert result["period"]["localStart"].startswith("2026-10-26")
+        assert result["period"]["localEnd"].startswith("2026-11-02")
+        assert len(result["buckets"]) == 7
+        _, _, start, end, unit = repo.calls[0]
+        assert unit == "day"
+        assert (end - start).total_seconds() == 7 * 24 * 60 * 60 + 60 * 60
+
+    asyncio.run(scenario())
+
+
+def test_calendar_dst_day_uses_24_wall_clock_labels() -> None:
+    async def scenario():
+        payload = {"stages": [], "alerts": [], "auq": []}
+        repo = Repo(payload)
+        result = await DashboardService(repo, ring(), Storage()).craving_calendar(
+            uuid4(), "America/New_York", "day", date(2026, 11, 1),
+        )
+        assert len(result["buckets"]) == 24
+        assert [datetime.fromisoformat(row["localStart"]).hour for row in result["buckets"]] == list(range(24))
+        _, _, start, end, _ = repo.calls[0]
+        assert (end - start).total_seconds() == 25 * 60 * 60
+
+    asyncio.run(scenario())
+
+
+def test_calendar_invalid_timezone_and_view_are_rejected() -> None:
+    async def scenario():
+        service = DashboardService(Repo({"stages": [], "alerts": [], "auq": []}), ring(), Storage())
+        with pytest.raises(DashboardTimezoneError):
+            await service.craving_calendar(uuid4(), "Not/AZone", "day", date.today())
+        with pytest.raises(DashboardRangeError):
+            await service.craving_calendar(uuid4(), "Asia/Seoul", "year", date.today())
+
+    asyncio.run(scenario())
+
+
+def test_calendar_sql_keeps_non_overlapping_stage_boundaries() -> None:
+    source = getsource(SqlAlchemyV25Repository.craving_calendar_rows)
+    assert "p.continuous_value < 0.25" in source
+    assert "p.continuous_value >= 0.25 AND p.continuous_value < 0.50" in source
+    assert "p.continuous_value >= 0.50 AND p.continuous_value < 0.75" in source
+    assert "p.continuous_value >= 0.75" in source

@@ -7,6 +7,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from inspect import getsource
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -18,7 +19,7 @@ from fastapi.testclient import TestClient
 from app.core.security.crypto import AesGcmKeyring
 from app.services.auth import AuthorizationError
 from app.models.records import SensorResultRecord
-from app.repositories.postgres import RepositoryConflictError
+from app.repositories.postgres import RepositoryConflictError, SqlAlchemyV25Repository
 from app.api.v1.routes.sensor import SensorWindow, get_sensor_service, prediction_stream, router
 from app.api.v1.dependencies import get_runtime, patient_user
 from app.services.prediction import PatientPredictionHub
@@ -185,12 +186,14 @@ def test_ingestion_persists_encrypted_file_and_is_idempotent() -> None:
                                           ai_analysis_allowed=True, notification_allowed=True, payload=body)
             assert first == second
             assert predictor.calls == 1
-            assert first["class"] == 1 and first["recordingId"] and first["predictionId"] and first["alertId"]
+            assert first["class"] == 1 and first["recordingId"] and first["predictionId"]
+            assert first["alertId"] is None
             assert first["cravingProbability"] == 0.91
             assert first["source"] == "watch_sensor"
             assert "_lat" not in first and "_readyPerf" not in first
             assert "_lat" not in repo.prediction_values["prediction"]
             assert repo.prediction_values["prediction"]["source"] == "watch_sensor"
+            assert repo.prediction_values["notification_allowed"] is True
             stored_path = Path(directory) / repo.recording_values["storage_uri"]
             assert stored_path.is_file()
             assert canonical_sensor_json(body) not in stored_path.read_bytes()
@@ -251,7 +254,7 @@ def test_duplicate_time_window_with_new_client_id_reuses_prediction() -> None:
     asyncio.run(scenario())
 
 
-def test_concurrent_identical_retry_predicts_persists_alerts_and_publishes_once() -> None:
+def test_concurrent_identical_retry_predicts_persists_and_publishes_once() -> None:
     async def scenario() -> None:
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             service, repo, predictor = make_service(directory)
@@ -292,7 +295,8 @@ def test_concurrent_identical_retry_predicts_persists_alerts_and_publishes_once(
             first_result, second_result = await asyncio.gather(first, second)
 
             assert first_result == second_result
-            assert predictor.calls == alert_calls == repo.recording_calls == repo.prediction_calls == 1
+            assert predictor.calls == repo.recording_calls == repo.prediction_calls == 1
+            assert alert_calls == 0
             published = await asyncio.wait_for(queue.get(), timeout=0.1)
             assert published["predictionId"] == first_result["predictionId"]
             with pytest.raises(asyncio.TimeoutError):
@@ -438,6 +442,16 @@ def test_notification_consent_off_persists_and_publishes_prediction_without_aler
             await service.hub.unsubscribe(patient_id, queue)
 
     asyncio.run(scenario())
+
+
+def test_repository_alert_decision_is_durable_atomic_and_watch_only() -> None:
+    source = getsource(SqlAlchemyV25Repository.persist_sensor_prediction)
+    assert "pg_advisory_xact_lock" in source
+    assert "craving-alert:" in source
+    assert "p.output_metadata->>'source'='watch_sensor'" in source
+    assert "ORDER BY p.predicted_at DESC,p.id DESC" in source
+    assert "'watch-danger-v1'" in source
+    assert "notification_allowed" in source
 
 
 def test_prediction_hub_never_crosses_patient_queues() -> None:

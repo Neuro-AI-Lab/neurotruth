@@ -2,6 +2,12 @@ package com.neurotruth.mobile.data
 
 import com.neurotruth.mobile.core.Auq
 import com.neurotruth.mobile.core.CravingStage
+import com.neurotruth.mobile.core.net.ApiEndpoints
+import com.neurotruth.mobile.core.net.ApiRequest
+import com.neurotruth.mobile.core.net.ApiResponse
+import com.neurotruth.mobile.core.net.ApiTransport
+import com.neurotruth.mobile.core.net.AuthenticatedApiClient
+import com.neurotruth.mobile.core.net.InMemoryRefreshTokenStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -344,9 +350,140 @@ class DashboardParserTest {
         assertEquals(1, with.selectablePoints.size)
     }
 
+    @Test
+    fun `recent points map to the four display stages without interpolation`() {
+        val series = CravingProbabilitySeriesParser.parse(
+            seriesJson(
+                point("2026-07-21T10:00:00+00:00", 0.10),
+                point("2026-07-21T10:00:10+00:00", 0.25),
+                point("2026-07-21T10:00:20+00:00", 0.50),
+                point("2026-07-21T10:00:30+00:00", 0.75),
+            ),
+        )
+        assertEquals(
+            listOf(
+                CravingStage.SAFE,
+                CravingStage.OBSERVE,
+                CravingStage.CAUTION,
+                CravingStage.SEVERE,
+            ),
+            series.points.map { it.stage },
+        )
+    }
+
+    @Test
+    fun `day calendar parses synchronized stage event and AUQ buckets`() {
+        val calendar = CravingCalendarParser.parse(
+            """
+            {
+              "timezone":"Asia/Seoul","view":"day","anchor":"2026-07-25","bucketUnit":"hour",
+              "period":{"localStart":"2026-07-25T00:00:00+09:00","localEnd":"2026-07-26T00:00:00+09:00"},
+              "buckets":[
+                {"localStart":"2026-07-25T10:00:00+09:00","hasPredictionData":true,
+                 "sampleCount":6,"stageCounts":{"low":1,"observe":2,"caution":1,"high":2},
+                 "eventCount":1,"auqAverageScore":24.5,"auqResponseCount":2},
+                {"localStart":"2026-07-25T11:00:00+09:00","hasPredictionData":false,
+                 "sampleCount":0,"stageCounts":{"low":0,"observe":0,"caution":0,"high":0},
+                 "eventCount":0,"auqAverageScore":null,"auqResponseCount":0}
+              ]
+            }
+            """.trimIndent(),
+        )
+        assertEquals("hour", calendar.bucketUnit)
+        assertEquals("10시", calendar.buckets.first().label)
+        assertEquals(2, calendar.buckets.first().stageCounts[CravingStage.SEVERE])
+        assertEquals(1, calendar.buckets.first().eventCount)
+        assertEquals(24.5f, calendar.buckets.first().auqAverageScore!!, 1e-4f)
+        assertTrue(calendar.buckets.first().hasStageData)
+        assertTrue(calendar.buckets.first().hasAuqData)
+        assertFalse(calendar.buckets.last().hasPredictionData)
+    }
+
+    @Test
+    fun `month calendar preserves a measured zero event and an unmeasured day`() {
+        val calendar = CravingCalendarParser.parse(
+            """
+            {
+              "timezone":"Asia/Seoul","view":"month","anchor":"2026-07-25","bucketUnit":"day",
+              "period":{"localStart":"2026-07-01T00:00:00+09:00","localEnd":"2026-08-01T00:00:00+09:00"},
+              "buckets":[
+                {"localDate":"2026-07-01","hasPredictionData":true,"sampleCount":2,
+                 "stageCounts":{"low":2,"observe":0,"caution":0,"high":0},"eventCount":0,
+                 "auqAverageScore":null,"auqResponseCount":0},
+                {"localDate":"2026-07-02","hasPredictionData":false,"sampleCount":0,
+                 "stageCounts":{"low":0,"observe":0,"caution":0,"high":0},"eventCount":0,
+                 "auqAverageScore":null,"auqResponseCount":0}
+              ]
+            }
+            """.trimIndent(),
+        )
+        assertEquals("7/01", calendar.buckets.first().label)
+        assertTrue(calendar.buckets.first().hasPredictionData)
+        assertEquals(0, calendar.buckets.first().eventCount)
+        assertFalse(calendar.buckets.last().hasPredictionData)
+    }
+
+    @Test
+    fun `week calendar parses seven synchronized daily buckets across a month boundary`() {
+        val calendar = CravingCalendarParser.parse(weeklyCalendarJson())
+
+        assertEquals(DashboardRepository.CALENDAR_VIEW_WEEK, calendar.view)
+        assertEquals("day", calendar.bucketUnit)
+        assertEquals(7, calendar.buckets.size)
+        assertEquals("6/29", calendar.buckets.first().label)
+        assertEquals("7/05", calendar.buckets.last().label)
+        assertTrue(calendar.buckets.first().hasStageData)
+        assertTrue(calendar.buckets.last().hasAuqData)
+    }
+
+    @Test
+    fun `calendar client accepts week and requests the weekly endpoint`() {
+        val endpoints = ApiEndpoints("https://neurotruth.example")
+        val requests = mutableListOf<ApiRequest>()
+        val transport = ApiTransport { request ->
+            requests.add(request)
+            if (request.url == endpoints.refresh) {
+                ApiResponse(
+                    200,
+                    """{"user":{"id":"u-1","email":"patient@example.com","role":"patient","status":"active"},"accessToken":"access-1","refreshToken":"refresh-1","expiresIn":900}""",
+                )
+            } else {
+                ApiResponse(200, weeklyCalendarJson())
+            }
+        }
+        val client = AuthenticatedApiClient(
+            endpoints,
+            transport,
+            InMemoryRefreshTokenStore("refresh-0"),
+        ).apply { recoverSession() }
+
+        val calendar = DashboardRepository(client, endpoints).cravingCalendar(
+            timezone = "Asia/Seoul",
+            view = DashboardRepository.CALENDAR_VIEW_WEEK,
+            anchor = "2026-07-01",
+        )
+
+        assertEquals(7, calendar.buckets.size)
+        assertTrue(requests.any { it.url.contains("view=week") && it.url.contains("anchor=2026-07-01") })
+    }
+
     // -----------------------------------------------------------------------------------------
     // helpers
     // -----------------------------------------------------------------------------------------
+
+    private fun weeklyCalendarJson(): String {
+        val buckets = (0 until 7).joinToString(",") { index ->
+            val date = if (index < 2) "2026-06-${29 + index}" else "2026-07-%02d".format(index - 1)
+            """{"localDate":"$date","hasPredictionData":true,"sampleCount":1,"stageCounts":{"low":1,"observe":0,"caution":0,"high":0},"eventCount":0,"auqAverageScore":${if (index == 6) "12.0" else "null"},"auqResponseCount":${if (index == 6) 1 else 0}}"""
+        }
+        return """
+            {
+              "timezone":"Asia/Seoul","view":"week","anchor":"2026-07-01","bucketUnit":"day",
+              "period":{"localStart":"2026-06-29T00:00:00+09:00","localEnd":"2026-07-06T00:00:00+09:00"},
+              "buckets":[$buckets]
+            }
+        """.trimIndent()
+    }
 
     private fun ppgJson(count: Int): String {
         val samples = (0 until count).joinToString(",") { index ->

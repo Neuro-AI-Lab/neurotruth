@@ -21,7 +21,7 @@ class CravingStageTest {
 
     @Test
     fun `a probability the binary classifier calls high is still 주의`() {
-        // classCode is already "high" at p >= 0.5. Deriving the stage from it would show 심각 here.
+        // classCode is already "high" at p >= 0.5. Deriving the stage from it would show 위험 here.
         val prediction = CravingPrediction(
             cravingProbability = 0.60f,
             timestampMs = 1_784_160_000_000L,
@@ -34,9 +34,13 @@ class CravingStageTest {
 
     @Test
     fun `patient copy is fixed per band`() {
+        assertEquals("안정", CravingStage.SAFE.label)
         assertEquals("아무 문제 없어요!", CravingStage.SAFE.message)
+        assertEquals("관찰", CravingStage.OBSERVE.label)
         assertEquals("관찰이 필요해요, 심각하진 않아요!", CravingStage.OBSERVE.message)
-        assertEquals("갈망이 심해보여요. 챗봇과 대화를 시작할까요?", CravingStage.SEVERE.message)
+        assertEquals("주의", CravingStage.CAUTION.label)
+        assertEquals("위험", CravingStage.SEVERE.label)
+        assertEquals("갈망이 높게 감지됐어요. 챗봇과 대화를 시작할까요?", CravingStage.SEVERE.message)
     }
 
     @Test

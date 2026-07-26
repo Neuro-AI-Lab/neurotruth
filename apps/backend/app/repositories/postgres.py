@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -20,6 +20,7 @@ from app.models.records import (
     SystemSettingsRecord,
     UserRecord,
 )
+from app.ml.craving.pipeline import AlertConfig, AlertEvaluator
 from app.schemas.auth import ConsentInput
 
 
@@ -175,6 +176,10 @@ class V25Repository(ABC):
         self, patient_id: UUID, timezone_name: str, day_start: datetime, day_end: datetime,
         event_start: datetime, auq_start: datetime, auq_bucket_unit: str,
     ) -> dict[str, Any]: raise NotImplementedError
+    async def craving_calendar_rows(
+        self, patient_id: UUID, timezone_name: str, period_start: datetime,
+        period_end: datetime, bucket_unit: str,
+    ) -> dict[str, list[dict[str, Any]]]: raise NotImplementedError
     async def prediction_sensor(self, patient_id: UUID, prediction_id: UUID) -> dict[str, Any] | None: raise NotImplementedError
     async def ensure_rule_model_version(self, *, component: str, rule_version: str) -> UUID: raise NotImplementedError
     @asynccontextmanager
@@ -511,6 +516,12 @@ class SqlAlchemyV25Repository(V25Repository):
         import json
         try:
             async with self.engine.begin() as conn:
+                # Serialize prediction+alert decisions for one patient so retries,
+                # concurrent windows, and process restarts share the same DB state.
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                    {"key": f"craving-alert:{values['patient_id']}"},
+                )
                 recording = (await conn.execute(text("""
                     SELECT id,patient_id,client_window_id,checksum_sha256
                     FROM sensor_recordings
@@ -582,23 +593,89 @@ class SqlAlchemyV25Repository(V25Repository):
                         checksum_sha256=duplicate["checksum_sha256"],
                         prediction=dict(duplicate["output_metadata"] or {}),
                     )
-                if values.get("alert_id") is not None:
-                    alert = values.get("alert") or {}
+
+                config = AlertConfig.from_env()
+                recent_rows = (await conn.execute(text("""
+                    SELECT p.id,p.continuous_value,p.predicted_at
+                    FROM craving_predictions p
+                    WHERE p.patient_id=:patient_id
+                      AND p.quality_gate_passed
+                      AND p.continuous_value IS NOT NULL
+                      AND p.output_metadata->>'source'='watch_sensor'
+                    ORDER BY p.predicted_at DESC,p.id DESC
+                    LIMIT :streak
+                """), {
+                    "patient_id": values["patient_id"],
+                    "streak": max(1, config.danger_streak),
+                })).mappings().all()
+                current_is_latest = bool(
+                    recent_rows and recent_rows[0]["id"] == inserted_prediction_id
+                )
+                if current_is_latest:
+                    samples = [
+                        (
+                            float(row["continuous_value"]),
+                            int(row["predicted_at"].timestamp() * 1000),
+                        )
+                        for row in reversed(recent_rows)
+                    ]
+                    last_alert_at = await conn.scalar(text("""
+                        SELECT max(a.triggered_at)
+                        FROM craving_alerts a
+                        JOIN craving_predictions p
+                          ON p.id=a.trigger_prediction_id
+                         AND p.patient_id=a.patient_id
+                        WHERE a.patient_id=:patient_id
+                          AND p.output_metadata->>'source'='watch_sensor'
+                    """), {"patient_id": values["patient_id"]})
+                    last_alert_ms = (
+                        int(last_alert_at.timestamp() * 1000)
+                        if last_alert_at is not None else None
+                    )
+                    decision = AlertEvaluator(config).evaluate_history(
+                        samples,
+                        last_alert_ms=last_alert_ms,
+                        notification_allowed=bool(values.get("notification_allowed")),
+                    )
+                    alert = decision.as_dict()
+                else:
+                    alert = {
+                        "alertLevel": "none",
+                        "alertAction": "none",
+                        "windowMean": 0.0,
+                        "classOneRatio": 0.0,
+                        "triggerReason": "out_of_order_prediction",
+                        "alertRequired": False,
+                    }
+
+                prediction = {**dict(values["prediction"]), **alert}
+                await conn.execute(text("""
+                    UPDATE craving_predictions
+                    SET output_metadata=CAST(:prediction_json AS jsonb)
+                    WHERE id=:prediction_id
+                """), {
+                    "prediction_id": inserted_prediction_id,
+                    "prediction_json": json.dumps(prediction, separators=(",", ":")),
+                })
+
+                alert_id = uuid4() if alert["alertRequired"] else None
+                if alert_id is not None:
                     await conn.execute(text("""
                         INSERT INTO craving_alerts
                           (id,patient_id,trigger_prediction_id,rule_code,rule_version,trigger_reason,
                            status,notification_channel,triggered_at)
-                        VALUES (:alert_id,:patient_id,:prediction_id,:rule_code,'v1',
+                        VALUES (:alert_id,:patient_id,:prediction_id,
+                          'required_intervention','watch-danger-v1',
                           CAST(:reason AS jsonb),'triggered','in_app',:predicted_at)
                     """), {
                         **values,
-                        "rule_code": str(alert.get("alertAction") or alert.get("triggerReason") or "threshold")[:64],
+                        "alert_id": alert_id,
                         "reason": json.dumps(alert, separators=(",", ":")),
                     })
             return SensorResultRecord(
                 recording_id=recording["id"], prediction_id=values["prediction_id"],
-                alert_id=values.get("alert_id"), client_window_id=recording["client_window_id"],
-                checksum_sha256=recording["checksum_sha256"], prediction=dict(values["prediction"]),
+                alert_id=alert_id, client_window_id=recording["client_window_id"],
+                checksum_sha256=recording["checksum_sha256"], prediction=prediction,
             )
         except IntegrityError as exc:
             raise RepositoryConflictError("Sensor prediction already exists") from exc
@@ -1181,7 +1258,10 @@ class SqlAlchemyV25Repository(V25Repository):
                                floor(extract(epoch FROM p.predicted_at) / :bucket) * :bucket
                            ) AS bucket_at,
                            avg(p.continuous_value) AS average_probability,
-                           count(*) AS sample_count
+                           count(*) AS sample_count,
+                           (array_agg(p.id ORDER BY p.predicted_at DESC)
+                               FILTER (WHERE p.sensor_recording_id IS NOT NULL))[1]
+                               AS prediction_id
                     FROM craving_predictions p
                     JOIN model_versions m ON m.id=p.model_version_id
                     WHERE p.patient_id=:patient
@@ -1191,7 +1271,7 @@ class SqlAlchemyV25Repository(V25Repository):
                       AND m.inference_task='binary_classification'
                     GROUP BY bucket_at
                 )
-                SELECT bucket_at,average_probability,sample_count
+                SELECT bucket_at,average_probability,sample_count,prediction_id
                 FROM (
                     SELECT * FROM bucketed ORDER BY bucket_at DESC LIMIT :max_points
                 ) AS recent
@@ -1326,6 +1406,93 @@ class SqlAlchemyV25Repository(V25Repository):
             "hourly": [dict(row) for row in hourly],
             "prediction_days": [dict(row) for row in prediction_days],
             "alert_days": [dict(row) for row in alert_days],
+            "auq": [dict(row) for row in auq],
+        }
+
+    async def craving_calendar_rows(
+        self,
+        patient_id: UUID,
+        timezone_name: str,
+        period_start: datetime,
+        period_end: datetime,
+        bucket_unit: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        bucket_prediction = (
+            "extract(hour FROM timezone(:timezone,p.predicted_at))::int"
+            if bucket_unit == "hour"
+            else "timezone(:timezone,p.predicted_at)::date"
+        )
+        bucket_alert = (
+            "extract(hour FROM timezone(:timezone,a.triggered_at))::int"
+            if bucket_unit == "hour"
+            else "timezone(:timezone,a.triggered_at)::date"
+        )
+        bucket_auq = (
+            "extract(hour FROM timezone(:timezone,a.completed_at))::int"
+            if bucket_unit == "hour"
+            else "timezone(:timezone,a.completed_at)::date"
+        )
+        params = {
+            "patient": patient_id,
+            "timezone": timezone_name,
+            "period_start": period_start,
+            "period_end": period_end,
+        }
+        prediction_filter = """
+            p.patient_id=:patient
+            AND p.predicted_at>=:period_start AND p.predicted_at<:period_end
+            AND p.quality_gate_passed
+            AND p.continuous_value IS NOT NULL
+            AND m.component='craving_model'
+            AND m.inference_task='binary_classification'
+        """
+        async with self.engine.connect() as conn:
+            stages = (await conn.execute(text(f"""
+                SELECT {bucket_prediction} AS bucket_key,
+                       count(*) AS sample_count,
+                       count(*) FILTER (WHERE p.continuous_value < 0.25) AS low_count,
+                       count(*) FILTER (
+                         WHERE p.continuous_value >= 0.25 AND p.continuous_value < 0.50
+                       ) AS observe_count,
+                       count(*) FILTER (
+                         WHERE p.continuous_value >= 0.50 AND p.continuous_value < 0.75
+                       ) AS caution_count,
+                       count(*) FILTER (WHERE p.continuous_value >= 0.75) AS high_count
+                FROM craving_predictions p
+                JOIN model_versions m ON m.id=p.model_version_id
+                WHERE {prediction_filter}
+                GROUP BY bucket_key ORDER BY bucket_key
+            """), params)).mappings().all()
+            alerts = (await conn.execute(text(f"""
+                SELECT {bucket_alert} AS bucket_key,count(*) AS event_count
+                FROM craving_alerts a
+                JOIN craving_predictions p
+                  ON p.id=a.trigger_prediction_id AND p.patient_id=a.patient_id
+                JOIN model_versions m ON m.id=p.model_version_id
+                WHERE a.patient_id=:patient
+                  AND a.triggered_at>=:period_start AND a.triggered_at<:period_end
+                  AND m.component='craving_model'
+                  AND m.inference_task='binary_classification'
+                GROUP BY bucket_key ORDER BY bucket_key
+            """), params)).mappings().all()
+            auq = (await conn.execute(text(f"""
+                SELECT {bucket_auq} AS bucket_key,
+                       avg(
+                         LEAST(48.0,GREATEST(0.0,
+                           ((a.raw_score-a.scale_min)/NULLIF(a.scale_max-a.scale_min,0))*48.0
+                         ))
+                       ) AS average_score,
+                       count(*) AS response_count
+                FROM craving_assessments a
+                JOIN sessions s ON s.id=a.session_id
+                WHERE s.patient_id=:patient
+                  AND a.instrument_code='AUQ'
+                  AND a.completed_at>=:period_start AND a.completed_at<:period_end
+                GROUP BY bucket_key ORDER BY bucket_key
+            """), params)).mappings().all()
+        return {
+            "stages": [dict(row) for row in stages],
+            "alerts": [dict(row) for row in alerts],
             "auq": [dict(row) for row in auq],
         }
 
