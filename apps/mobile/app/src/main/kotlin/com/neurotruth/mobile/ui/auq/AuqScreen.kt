@@ -27,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -76,11 +75,10 @@ fun AuqScreen(
     }
 
     var infoVisible by remember { mutableStateOf(false) }
-    val accessibilityScroll = LocalDensity.current.fontScale > 1.2f
     ScreenScaffold(
         title = "자기설문",
         modifier = modifier,
-        scroll = accessibilityScroll,
+        scroll = true,
         contentGap = 8.dp,
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.background) {
@@ -167,21 +165,13 @@ fun AuqScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Auq.RESPONSE_LABELS.withIndex().chunked(2).forEach { choices ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    choices.forEach { choice ->
-                        ResponseRow(
-                            label = choice.value,
-                            selected = state.selectedResponse == choice.index,
-                            enabled = !state.isSubmitting,
-                            onSelect = { viewModel.onResponseSelected(choice.index) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+            Auq.RESPONSE_LABELS.forEachIndexed { index, label ->
+                ResponseRow(
+                    label = label,
+                    selected = state.selectedResponse == index,
+                    enabled = !state.isSubmitting,
+                    onSelect = { viewModel.onResponseSelected(index) },
+                )
             }
         }
 

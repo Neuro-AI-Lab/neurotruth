@@ -17,13 +17,22 @@ from app.schemas.auth import (
     PatientSignupInput,
     RefreshBody,
 )
-from app.services.auth import AuthenticationError, AuthorizationError
+from app.services.auth import (
+    AuthenticationError,
+    AuthorizationError,
+    DemoLifecycleUnavailable,
+)
 
 
 router = APIRouter()
 
 
 def _raise_service_error(exc: Exception) -> None:
+    if isinstance(exc, DemoLifecycleUnavailable):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "retryable": True},
+        ) from exc
     if isinstance(exc, RepositoryConflictError):
         raise HTTPException(status_code=409, detail="Account already exists") from exc
     if isinstance(exc, AuthenticationError):
@@ -53,7 +62,7 @@ async def admin_signup(body: AdminSignupInput, runtime: Annotated[BackendRuntime
 async def login(body: LoginInput, runtime: Annotated[BackendRuntime, Depends(get_runtime)]) -> dict[str, Any]:
     try:
         return await runtime.service.login(body)
-    except AuthenticationError as exc:
+    except (AuthenticationError, DemoLifecycleUnavailable) as exc:
         _raise_service_error(exc)
 
 
@@ -70,7 +79,10 @@ async def logout(
     body: LogoutBody,
     runtime: Annotated[BackendRuntime, Depends(get_runtime)],
 ) -> Response:
-    await runtime.service.logout(body.refresh_token)
+    try:
+        await runtime.service.logout(body.refresh_token)
+    except DemoLifecycleUnavailable as exc:
+        _raise_service_error(exc)
     return Response(status_code=204)
 
 
@@ -92,8 +104,11 @@ async def me(
     runtime: Annotated[BackendRuntime, Depends(get_runtime)],
     user: Annotated[UserRecord, Depends(password_ready_user)],
 ) -> dict[str, Any]:
+    public_user = runtime.service._public_user(user)
+    if user.role == "patient" and runtime.admin_service is not None:
+        public_user["name"] = await runtime.admin_service.own_profile_name(user)
     return {
-        "user": runtime.service._public_user(user),
+        "user": public_user,
         "consent": await runtime.service.current_consent(user.id) if user.role == "patient" else None,
     }
 

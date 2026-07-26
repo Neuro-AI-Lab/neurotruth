@@ -77,11 +77,23 @@ def test_admin_routes_enforce_role_reason_and_contracts() -> None:
 class BehaviorRepo:
     def __init__(self, packed: bytes, patient_id: UUID, record_id: UUID) -> None:
         self.packed, self.patient_id, self.record_id = packed, patient_id, record_id
+        self.profile_name_encrypted: bytes | None = None
         self.audits: list[dict[str, Any]] = []; self.pending = False; self.tombstoned = False
         self.settings_row = SystemSettingsRecord(True, 3600, "hash")
         self.profile_update: dict[str, Any] = {}
         self.revoked_user_ids: list[UUID] = []
-    async def sensitive_resource(self, resource_type, resource_id): return {"patient_id": self.patient_id, "record_id": self.record_id, "fields": {"content_encrypted": self.packed}}
+    async def sensitive_resource(self, resource_type, resource_id):
+        if resource_type == "patient_profile":
+            fields = (
+                {"name_encrypted": self.profile_name_encrypted}
+                if self.profile_name_encrypted is not None else {}
+            )
+            return {
+                "patient_id": self.patient_id,
+                "record_id": self.patient_id,
+                "fields": fields,
+            }
+        return {"patient_id": self.patient_id, "record_id": self.record_id, "fields": {"content_encrypted": self.packed}}
     async def audit(self, **values): self.audits.append(values)
     async def set_temporary_password(self, patient_id, password_hash): return True
     async def revoke_user_sessions(self, user_id, *args, **kwargs): self.revoked_user_ids.append(user_id)
@@ -116,6 +128,8 @@ def test_reveal_aad_profile_encryption_and_delete_failure_are_audited() -> None:
         patient = UserRecord(patient_id, "p@example.com", "", "patient", "active", False, datetime.now(timezone.utc))
         await service.update_own_profile(patient, {"name": "홍길동", "birth_year": 1990})
         assert b"\xed\x99\x8d\xea\xb8\xb8\xeb\x8f\x99" not in repo.profile_update["name_encrypted"]
+        repo.profile_name_encrypted = repo.profile_update["name_encrypted"]
+        assert await service.own_profile_name(patient) == "홍길동"
         await service.temporary_password(admin, patient_id, "temporary password value", "reset")
         assert patient_id in repo.revoked_user_ids
         try: await service.delete_patient(admin, patient_id, str(patient_id), "request")

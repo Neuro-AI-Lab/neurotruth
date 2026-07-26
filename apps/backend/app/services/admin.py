@@ -118,6 +118,30 @@ class AdminService:
                                     resource_type="patient_profile", resource_id=user.id,
                                     metadata={"fields": sorted(changes)})
 
+    async def own_profile_name(self, user: UserRecord) -> str | None:
+        """Decrypt only the signed-in patient's own display name.
+
+        This is not an administrator reveal: the caller is reading their own
+        profile, so no reveal reason or sensitive-access audit is required.
+        """
+        if user.role != "patient":
+            return None
+        resource = await self.repository.sensitive_resource("patient_profile", user.id)
+        if resource is None:
+            return None
+        packed = resource["fields"].get("name_encrypted")
+        if packed is None:
+            return None
+        return self.keyring.decrypt(
+            packed,
+            aad=aad_for(
+                table="patient_profiles",
+                column="name_encrypted",
+                patient_id=str(user.id),
+                record_id=str(user.id),
+            ),
+        ).decode("utf-8")
+
     async def delete_patient(self, admin: UserRecord, patient_id: UUID, confirmation: str, reason: str) -> None:
         if confirmation != str(patient_id): raise AdminOperationError("Deletion confirmation does not match")
         if not await self.repository.mark_pending_deletion(patient_id): raise AdminNotFound("Patient not found")

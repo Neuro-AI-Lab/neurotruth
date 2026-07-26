@@ -26,6 +26,7 @@ class SecuritySettings(BaseSettings):
     refresh_token_days: int = Field(default=30, alias="REFRESH_TOKEN_DAYS", ge=1, le=90)
     state_summary_ai_enabled: bool = Field(default=False, alias="STATE_SUMMARY_AI_ENABLED")
     report_ai_enabled: bool = Field(default=False, alias="REPORT_AI_ENABLED")
+    demo_scenario_enabled: bool = Field(default=False, alias="DEMO_SCENARIO_ENABLED")
     rppg_enabled: bool = Field(default=True, alias="RPPG_ENABLED")
     rppg_base_url: str = Field(default="http://192.168.68.50:8000", alias="RPPG_BASE_URL")
     rppg_connect_timeout_seconds: float = Field(default=10, alias="RPPG_CONNECT_TIMEOUT_SECONDS", gt=0, le=60)

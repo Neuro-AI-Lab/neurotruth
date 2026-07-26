@@ -7,6 +7,10 @@ from uuid import UUID, uuid4
 from app.core.security.crypto import AesGcmKeyring, aad_for
 from app.core.security.passwords import hash_password, verify_password
 from app.core.security.tokens import create_access_token, hash_refresh_token, issue_refresh_token
+from app.maintenance.seed_vp012_demo import (
+    DEMO_EMAIL,
+    DEMO_PATIENT_ID,
+)
 
 from app.models.records import (
     AuthSessionRecord,
@@ -30,13 +34,31 @@ class AuthorizationError(ValueError):
     pass
 
 
+class DemoLifecycleUnavailable(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
 class AuthService:
-    def __init__(self, repository: V25Repository, keyring: AesGcmKeyring, *, jwt_signing_key: str, access_minutes: int = 15, refresh_days: int = 30) -> None:
+    def __init__(
+        self,
+        repository: V25Repository,
+        keyring: AesGcmKeyring,
+        *,
+        jwt_signing_key: str,
+        access_minutes: int = 15,
+        refresh_days: int = 30,
+        demo_scenario_enabled: bool = False,
+        demo_lifecycle: Any | None = None,
+    ) -> None:
         self.repository = repository
         self.keyring = keyring
         self.jwt_signing_key = jwt_signing_key
         self.access_ttl = timedelta(minutes=access_minutes)
         self.refresh_ttl = timedelta(days=refresh_days)
+        self.demo_scenario_enabled = demo_scenario_enabled
+        self.demo_lifecycle = demo_lifecycle
 
     async def bootstrap_admin_code(self, code: str) -> None:
         await self.repository.ensure_system_settings(hash_password(code))
@@ -71,6 +93,20 @@ class AuthService:
         user = await self.repository.user_by_email(self._email(request.email))
         if user is None or user.status != "active" or not verify_password(request.password, user.password_hash):
             raise AuthenticationError("Invalid credentials")
+        if (
+            self.demo_scenario_enabled
+            and self.demo_lifecycle is not None
+            and user.id == DEMO_PATIENT_ID
+            and user.email.lower() == DEMO_EMAIL
+        ):
+            try:
+                await self.demo_lifecycle.start_for_login(
+                    user_id=user.id,
+                    email=user.email,
+                    now=datetime.now(timezone.utc),
+                )
+            except Exception as exc:
+                raise DemoLifecycleUnavailable("demo_seed_failed") from exc
         await self.repository.audit(actor_id=user.id, actor_role=user.role, action="auth.login", resource_type="user", resource_id=user.id)
         return await self._issue(user, request.device)
 
@@ -95,7 +131,14 @@ class AuthService:
         return await self._auth_response(user, access, raw, expires)
 
     async def logout(self, refresh_token: str) -> None:
-        await self.repository.revoke_refresh(hash_refresh_token(refresh_token), reason="logout", now=datetime.now(timezone.utc))
+        refresh_hash = hash_refresh_token(refresh_token)
+        if self.demo_scenario_enabled and self.demo_lifecycle is not None:
+            try:
+                if await self.demo_lifecycle.delete_for_logout(refresh_hash):
+                    return
+            except Exception as exc:
+                raise DemoLifecycleUnavailable("demo_delete_failed") from exc
+        await self.repository.revoke_refresh(refresh_hash, reason="logout", now=datetime.now(timezone.utc))
 
     async def change_password(self, user_id: UUID, request: ChangePasswordInput) -> None:
         user = await self.repository.user_by_id(user_id)

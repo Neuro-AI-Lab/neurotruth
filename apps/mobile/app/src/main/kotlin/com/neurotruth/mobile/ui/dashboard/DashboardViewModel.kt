@@ -15,7 +15,6 @@ import com.neurotruth.mobile.data.CravingSeriesPoint
 import com.neurotruth.mobile.data.DashboardRepository
 import com.neurotruth.mobile.data.LivePpgSource
 import com.neurotruth.mobile.data.LivePpgState
-import com.neurotruth.mobile.data.PpgPreviewResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +26,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
+
+internal fun calendarPeriodStart(view: String, date: LocalDate): LocalDate = when (view) {
+    DashboardRepository.CALENDAR_VIEW_DAY -> date
+    DashboardRepository.CALENDAR_VIEW_WEEK ->
+        date.minusDays((date.dayOfWeek.value - 1).toLong())
+    DashboardRepository.CALENDAR_VIEW_MONTH -> date.withDayOfMonth(1)
+    else -> date
+}
+
+internal fun isCalendarAnchorSelectable(anchor: LocalDate, today: LocalDate): Boolean =
+    !anchor.isAfter(today)
+
+internal fun nextCalendarAnchor(
+    view: String,
+    anchor: LocalDate,
+    today: LocalDate,
+): LocalDate? {
+    if (calendarPeriodStart(view, anchor) >= calendarPeriodStart(view, today)) return null
+    val candidate = when (view) {
+        DashboardRepository.CALENDAR_VIEW_DAY -> anchor.plusDays(1)
+        DashboardRepository.CALENDAR_VIEW_WEEK -> anchor.plusDays(7)
+        DashboardRepository.CALENDAR_VIEW_MONTH -> anchor.plusMonths(1)
+        else -> null
+    } ?: return null
+    if (calendarPeriodStart(view, candidate) > calendarPeriodStart(view, today)) return null
+    return minOf(candidate, today)
+}
 
 data class DashboardUiState(
     val isLoading: Boolean = true,
@@ -49,17 +75,9 @@ data class DashboardUiState(
     /** Section 5a. Rebuilt from the watch buffer on every poll; never cached or persisted. */
     val livePpg: LivePpgState = LivePpgState.Waiting,
     val watchState: WatchConnectionState = WatchConnectionState.CHECKING,
-    /** Section 5b. Held only for the life of this screen; the preview is never cached or persisted. */
-    val selectedPredictionId: String? = null,
-    val ppg: PpgPreviewResult? = null,
-    val isPpgLoading: Boolean = false,
-    val ppgError: String? = null,
 ) {
     val hasAnyError: Boolean
         get() = seriesError != null || dashboardError != null || calendarError != null
-
-    /** No point carries a `predictionId`, so there is nothing the user could select. */
-    val hasPpgSelectionPath: Boolean get() = series?.hasSelectablePoints == true
 }
 
 /**
@@ -168,18 +186,20 @@ class DashboardViewModel(
     }
 
     fun onCalendarNext() {
+        val current = _state.value
+        val anchor = nextCalendarAnchor(
+            view = current.calendarView,
+            anchor = current.calendarAnchor,
+            today = LocalDate.now(),
+        ) ?: return
         _state.update {
-            val anchor = when (it.calendarView) {
-                DashboardRepository.CALENDAR_VIEW_DAY -> it.calendarAnchor.plusDays(1)
-                DashboardRepository.CALENDAR_VIEW_WEEK -> it.calendarAnchor.plusDays(7)
-                else -> it.calendarAnchor.plusMonths(1)
-            }
             it.copy(calendarAnchor = anchor, selectedCalendarIndex = null)
         }
         loadCalendar()
     }
 
     fun onCalendarAnchorChanged(anchor: LocalDate) {
+        if (!isCalendarAnchorSelectable(anchor, LocalDate.now())) return
         _state.update {
             it.copy(calendarAnchor = anchor, selectedCalendarIndex = null, calendarError = null)
         }
@@ -221,45 +241,8 @@ class DashboardViewModel(
         }
     }
 
-    /**
-     * Section 5 · PPG.
-     *
-     * The preview belongs to one selected prediction, not to a standing feed, so every selection is
-     * a fresh request and nothing is kept between selections or across screens.
-     */
-    fun onPredictionSelected(predictionId: String?) {
-        if (predictionId == null || predictionId == _state.value.selectedPredictionId) {
-            _state.update {
-                it.copy(selectedPredictionId = null, ppg = null, ppgError = null, isPpgLoading = false)
-            }
-            return
-        }
-        _state.update {
-            it.copy(
-                selectedPredictionId = predictionId,
-                ppg = null,
-                ppgError = null,
-                isPpgLoading = true,
-            )
-        }
-        viewModelScope.launch {
-            val outcome = withContext(Dispatchers.IO) {
-                runCatching { repository.ppgPreview(predictionId) }
-            }
-            _state.update { state ->
-                if (state.selectedPredictionId != predictionId) return@update state
-                state.copy(
-                    isPpgLoading = false,
-                    ppg = outcome.getOrNull(),
-                    ppgError = if (outcome.isFailure) PPG_ERROR else null,
-                )
-            }
-        }
-    }
-
     fun onSeriesPointSelected(point: CravingSeriesPoint?) {
         _state.update { it.copy(selectedSeriesAtMs = point?.atMs) }
-        onPredictionSelected(point?.predictionId)
     }
 
     private fun load(eventRange: String, auqRange: String) {
@@ -302,12 +285,7 @@ class DashboardViewModel(
                         null
                     },
                     selectedHour = if (dashboard.isSuccess) it.selectedHour else null,
-                    // A refreshed series invalidates the selected measurement; nothing is retained.
-                    selectedPredictionId = null,
                     selectedSeriesAtMs = null,
-                    ppg = null,
-                    ppgError = null,
-                    isPpgLoading = false,
                 )
             }
         }
@@ -347,7 +325,6 @@ class DashboardViewModel(
         private const val SERIES_ERROR = "최근 1시간 기록을 불러오지 못했어요."
         private const val DASHBOARD_ERROR = "기록을 불러오지 못했어요."
         private const val CALENDAR_ERROR = "선택한 기간의 기록을 불러오지 못했어요."
-        private const val PPG_ERROR = "신호 데이터를 불러오지 못했어요."
 
         /** Roughly the watch's own flush cadence; fast enough to look live, cheap enough to poll. */
         private const val LIVE_POLL_INTERVAL_MS = 1_000L

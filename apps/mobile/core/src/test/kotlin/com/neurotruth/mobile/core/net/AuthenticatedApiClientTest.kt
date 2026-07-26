@@ -198,8 +198,32 @@ class AuthenticatedApiClientTest {
     }
 
     @Test
-    fun `logout clears the credential even when the server rejects it`() {
-        val backend = FakeBackend(endpoints.refresh) { ApiResponse(401, "") }
+    fun `logout retains the session when the server rejects it`() {
+        val backend = FakeBackend(endpoints.refresh) { ApiResponse(503, """{"code":"demo_delete_failed"}""") }
+        val store = InMemoryRefreshTokenStore("refresh-0")
+        val client = signedInClient(backend, store)
+
+        assertThrows(ApiHttpException::class.java) { client.logout() }
+
+        assertEquals("refresh-1", store.loadRefreshToken())
+        assertEquals("patient@example.com", client.user()?.email)
+    }
+
+    @Test
+    fun `logout retains the session on a transport failure`() {
+        val backend = FakeBackend(endpoints.refresh) { throw IllegalStateException("offline") }
+        val store = InMemoryRefreshTokenStore("refresh-0")
+        val client = signedInClient(backend, store)
+
+        assertThrows(IllegalStateException::class.java) { client.logout() }
+
+        assertEquals("refresh-1", store.loadRefreshToken())
+        assertTrue(client.hasSession())
+    }
+
+    @Test
+    fun `logout clears the session only after server success`() {
+        val backend = FakeBackend(endpoints.refresh) { ApiResponse(204, "") }
         val store = InMemoryRefreshTokenStore("refresh-0")
         val client = signedInClient(backend, store)
 
