@@ -117,23 +117,21 @@ class AuthenticatedApiClient(
 
     fun logout() {
         val refreshToken = sessionStore.loadRefreshToken()
-        try {
-            if (refreshToken != null) {
-                runCatching {
-                    transport.execute(
-                        withDefaults(
-                            ApiRequest(
-                                "POST",
-                                endpoints.logout,
-                                body = JSONObject().put("refreshToken", refreshToken).toString(),
-                            ),
-                        ),
-                    )
-                }
-            }
-        } finally {
+        if (refreshToken == null) {
             clearSession()
+            return
         }
+        val response = transport.execute(
+            withDefaults(
+                ApiRequest(
+                    "POST",
+                    endpoints.logout,
+                    body = JSONObject().put("refreshToken", refreshToken).toString(),
+                ),
+            ),
+        )
+        if (!response.isSuccessful) throw ApiHttpException(response.statusCode, response.body)
+        clearSession()
     }
 
     fun recoverSession(): AuthTokens? = synchronized(this) {

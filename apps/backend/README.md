@@ -146,6 +146,106 @@ docker compose run --rm backend python -m app.maintenance.purge_legacy_predictio
 docker compose run --rm backend python -m app.maintenance.purge_legacy_predictions --confirm DELETE-LEGACY-3CLASS-PREDICTIONS
 ```
 
+## Fictional VP-012 Demo Dataset
+
+`app.maintenance.seed_vp012_demo` provisions one login-capable fictional patient
+(`demo.vp012@neurotruth.invalid`). With `DEMO_SCENARIO_ENABLED=true`, the first
+successful login creates 120 days of deterministic dashboard-compatible demo
+records relative to that login time. Existing app logout deletes the complete
+demo account and scenario; provision it again before another take. The tooling
+does not generate raw PPG/EDA files or call Bedrock, STT, rPPG, or the craving
+model. Never present these records as research participant data.
+
+The command reads the login password only from `DEMO_PATIENT_PASSWORD`. Do not
+put the password in a command argument, committed `.env`, screenshot, terminal
+recording, or operator document. The CLI validates password strength before it
+opens the database.
+
+On the DGX host, start in the repository root and enter the password without
+echoing it. The example anchor below means that the generated 120-day range ends
+on 2026-07-26 in `Asia/Seoul`; replace it with the actual recording date. A
+future Seoul date is rejected.
+
+```bash
+cd ~/AI_Champion/neurotruth
+
+read -rsp "VP-012 demo password: " DEMO_PATIENT_PASSWORD
+echo
+export DEMO_PATIENT_PASSWORD
+
+DC=(
+  sudo --preserve-env=DEMO_PATIENT_PASSWORD docker compose
+  --env-file .env
+  -f apps/db/docker-compose.yml
+  -f apps/db/docker-compose.dgx.yml
+)
+
+# 1. Validate the planned dataset; this performs no writes.
+"${DC[@]}" exec -T -e DEMO_PATIENT_PASSWORD backend \
+  python -m app.maintenance.seed_vp012_demo \
+  --dry-run \
+  --anchor-date 2026-07-26
+
+# 2. Provision only the reserved login, profile and consent (no history).
+"${DC[@]}" exec -T -e DEMO_PATIENT_PASSWORD backend \
+  python -m app.maintenance.seed_vp012_demo \
+  --provision-confirm PROVISION-VP012-DEMO
+
+# 3. Log in from the app. Login creates the 120-day scenario.
+# 4. Print the reserved login, patient ID, date range, and table counts.
+"${DC[@]}" exec -T -e DEMO_PATIENT_PASSWORD backend \
+  python -m app.maintenance.seed_vp012_demo --status
+
+# 5. End the take with the app logout action; it deletes the account first.
+# Recovery only, when app logout cannot be completed:
+"${DC[@]}" exec -T -e DEMO_PATIENT_PASSWORD backend \
+  python -m app.maintenance.seed_vp012_demo \
+  --delete-confirm DELETE-VP012-DEMO
+
+unset DEMO_PATIENT_PASSWORD
+```
+
+For Docker Desktop in PowerShell, the same workflow is:
+
+```powershell
+Set-Location C:\path\to\neurotruth
+$env:DEMO_PATIENT_PASSWORD = Read-Host "VP-012 demo password" -MaskInput
+$DC = @(
+  "compose", "--env-file", ".env",
+  "-f", "apps/db/docker-compose.yml"
+)
+
+docker @DC exec -T -e DEMO_PATIENT_PASSWORD backend `
+  python -m app.maintenance.seed_vp012_demo `
+  --dry-run --anchor-date 2026-07-26
+
+docker @DC exec -T -e DEMO_PATIENT_PASSWORD backend `
+  python -m app.maintenance.seed_vp012_demo `
+  --provision-confirm PROVISION-VP012-DEMO
+
+# Log in from the app to create the scenario, then inspect its status.
+docker @DC exec -T -e DEMO_PATIENT_PASSWORD backend `
+  python -m app.maintenance.seed_vp012_demo --status
+
+docker @DC exec -T -e DEMO_PATIENT_PASSWORD backend `
+  python -m app.maintenance.seed_vp012_demo `
+  --delete-confirm DELETE-VP012-DEMO
+
+Remove-Item Env:DEMO_PATIENT_PASSWORD
+```
+
+Set `DEMO_SCENARIO_ENABLED=true` only for an explicit recording environment and
+restart the backend before login. Always run `--dry-run` first. Provision,
+fallback seeding, and deletion require exact confirmation strings and execute
+under a database transaction and advisory lock. Login seeding runs once per
+provision. App force-close, refresh, or network loss does not delete the demo;
+only existing app logout does. A conflicting identity or incompatible contract
+fails instead of partially reconciling data. `--confirm
+SEED-VP012-120D-DEMO --anchor-date YYYY-MM-DD` remains an operator fallback.
+`--status` never prints the password, encryption keys, or decrypted persona
+content. The Korean actual-device recording pack is
+[`docs/demo/VP-012_120day_demo_video.ko.md`](../../docs/demo/VP-012_120day_demo_video.ko.md).
+
 ## Optional STT and DGX Spark rPPG
 
 `STT_ENABLED=false` is the default. On DGX, the primary service runs Hugging Face Whisper `large-v3-turbo` with PyTorch CUDA; an explicitly configured base-Compose deployment may use the CTranslate2 CPU fallback. The backend proxies active-session Korean `.m4a|.wav` audio to that internal service. Audio exists only in tmpfs and is deleted after the request; only user-confirmed final text is retained by the normal encrypted message path. Android TTS is local and has no backend route.

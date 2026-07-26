@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 from app.core.security.tokens import create_access_token
-from app.services.auth import AuthService, AuthenticationError
+from app.services.auth import (
+    AuthService,
+    AuthenticationError,
+    DemoLifecycleUnavailable,
+)
 from app.models.records import UserRecord
 from app.repositories.postgres import RepositoryConflictError
 from app.api.v1.routes.auth import router
@@ -42,6 +46,7 @@ class FakeService:
         self.user = user
         self.calls: list[tuple[str, Any]] = []
         self.signup_error: Exception | None = None
+        self.lifecycle_error: DemoLifecycleUnavailable | None = None
 
     def response(self) -> dict[str, Any]:
         return {"user": AuthService._public_user(self.user), "accessToken": "access", "refreshToken": "refresh", "expiresIn": 900,
@@ -58,6 +63,8 @@ class FakeService:
         return self.response()
 
     async def login(self, body: Any) -> dict[str, Any]:
+        if self.lifecycle_error:
+            raise self.lifecycle_error
         if body.password == "bad-password":
             raise AuthenticationError("Invalid credentials")
         self.calls.append(("login", body))
@@ -68,6 +75,8 @@ class FakeService:
         return self.response()
 
     async def logout(self, token: str) -> None:
+        if self.lifecycle_error:
+            raise self.lifecycle_error
         self.calls.append(("logout", token))
 
     async def change_password(self, user_id: UUID, body: Any) -> None:
@@ -83,7 +92,20 @@ class FakeService:
     _public_user = staticmethod(AuthService._public_user)
 
 
-def build_client(*, must_change_password: bool = False, session_active: bool = True) -> tuple[TestClient, FakeService, UserRecord, str]:
+class FakeProfileAdminService:
+    def __init__(self, name: str | None) -> None:
+        self.name = name
+
+    async def own_profile_name(self, user: UserRecord) -> str | None:
+        return self.name
+
+
+def build_client(
+    *,
+    must_change_password: bool = False,
+    session_active: bool = True,
+    profile_name: str | None = None,
+) -> tuple[TestClient, FakeService, UserRecord, str]:
     user = UserRecord(
         id=uuid4(), email="patient@example.com", password_hash="unused", role="patient",
         status="active", must_change_password=must_change_password,
@@ -94,7 +116,11 @@ def build_client(*, must_change_password: bool = False, session_active: bool = T
     app = FastAPI()
     app.include_router(router)
     app.state.backend_runtime = BackendRuntime(
-        ready=True, settings=FakeSettings(), repository=FakeRepository(user, session_id, active=session_active), service=service, error_code=None
+        ready=True, settings=FakeSettings(),
+        repository=FakeRepository(user, session_id, active=session_active),
+        service=service,
+        admin_service=FakeProfileAdminService(profile_name) if profile_name is not None else None,
+        error_code=None,
     )
     token, _ = create_access_token(subject=user.id, session_id=session_id, role=user.role, signing_key="j" * 32)
     return TestClient(app), service, user, token
@@ -115,6 +141,10 @@ def test_public_signup_login_refresh_contract_and_sanitized_errors() -> None:
     assert signup.status_code == 200
     assert set(signup.json()) == {"user", "accessToken", "refreshToken", "expiresIn", "consent"}
     assert signup.json()["consent"] == {"biosignal": True}
+    assert client.post("/api/auth/login", json={
+        "email": "demo.vp012@neurotruth.invalid",
+        "password": "correct horse battery staple",
+    }).status_code == 200
     assert client.post("/api/auth/login", json={"email": "patient@example.com", "password": "bad-password"}).status_code == 401
     refreshed = client.post("/api/auth/refresh", json={"refreshToken": "token"}).json()
     assert refreshed["expiresIn"] == 900 and refreshed["consent"] == {"biosignal": True}
@@ -153,6 +183,35 @@ def test_bearer_me_consent_logout_and_change_password() -> None:
         "currentPassword": "current-password", "newPassword": "new correct horse battery staple",
     }).status_code == 204
     assert ("logout", "refresh") in service.calls
+
+
+def test_demo_lifecycle_failures_are_sanitized_retryable_503() -> None:
+    client, service, _, _ = build_client()
+    service.lifecycle_error = DemoLifecycleUnavailable("demo_seed_failed")
+    login = client.post("/api/auth/login", json={
+        "email": "patient@example.com",
+        "password": "correct horse battery staple",
+    })
+    assert login.status_code == 503
+    assert login.json() == {
+        "detail": {"code": "demo_seed_failed", "retryable": True},
+    }
+
+    service.lifecycle_error = DemoLifecycleUnavailable("demo_delete_failed")
+    logout = client.post(
+        "/api/auth/logout", json={"refreshToken": "refresh"},
+    )
+    assert logout.status_code == 503
+    assert logout.json() == {
+        "detail": {"code": "demo_delete_failed", "retryable": True},
+    }
+
+
+def test_me_returns_decrypted_patient_display_name() -> None:
+    client, _, _, token = build_client(profile_name="정우식")
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.json()["user"]["name"] == "정우식"
 
 
 def test_forced_password_allows_only_logout_and_change_password() -> None:

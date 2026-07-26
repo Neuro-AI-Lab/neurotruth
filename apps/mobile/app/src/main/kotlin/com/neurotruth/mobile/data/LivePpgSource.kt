@@ -1,13 +1,15 @@
 package com.neurotruth.mobile.data
 
 import com.neurotruth.mobile.core.SensorWindowContract
+import com.neurotruth.mobile.core.net.FixedGridResampler
 import com.neurotruth.mobile.core.net.SensorChannel
 import com.neurotruth.mobile.core.net.SensorSample
 import com.neurotruth.mobile.service.SensorSampleRepository
 
-/** A live PPG_GREEN trace. [latestAtMs] is what freshness is judged on, never the render time. */
+/** Display-only live Watch traces. Raw repository and upload samples are never changed. */
 data class LivePpgTrace(
     val samples: List<PpgSample>,
+    val edaSamples: List<PpgSample>,
     val latestAtMs: Long,
 )
 
@@ -29,18 +31,17 @@ sealed interface LivePpgState {
 }
 
 /**
- * Pure windowing and downsampling for the live trace.
+ * Pure windowing, fixed-grid interpolation, and per-channel display normalization.
  *
- * Kept free of Android and of the buffer singleton so the 512 cap, the empty case and the staleness
- * rule are covered by JVM unit tests.
+ * Kept free of Android and of the buffer singleton so channel isolation, empty cases, and freshness
+ * are covered by JVM unit tests.
  */
 object LivePpgWindow {
 
-    /** The same display cap the server applies to a stored preview, so the two read alike. */
-    const val MAX_POINTS: Int = 512
-
-    /** The 20-second span the upload contract already windows on: 25 Hz × 20 s = 500 samples. */
+    /** The same 20-second span and grids used by the existing sensor upload contract. */
     const val WINDOW_MS: Long = SensorWindowContract.WINDOW_MS
+    const val PPG_POINTS: Int = SensorWindowContract.PPG_SAMPLES_PER_CHANNEL
+    const val EDA_POINTS: Int = SensorWindowContract.EDA_SAMPLES
 
     /**
      * Two watch flushes' worth of slack. Past this the newest sample is no longer "live" and the
@@ -56,45 +57,79 @@ object LivePpgWindow {
     }
 
     /**
-     * Evenly spaced index selection, matching how the server downsamples a stored preview. Fewer
-     * points than the cap are returned untouched — no padding and no interpolation.
-     */
-    fun downsample(samples: List<PpgSample>, maxPoints: Int = MAX_POINTS): List<PpgSample> {
-        require(maxPoints > 1) { "maxPoints must be greater than 1" }
-        if (samples.size <= maxPoints) return samples
-        val last = samples.size - 1
-        return (0 until maxPoints).map { index ->
-            samples[Math.round(index.toDouble() * last / (maxPoints - 1)).toInt()]
-        }
-    }
-
-    /**
-     * Builds the trace from raw watch samples, or returns null when there is nothing live to draw.
-     *
-     * Only [SensorChannel.PPG_GREEN] is plotted: it is the channel the waveform is specified against,
-     * and mixing channels of different scales onto one axis would misrepresent all of them.
+     * Builds independent PPG_GREEN and EDA traces, or null when neither channel is fresh.
+     * A missing channel remains an empty list and is never fabricated as a zero waveform.
      */
     fun build(
         samples: List<SensorSample>,
         nowMs: Long,
         windowMs: Long = WINDOW_MS,
-        maxPoints: Int = MAX_POINTS,
         staleAfterMs: Long = STALE_AFTER_MS,
     ): LivePpgTrace? {
         val windowStart = nowMs - windowMs
-        val green = samples
-            .asSequence()
-            .filter { it.sensor == SensorChannel.PPG_GREEN }
-            .filter { it.timestampMs in windowStart..nowMs }
-            .sortedBy(SensorSample::timestampMs)
-            .map { PpgSample(atMs = it.timestampMs, value = it.value) }
-            .toList()
-        if (green.isEmpty()) return null
+        val ppgLatest = freshLatest(samples, SensorChannel.PPG_GREEN, nowMs, staleAfterMs)
+        val edaLatest = freshLatest(samples, SensorChannel.EDA, nowMs, staleAfterMs)
+        if (ppgLatest == null && edaLatest == null) return null
 
-        val latest = green.last().atMs
-        if (!isFresh(latest, nowMs, staleAfterMs)) return null
+        val ppg = if (ppgLatest == null) {
+            emptyList()
+        } else {
+            displayGrid(
+                samples,
+                SensorChannel.PPG_GREEN,
+                windowStart,
+                SensorWindowContract.PPG_SAMPLE_INTERVAL_MS,
+                PPG_POINTS,
+            )
+        }
+        val eda = if (edaLatest == null) {
+            emptyList()
+        } else {
+            displayGrid(
+                samples,
+                SensorChannel.EDA,
+                windowStart,
+                SensorWindowContract.EDA_SAMPLE_INTERVAL_MS,
+                EDA_POINTS,
+            )
+        }
+        if (ppg.isEmpty() && eda.isEmpty()) return null
 
-        return LivePpgTrace(samples = downsample(green, maxPoints), latestAtMs = latest)
+        return LivePpgTrace(
+            samples = ppg,
+            edaSamples = eda,
+            latestAtMs = listOfNotNull(ppgLatest, edaLatest).max(),
+        )
+    }
+
+    private fun freshLatest(
+        samples: List<SensorSample>,
+        sensor: String,
+        nowMs: Long,
+        staleAfterMs: Long,
+    ): Long? = samples.asSequence()
+        .filter { it.sensor == sensor && it.value.isFinite() && it.timestampMs <= nowMs }
+        .maxOfOrNull(SensorSample::timestampMs)
+        ?.takeIf { isFresh(it, nowMs, staleAfterMs) }
+
+    private fun displayGrid(
+        samples: List<SensorSample>,
+        sensor: String,
+        windowStartMs: Long,
+        intervalMs: Long,
+        count: Int,
+    ): List<PpgSample> {
+        val finite = samples.filter { it.value.isFinite() }
+        val grid = FixedGridResampler.resample(finite, sensor, windowStartMs, intervalMs, count)
+        if (grid.isEmpty()) return emptyList()
+        val minimum = grid.minOf(SensorSample::value)
+        val amplitude = grid.maxOf(SensorSample::value) - minimum
+        return grid.map { sample ->
+            PpgSample(
+                atMs = sample.timestampMs,
+                value = if (amplitude > 0f) (sample.value - minimum) / amplitude else 0f,
+            )
+        }
     }
 }
 
@@ -110,7 +145,11 @@ class LivePpgSource(
 ) {
     fun trace(nowMs: Long): LivePpgTrace? =
         LivePpgWindow.build(
-            samples = repository.samplesIn(nowMs - LivePpgWindow.WINDOW_MS, nowMs),
+            samples = repository.samplesIn(
+                nowMs - LivePpgWindow.WINDOW_MS -
+                    SensorWindowContract.EDA_SAMPLE_INTERVAL_MS * 2,
+                nowMs,
+            ),
             nowMs = nowMs,
         )
 }

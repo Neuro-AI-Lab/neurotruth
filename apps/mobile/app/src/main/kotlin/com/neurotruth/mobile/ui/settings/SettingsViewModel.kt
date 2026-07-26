@@ -346,13 +346,17 @@ class SettingsViewModel(
                 },
             )
         }
-        if (PasswordChangeOutcomePolicy.signsOut(outcome)) tearDownAndSignOut()
+        if (PasswordChangeOutcomePolicy.signsOut(outcome)) {
+            // Password change already revoked the server sessions; expired sessions are already
+            // unusable. Both paths must still complete their local teardown.
+            tearDownAndSignOut(requireRemoteLogout = false)
+        }
     }
 
     fun logout() {
         if (_state.value.isSigningOut) return
         _state.update { it.copy(isSigningOut = true, errorMessage = null) }
-        viewModelScope.launch { tearDownAndSignOut() }
+        viewModelScope.launch { tearDownAndSignOut(requireRemoteLogout = true) }
     }
 
     /**
@@ -360,11 +364,23 @@ class SettingsViewModel(
      * the SSE connection, the Watch upload loop and the prediction relay), the active session id,
      * the pending chat body and every per-user cache. Nothing is left running afterwards.
      */
-    private suspend fun tearDownAndSignOut() {
+    private suspend fun tearDownAndSignOut(requireRemoteLogout: Boolean) {
+        if (requireRemoteLogout) {
+            val failure = withContext(Dispatchers.IO) {
+                runCatching { app.apiClient.logout() }.exceptionOrNull()
+            }
+            if (failure != null) {
+                _state.update {
+                    it.copy(isSigningOut = false, errorMessage = messageFor(failure))
+                }
+                return
+            }
+        } else {
+            runCatching { app.apiClient.clearSession() }
+        }
         // Stopped from the main thread while the app is still in the foreground.
         runCatching { MonitoringService.stop(app) }
         withContext(Dispatchers.IO) {
-            runCatching { app.apiClient.logout() }
             runCatching { sessionRepository.clearActiveSession() }
             runCatching { app.pendingChatStore.clear() }
             runCatching { clearPerUserCaches() }

@@ -3,19 +3,19 @@
 <!-- feature-planner-control
 {
   "workflow": "feature-planner/v7",
-  "state": "complete",
+  "state": "implementing",
   "source_spec": "docs/specs/2026-07-25-neurotruth-stage-dashboard-watch-control-auq-voice-spec.md",
   "korean_mirror": "docs/specs/2026-07-25-neurotruth-stage-dashboard-watch-control-auq-voice-spec.ko.md",
-  "spec_revision": 7,
-  "reviewed_revision": 7,
+  "spec_revision": 9,
+  "reviewed_revision": 9,
   "selected_strategy": "STRAT-1",
   "implementation_direction": "preserve",
   "direction_decision_id": null,
   "minimal_change_policy": "strict",
   "final_domain_gate": "confirmed_none",
   "open_question_ids": [],
-  "active_slices": [],
-  "next_action": "none"
+  "active_slices": ["WS9"],
+  "next_action": "implement"
 }
 -->
 
@@ -25,15 +25,15 @@
 
 | Review item | Current value |
 | --- | --- |
-| Lifecycle | `complete`, revision 7, 사용자 검토 완료 |
-| Outcome | 기존 백엔드·Kotlin Phone·Wear OS 앱을 4단계 표시, 단계형 그래프, 일·주·월 대시보드, 결과형 AUQ, Phone 주도 Watch 측정, 지속형 Watch 전용 알림, STT 즉시 전송/TTS 응답 계약에 맞춘다. |
+| Lifecycle | `implementing`, revision 9, 사용자가 확인한 달력 미래 경계 후속 수정 |
+| Outcome | 검증된 런타임을 유지하면서 최근 1시간 웨어러블 단계 차트를 키우고, AUQ 응답을 한 줄에 하나씩 배치하며, 불명확한 저장 측정 preview를 실시간 전처리 PPG·EDA로 교체하고, 일·주·월 이동이 현재 현지 기간을 넘지 않게 한다. |
 | Recommended implementation | `STRAT-1` — 기존 dashboard, prediction transaction, Compose navigation/state, MonitoringService, Wear Data Layer 소유자를 좁게 확장한다. |
-| Planned production targets | `apps/backend/app/ml/craving/pipeline.py::AlertConfig`, `apps/backend/app/ml/craving/pipeline.py::AlertEvaluator`, `apps/backend/app/repositories/postgres.py::persist_sensor_prediction`, `apps/backend/app/repositories/postgres.py::calendar rows`, `apps/backend/app/services/sensor.py::_ingest_locked`, `apps/backend/app/services/rppg.py::RppgService._process`, `apps/backend/app/repositories/rppg.py::finish_success`, `apps/backend/app/services/dashboard.py::DashboardService.craving_calendar`, `apps/backend/app/api/v1/routes/dashboard.py::craving_calendar`, `apps/backend/app/schemas/dashboard.py::calendar query types`, `apps/backend/app/schemas/dashboard.py::DashboardCalendarView`, `apps/mobile/core/src/main/kotlin/com/neurotruth/mobile/core/CravingStage.kt::CravingStage display labels/messages`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/DashboardRepository.kt::calendar DTO/parser/client`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/DashboardRepository.kt::calendar client/constants`, `apps/mobile/core/src/main/kotlin/com/neurotruth/mobile/core/net/ApiEndpoints.kt::cravingCalendar`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::recent-hour/calendar UI`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::calendar controls/copy`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::StageTimelineFrame`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt::calendar selection/state`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt::calendar selection/navigation`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqScreen.kt::copy/layout/result UI`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqViewModel.kt::result state`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/NeuroTruthNavHost.kt::AUQ result navigation`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/chat/ChatViewModel.kt::STT dispatch/TTS correlation`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/chat/ChatScreen.kt::voice progress/notices`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/service/MonitoringService.kt::measurement command/ack and relay`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/service/PredictionPayloadParser.kt::Watch payload`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/home/HomeScreen.kt::Watch measurement control`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/home/HomeViewModel.kt::measurement intent/ack state`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/PredictionListenerService.kt::control/prediction/snapshot listener`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/SensorTrackingService.kt::start/stop status ack`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/MainActivity.kt::three summary pages/local stop`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/MainActivity.kt::TimelinePage`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/SensorState.kt::display-safe companion state`, and `apps/mobile/wearos/src/main/AndroidManifest.xml::Wear listener filters/permissions`. Combined symbols: `AlertConfig`, `AlertEvaluator`; `persist_sensor_prediction`, calendar rows; `CravingStage` display labels/messages. |
+| Planned production targets | `apps/backend/app/ml/craving/pipeline.py::AlertConfig`, `apps/backend/app/ml/craving/pipeline.py::AlertEvaluator`, `apps/backend/app/repositories/postgres.py::persist_sensor_prediction`, `apps/backend/app/repositories/postgres.py::calendar rows`, `apps/backend/app/services/sensor.py::_ingest_locked`, `apps/backend/app/services/rppg.py::RppgService._process`, `apps/backend/app/repositories/rppg.py::finish_success`, `apps/backend/app/services/dashboard.py::DashboardService.craving_calendar`, `apps/backend/app/api/v1/routes/dashboard.py::craving_calendar`, `apps/backend/app/schemas/dashboard.py::calendar query types`, `apps/backend/app/schemas/dashboard.py::DashboardCalendarView`, `apps/mobile/core/src/main/kotlin/com/neurotruth/mobile/core/CravingStage.kt::CravingStage display labels/messages`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/DashboardRepository.kt::calendar DTO/parser/client`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/DashboardRepository.kt::calendar client/constants`, `apps/mobile/core/src/main/kotlin/com/neurotruth/mobile/core/net/ApiEndpoints.kt::cravingCalendar`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::recent-hour/calendar UI`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::calendar controls/copy`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::StageTimelineFrame`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt::calendar selection/state`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt::calendar selection/navigation`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqScreen.kt::copy/layout/result UI`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqViewModel.kt::result state`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/NeuroTruthNavHost.kt::AUQ result navigation`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/chat/ChatViewModel.kt::STT dispatch/TTS correlation`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/chat/ChatScreen.kt::voice progress/notices`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/service/MonitoringService.kt::measurement command/ack and relay`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/service/PredictionPayloadParser.kt::Watch payload`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/home/HomeScreen.kt::Watch measurement control`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/home/HomeViewModel.kt::measurement intent/ack state`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/PredictionListenerService.kt::control/prediction/snapshot listener`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/SensorTrackingService.kt::start/stop status ack`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/MainActivity.kt::three summary pages/local stop`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/MainActivity.kt::TimelinePage`, `apps/mobile/wearos/src/main/kotlin/com/neurotruth/mobile/wear/SensorState.kt::display-safe companion state`, `apps/mobile/wearos/src/main/AndroidManifest.xml::Wear listener filters/permissions`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::StageTimelineFrame`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::signal section`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqScreen.kt::response layout`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/LivePpgSource.kt::live trace builder`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt::dashboard signal state`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt::calendar future-period guard`, and `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt::next-button/date-picker limits`. Combined symbols: `AlertConfig`, `AlertEvaluator`; `persist_sensor_prediction`, calendar rows; `CravingStage` display labels/messages; `StageTimelineFrame`, signal section; calendar future-period guard; next-button/date-picker limits. |
 | Expected additions | New production files: 0; dependencies: None; shared abstractions: None; migrations: None. |
-| Work plan | WS1, WS2, WS3, WS4, WS5, WS6, WS7, WS8은 모두 검증 완료다. |
+| Work plan | WS1, WS2, WS3, WS4, WS5, WS6, WS7, WS8은 검증 완료다. WS9 구현, 보정 검수, 단위 테스트, lint, APK 빌드는 완료됐고 현재 ADB에 Watch만 보여 Phone 설치와 화면 캡처 검토가 남았다. |
 | Open questions | None |
 | Agent decisions to review | None |
-| Last material change | Revision 7 — 사용자가 일간과 월간 사이 주간 대시보드를 요청했고 DGX Spark에는 아직 15분 cooldown 배포가 되지 않았음을 확인했다. |
+| Last material change | Revision 9 — 사용자가 일·주·월 제어가 현재 현지 기간에서 다음으로 이동하지 못하고 미래 날짜로 진입하지 않도록 요청했다. |
 
 ## 2. 결과와 범위
 
@@ -103,6 +103,7 @@
 | R-006 | Existing Phone prediction/alert ledger | `PredictionLedger`; `CravingAlertNotifier` | alertId 중복 제거 |
 | R-007 | Existing Wear sensor FGS | `SensorTrackingService.start/stop` | Phone command와 local stop에서 호출 |
 | R-008 | Existing Watch display-safe relay | `PredictionPayloadParser.toWatchPayload`; `PredictionListenerService` | 확률 없이 stage/alertId 추가 |
+| R-009 | Existing live sensor buffer and fixed-grid interpolation | `SensorSampleRepository`; `FixedGridResampler`; backend `CravingModel.preprocess` | 최근 20초 버퍼, 고정격자 보간, 채널별 MinMax 관례를 화면용 PPG·EDA에 재사용 |
 
 ## 4. 결정과 질문
 
@@ -126,6 +127,8 @@
 | D-014 | 최근 1시간 시각 디자인 | Phone과 Watch 차트를 웨어러블 수면 단계 차트처럼 4개 이름 레인, 굵고 둥근 색상 구간, 가는 세로 전환선, 옅은 레인 가이드와 명시적 공백으로 표현한다. | user | 사용자가 이전에 제공한 Galaxy Watch와 Apple Watch 수면 단계 예시를 다시 지정했다. | 기존 Canvas 두 곳만 바꾸며 timestamp, 단계 기준, gap, API와 저장 데이터는 유지한다. | confirmed | resolved |
 | D-015 | 주간 calendar | `day`와 `month` 사이에 `week`를 추가하고 선택 날짜가 포함된 현지 월요일~일요일을 단계·이벤트·AUQ의 7개 일별 bucket으로 사용한다. | user | 사용자가 주간 대시보드를 명시적으로 요청했다. 월요일 시작은 기존 현지시간 calendar의 최소 확장이다. | D-004를 확장하며 저장 데이터와 migration은 바꾸지 않는다. | confirmed | resolved |
 | D-016 | DGX cooldown 배포 | source/default의 900초 계약을 유지하고 DGX `.env` 수정 및 backend 재생성을 문서화한다. 기존 반복 알림은 배포 전 상태로 본다. | user | 사용자가 현재 DGX에는 cooldown 변경을 아직 올리지 않았다고 확인했다. | alert 알고리즘 추가 변경 없이 배포 증거만 남는다. | confirmed | resolved |
+| D-017 | 대시보드·AUQ 후속 수정 | Phone 최근 1시간 차트 높이를 키우고 단독 bucket도 짧고 둥근 bar로 표시한다. AUQ 7개 응답은 한 줄에 하나의 전체 폭 버튼으로 배치한다. 환자 대시보드의 선택 측정·저장 PPG preview를 제거하고 실시간 PPG·EDA를 표시한다. 표시 신호는 기존 20초 고정격자 보간과 채널별 MinMax를 재사용하며 업로드·저장 원본은 바꾸지 않는다. | user | 실기기 확인 후 사용자가 직접 요청했고 전처리는 가장 가까운 기존 모델·업로드 경로를 재사용한다. | Phone 표시만 변경하며 backend·DB·API·Watch UI·모델 입력·저장은 유지한다. | confirmed | resolved |
+| D-018 | 달력 미래 경계 | 선택 일이 오늘, 선택 주가 현재 월요일~일요일 주, 선택 월이 현재 월이면 `다음`을 비활성화한다. 미래 anchor는 거부하고 날짜 선택기에서도 미래 날짜를 비활성화한다. | user | 일간·주간·월간 대시보드가 현재 날짜보다 미래로 이동하지 못하고 버튼이 비활성화되어야 한다는 직접 후속 요청이다. | Phone 달력 제어·상태만 변경하며 API와 저장 데이터는 유지한다. | confirmed | resolved |
 
 ### 질문 기록
 
@@ -147,6 +150,10 @@
 - **FR-003:** calendar API는 day의 local hour, week의 현지 월요일~일요일 7개 local date, month의 local date별 stage/event/AUQ bucket을 반환한다.
 - **FR-004:** Phone day/week/month 선택은 모든 차트를 함께 바꾸고 no-data와 valid-zero를 구분한다.
 - **FR-014:** DGX 배포 계약은 `ALERT_DANGER_THRESHOLD=0.75`, `ALERT_DANGER_STREAK=3`, `ALERT_MAX_GAP_SECONDS=20`, `ALERT_COOLDOWN_SECONDS=900`을 설정하고 폐기 변수를 제거한 뒤 backend container를 재생성한다.
+- **FR-015:** Phone 최근 1시간 차트는 별도의 더 큰 높이를 사용하고 단독 10초 bucket도 둥근 수평 bar로 보인다. 네 단계 lane, 세로 전환선, 실제 공백, 선택 상세는 유지한다.
+- **FR-016:** AUQ의 일곱 문장 선택지를 일곱 개 전체 폭 행으로 표시한다. 문항당 한 화면, 최소 48dp, 일반 글꼴 no-scroll 의도와 큰 글꼴 scroll fallback은 유지한다.
+- **FR-017:** 대시보드 신호 영역은 실시간 Watch PPG·EDA만 포함하고 저장 측정 선택/preview UI를 제거한다. 최근 20초 신호는 기존 upload grid에 보간하고 채널별 MinMax로 화면용 정규화하며, 없거나 stale인 채널은 0선으로 만들지 않는다.
+- **FR-018:** Phone 달력 이동은 미래 현지 기간으로 진입하지 않는다. 오늘, 현재 월요일~일요일 주, 현재 월에서는 `다음`이 비활성화되고 날짜 선택기는 내일 이후를 비활성화하며 상태 handler는 미래 anchor를 무시한다.
 - **FR-005:** AUQ를 `자기설문`으로 통일하고 정보 dialog와 한 화면 7개 선택지를 제공한다.
 - **FR-006:** AUQ 저장 성공 뒤 `총점 X/48` 중립 결과를 보여주고, skip은 바로 Chat으로 간다.
 - **FR-007:** Phone이 시작/중지를 소유하고 Watch ack 뒤 MonitoringService를 시작하며 Watch는 stop/확인만 제공한다.
@@ -170,6 +177,9 @@
 - **AC-001:** Backend 테스트가 .75 경계, 3회 연속, gap reset, 900초 cooldown, 중복/동시 단일 alert, rPPG 제외를 증명한다.
 - **AC-002:** Calendar 테스트가 day/week/month, 월요일·일요일 경계, timezone/DST/no-data/valid-zero/AUQ를 증명한다.
 - **AC-007:** API·배포 문서가 실제 secret 없이 DGX 15분 cooldown `.env` 수정과 backend 재생성·검증 명령을 제공한다.
+- **AC-008:** Phone 화면에서 최근 1시간 차트가 집계 차트보다 확실히 크고, 단독 측정은 점이 아닌 bar로 보이며, AUQ는 한 줄 한 버튼이고, 신호 카드에는 저장 측정 문구 없이 PPG와 EDA가 각각 표시된다.
+- **AC-009:** JVM test가 PPG/EDA 채널 분리, 고정격자 크기, 채널별 MinMax 범위와 상수 처리, freshness, 누락 채널 비생성을 검증하고 App unit/lint/debug build가 통과한다.
+- **AC-010:** JVM 테스트가 일·주·월 다음 이동 경계와 미래 anchor 거부를 검증한다. 비활성 `다음`과 날짜 선택기 최대 날짜가 컴파일되고 App unit/lint/debug build가 통과한다.
 - **AC-003:** Phone 테스트가 정확한 문구, categorical gap, calendar, AUQ 결과/skip, STT 즉시 전송, TTS correlation, retry를 증명하고 Phone/Wear build와 화면 검토가 수면 단계형 최근 1시간 차트를 확인한다.
 - **AC-004:** Wear 테스트/build가 control/status, confirmation, 3화면, stage-only snapshot, alertId dedup을 증명한다.
 - **AC-005:** Backend full pytest, Core/App/Wear unit, lint, debug APK build가 통과한다.
@@ -271,6 +281,14 @@
 | CH-053 | docs | `docs/prd/PRD_neurotruth_mobile.ko.md` | weekly dashboard flow | edit | current day/month dashboard section | 주간 선택과 동기화된 차트 동작을 추가한다. | FR-004, AC-002 | WS8 | preserve |
 | CH-054 | docs | `docs/deployment/DGX_RUNTIME_INVENTORY.ko.md` | DGX cooldown rollout | edit | current unresolved cooldown checklist | secret 없는 환경 검증, backend 재생성, 기기 재시험 명령을 추가한다. | FR-014, AC-007 | WS8 | preserve |
 | CH-055 | docs | `.env.example` | alert environment defaults | edit | current Watch-only alert block | 900초 cooldown과 폐기 변수 제거 계약을 유지한다. | FR-014, AC-007 | WS8 | preserve |
+| CH-056 | production | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt` | `StageTimelineFrame`, signal section | edit | existing Canvas chart and live signal card | 최근 1시간 Canvas 확대, 단독 bucket bar, 저장 preview 제거, 실시간 PPG·EDA 분리 표시 | FR-015, FR-017, AC-008 | WS9 | preserve |
+| CH-057 | production | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqScreen.kt` | response layout | edit | current seven response buttons | 2열 배치를 제거하고 한 줄에 하나의 전체 폭 버튼 사용 | FR-016, AC-008 | WS9 | preserve |
+| CH-058 | production | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/LivePpgSource.kt` | live trace builder | edit | existing bounded 20-second Watch buffer | EDA와 화면용 고정격자/채널별 MinMax를 추가하고 freshness/no-data 의미 유지 | FR-017, AC-009 | WS9 | preserve |
+| CH-059 | production | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt` | dashboard signal state | edit | existing live polling | 저장 preview UI state/call을 제거하고 실시간 두 채널만 제공 | FR-017, AC-008 | WS9 | preserve |
+| CH-060 | test | `apps/mobile/app/src/test/kotlin/com/neurotruth/mobile/data/LivePpgWindowTest.kt` | live signal preprocessing tests | extend | existing pure JVM window tests | PPG/EDA grid, MinMax, 상수·누락·freshness 검증 | FR-017, AC-009 | WS9 | preserve |
+| CH-061 | production | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt` | calendar future-period guard | edit | existing day/week/month anchor navigation | 결정론적 현지 기간 비교를 추가하고 직접 미래 anchor를 무시하며 `onCalendarNext`가 오늘/현재 주/현재 월을 넘겨 load하지 못하게 한다. | FR-018, AC-010 | WS9 | preserve |
+| CH-062 | production | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt` | next-button/date-picker limits | edit | existing `CalendarControls` | 현재 기간에서 `다음`을 비활성화하고 Material 날짜 선택기에서 내일 이후를 선택하지 못하게 한다. | FR-018, AC-010 | WS9 | preserve |
+| CH-063 | test | `apps/mobile/app/src/test/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardCalendarNavigationTest.kt` | calendar navigation boundary cases | add | existing pure JVM policy-test style | 일·월요일 기준 주·월의 과거/현재/미래 동작과 직접 미래 anchor를 검증한다. | FR-018, AC-010 | WS9 | preserve |
 
 ### 변경 예산
 
@@ -284,6 +302,7 @@
 | WS6 | 3 | 2 | 0 | 80 | None | None |
 | WS7 | 4 | 3 | 0 | 100 | None | None |
 | WS8 | 4 | 0 | 0 | 100 | None | None |
+| WS9 | 6 | 4 | 0 | 250 | None | None |
 
 ## 8. 작업 계획
 
@@ -297,6 +316,7 @@
 | WS6 | backend calendar contract에 월요일~일요일 주간 보기를 추가 | None | P2 | CH-045, CH-046, CH-047 | `apps/backend/app/schemas/dashboard.py`, `apps/backend/app/services/dashboard.py`, `apps/backend/tests/test_craving_bar_dashboard_v25.py` | repositories, migrations, alert behavior, mobile | FR-003, AC-002 | focused backend pytest | verified |
 | WS7 | Phone dashboard에 주간 선택과 이동을 추가 | None | P2 | CH-048, CH-049, CH-050, CH-051 | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/DashboardRepository.kt`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt`, `apps/mobile/app/src/test/kotlin/com/neurotruth/mobile/data/DashboardParserTest.kt` | backend, Wear, Home, AUQ, Chat | FR-004, AC-002 | app unit tests, lint, debug build | verified |
 | WS8 | runtime slice 이후 API·PRD·DGX 환경 지침 동기화 | WS6, WS7 | Serial | CH-052, CH-053, CH-054, CH-055 | `apps/test_mobile_app/SERVER_API_SPEC.md`, `docs/prd/PRD_neurotruth_mobile.ko.md`, `docs/deployment/DGX_RUNTIME_INVENTORY.ko.md`, `.env.example` | source code, PPTX, secrets | FR-003, FR-004, FR-014, AC-002, AC-007 | term/path/secret scan | verified |
+| WS9 | backend·저장 계약 변경 없이 실기기 검토의 대시보드·AUQ·실시간 신호·미래 달력 수정을 적용 | WS5 | Serial | CH-056, CH-057, CH-058, CH-059, CH-060, CH-061, CH-062, CH-063 | `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardScreen.kt`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/auq/AuqScreen.kt`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/data/LivePpgSource.kt`, `apps/mobile/app/src/main/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardViewModel.kt`, `apps/mobile/app/src/test/kotlin/com/neurotruth/mobile/data/LivePpgWindowTest.kt`, `apps/mobile/app/src/test/kotlin/com/neurotruth/mobile/ui/dashboard/DashboardCalendarNavigationTest.kt` | backend, DB, API contracts, model code, Watch UI, sensor upload/persistence, unrelated mobile screens | FR-015, FR-016, FR-017, FR-018, AC-008, AC-009, AC-010 | focused calendar/live-signal JVM tests, App unit test, lint, debug build, Phone screenshot review | in_progress |
 
 ### 병렬 근거
 
@@ -354,6 +374,8 @@ WS1은 backend만, WS2는 Phone/Core stage/dashboard/AUQ/chat만, WS3는 Phone H
 | 5 | 2026-07-25T04:30:00+09:00 | ws3-final-recovery-accounting | 승인된 Phone-controlled Watch fallback에 필요한 최소 restart-ack와 최초 실행 권한 보정을 반영했다. | D-013 | — |
 | 6 | 2026-07-26T12:00:00+09:00 | user-sleep-stage-chart-reference | 최근 1시간 차트 시각 영역만 재개하고 데이터/API 변경 없는 두 파일 Canvas 재디자인으로 매핑했다. | D-014 | — |
 | 7 | 2026-07-26T15:00:00+09:00 | user-weekly-dashboard-and-dgx-cooldown | 주간 calendar 확장과 DGX `.env` 900초 cooldown 배포·기기 재시험 요구를 추가했다. | D-015, D-016 | — |
+| 8 | 2026-07-26T16:00:00+09:00 | user-device-review-dashboard-auq-signals | 최근 1시간 웨어러블 차트 확대, AUQ 한 줄 한 응답, 저장 preview를 실시간 전처리 PPG·EDA로 교체하는 계약을 추가했다. 사용자의 직접 요청이 이 좁은 후속 개정을 확인한다. | D-017 | — |
+| 9 | 2026-07-26T17:30:00+09:00 | user-calendar-future-boundary | Phone 일·주·월 이동에 현재 기간 경계를 추가하고 날짜 선택기 미래 날짜를 비활성화하며 결정론적 JVM 검증을 매핑했다. 사용자의 직접 요청이 이 좁은 후속 개정을 확인한다. | D-018 | — |
 
 ### 구현 진행 기록
 
@@ -382,3 +404,10 @@ WS1은 backend만, WS2는 Phone/Core stage/dashboard/AUQ/chat만, WS3는 Phone H
 | 2026-07-26T15:31:00+09:00 | 7 | WS7 | verified | Scope·patch 검사가 4개 파일, production 3개, production +35줄로 통과했다. App unit test, lint, Kotlin compile, debug APK build가 통과했다. |
 | 2026-07-26T15:45:00+09:00 | 7 | WS8 | verified | 매핑된 문서·환경 template 4개의 scope·patch 검사가 통과했고 주간 용어, DGX 900초 배포 명령, 참조 경로, 예시값 전용 secret 처리를 검증했다. |
 | 2026-07-26T15:46:00+09:00 | 7 | — | complete | Docker backend calendar focused test 14개와 Compose config가 통과했고 Android unit/lint/debug build도 통과했다. DGX 실제 배포와 Phone/Watch 15분 관찰은 로컬 구현이 아닌 운영 인수 단계로 남는다. |
+| 2026-07-26T16:00:00+09:00 | 8 | — | ready | 실기기 검토에서 Phone 표시 문제 세 가지가 확인됐다. 사용자가 좁은 WS9 수정을 직접 요청·승인했으며 API·DB·모델·업로드·저장·Watch UI·dependency·migration 변경은 없다. |
+| 2026-07-26T16:05:00+09:00 | 8 | WS9 | implementing | 검증된 후속 slice를 5개 파일 범위로 위임했으며 신규 production file·dependency·shared abstraction·backend·저장 변경은 없다. |
+| 2026-07-26T17:10:00+09:00 | 8 | WS9 | correction_verified | 읽기 전용 검수에서 짧은 AUQ 화면과 실제 공백을 덮을 수 있는 단독 단계 bar 위험을 확인했다. AUQ는 7개 전체 폭 응답이 화면을 넘을 때만 스크롤되고, 짧은 단계 구간은 인접 측정 전 명시적 공백을 보존하도록 보정했다. |
+| 2026-07-26T17:20:00+09:00 | 8 | WS9 | validation_pending | App 단위 테스트, lint, debug APK 빌드, diff 검사와 5개 파일 변경 예산이 통과했다. 현재 ADB에는 Watch만 보여 Phone APK 설치와 화면 캡처 검토만 인수 단계로 남았다. |
+| 2026-07-26T17:30:00+09:00 | 9 | WS9 | implementing | 사용자가 일·주·월 미래 이동과 날짜 선택을 막는 좁은 확장을 직접 승인했다. 동일한 Phone 전용 slice를 6개 파일로 재개하며 신규 production file·dependency·abstraction과 backend·API·DB·Watch 변경은 없다. |
+| 2026-07-26T17:50:00+09:00 | 9 | WS9 | correction_verified | 읽기 전용 검수에서 현재 주·현재 월 이동이 오늘 이후 raw anchor를 남길 수 있음을 확인하고 보정했다. 반환 anchor, 직접 anchor 변경, DatePicker 초기값·선택 가능 날짜·확인 전달이 모두 현지 오늘 이하를 강제하고 rollover 테스트를 추가했으며 후속 검수에서 남은 문제는 없었다. |
+| 2026-07-26T17:55:00+09:00 | 9 | WS9 | validation_pending | Spec·scope·patch 검사가 6개 파일, production 4개, 신규 production 0개, production 추가 217/250으로 통과했다. App 전체 단위 테스트, lint, debug APK 빌드와 diff 검사도 통과했다. ADB에는 여전히 Watch만 보여 Phone 설치와 화면 캡처 인수 확인이 남았다. |

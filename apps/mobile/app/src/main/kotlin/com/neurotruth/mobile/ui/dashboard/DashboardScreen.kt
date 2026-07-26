@@ -22,8 +22,8 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDatePickerState
@@ -66,8 +66,6 @@ import com.neurotruth.mobile.data.DashboardRepository
 import com.neurotruth.mobile.data.HourlyCravingBucket
 import com.neurotruth.mobile.data.LivePpgState
 import com.neurotruth.mobile.data.LivePpgWindow
-import com.neurotruth.mobile.data.PpgPreviewParser
-import com.neurotruth.mobile.data.PpgPreviewResult
 import com.neurotruth.mobile.data.PpgSample
 import com.neurotruth.mobile.ui.theme.CardTone
 import com.neurotruth.mobile.ui.theme.NeuroTruthSpacing
@@ -84,15 +82,15 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 private val ChartHeight = 168.dp
+private val RecentHourChartHeight = 240.dp
+private val SignalChartHeight = 112.dp
 private val AxisLabelWidth = 44.dp
 
 /**
  * NT-08 · 대시보드.
  *
- * One scroll, five sections: 최근 1시간, 기간별 갈망 단계, 갈망 이벤트, 자기설문, 신호 데이터(PPG).
- *
- * The PPG section carries both sources the PRD names — the live Watch trace and the stored preview
- * of a selected prediction — under separate headings. Home stays waveform-free by design.
+ * One scroll, five sections: 최근 1시간, 기간별 갈망 단계, 갈망 이벤트, 자기설문,
+ * 실시간 신호(PPG/EDA).
  *
  * Two absences are never drawn as zero. An hour with no prediction is a grey empty bar rather than a
  * 0% stack, and a day with no prediction is an empty span rather than the dot that marks a day whose
@@ -178,11 +176,6 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             PpgSection(
                 live = state.livePpg,
                 watchState = state.watchState,
-                hasSelectionPath = state.hasPpgSelectionPath,
-                selectedPredictionId = state.selectedPredictionId,
-                isLoading = state.isPpgLoading,
-                result = state.ppg,
-                errorMessage = state.ppgError,
             )
 
             if (state.hasAnyError) {
@@ -284,13 +277,13 @@ private fun StageTimelineFrame(
     )
 
     Row(modifier = Modifier.fillMaxWidth()) {
-        AxisLabels(listOf("위험", "주의", "관찰", "안정"))
+        AxisLabels(listOf("위험", "주의", "관찰", "안정"), RecentHourChartHeight)
         Column(modifier = Modifier.fillMaxWidth()) {
             val points = series?.points.orEmpty()
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(ChartHeight)
+                    .height(RecentHourChartHeight)
                     .semantics {
                         contentDescription = when {
                             series == null || !series.hasData ->
@@ -351,14 +344,40 @@ private fun StageTimelineFrame(
                     return yForLane(lane)
                 }
 
+                fun drawShortRun(point: CravingSeriesPoint) {
+                    val pointIndex = series.points.indexOf(point)
+                    val x = xOf(point.atMs)
+                    val desiredWidth = 8.dp.toPx()
+                    val capsuleHeight = 6.dp.toPx()
+                    val visibleGap = 2.dp.toPx()
+                    val bucketMs = series.bucketSeconds * 1_000L
+                    val naturalEnd = xOf((point.atMs + bucketMs).coerceAtMost(series.toMs))
+                    val nextLimit = series.points.getOrNull(pointIndex + 1)
+                        ?.let { xOf(it.atMs) - visibleGap }
+                        ?: (size.width - plotPadding)
+                    var left = x
+                    var right = maxOf(naturalEnd, x + desiredWidth)
+                        .coerceAtMost(nextLimit)
+                        .coerceAtMost(size.width - plotPadding)
+                    if (right <= left) {
+                        val previousLimit = series.points.getOrNull(pointIndex - 1)
+                            ?.let { xOf(it.atMs) + visibleGap }
+                            ?: plotPadding
+                        right = x.coerceAtMost(size.width - plotPadding)
+                        left = (x - desiredWidth).coerceAtLeast(previousLimit)
+                    }
+                    if (right <= left) return
+                    drawRoundRect(
+                        color = accents[point.stage] ?: selection,
+                        topLeft = Offset(left, yOf(point.stage) - capsuleHeight / 2f),
+                        size = Size(right - left, capsuleHeight),
+                        cornerRadius = CornerRadius(capsuleHeight / 2f, capsuleHeight / 2f),
+                    )
+                }
+
                 for (segment in series.segments()) {
                     if (segment.size == 1) {
-                        val point = segment.first()
-                        drawCircle(
-                            color = accents[point.stage] ?: selection,
-                            radius = 4.5.dp.toPx(),
-                            center = Offset(xOf(point.atMs), yOf(point.stage)),
-                        )
+                        drawShortRun(segment.first())
                         continue
                     }
                     for (index in 0 until segment.lastIndex) {
@@ -393,11 +412,7 @@ private fun StageTimelineFrame(
                         }
                     }
                     val last = segment.last()
-                    drawCircle(
-                        color = accents[last.stage] ?: selection,
-                        radius = 4.5.dp.toPx(),
-                        center = Offset(xOf(last.atMs), yOf(last.stage)),
-                    )
+                    drawShortRun(last)
                 }
 
                 series.points.firstOrNull { it.atMs == selectedAtMs }?.let { point ->
@@ -440,6 +455,7 @@ private fun CalendarControls(
     onAnchorChange: (LocalDate) -> Unit,
 ) {
     var pickerVisible by remember { mutableStateOf(false) }
+    val today = LocalDate.now()
     val weekStart = anchor.minusDays((anchor.dayOfWeek.value - 1).toLong())
     val weekEnd = weekStart.plusDays(6)
     SectionBlock(
@@ -484,12 +500,32 @@ private fun CalendarControls(
                     },
                 )
             }
-            TextButton(onClick = onNext) { Text("다음") }
+            TextButton(
+                onClick = onNext,
+                enabled = nextCalendarAnchor(view, anchor, today) != null,
+            ) { Text("다음") }
         }
     }
     if (pickerVisible) {
+        val latestSelectableDateMillis =
+            today.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val initialDate = minOf(anchor, today)
+        val selectableDates = remember(latestSelectableDateMillis) {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    val date = Instant.ofEpochMilli(utcTimeMillis)
+                        .atZone(ZoneOffset.UTC)
+                        .toLocalDate()
+                    return isCalendarAnchorSelectable(date, today)
+                }
+
+                override fun isSelectableYear(year: Int): Boolean = year <= today.year
+            }
+        }
         val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = anchor.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            initialSelectedDateMillis =
+                initialDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = selectableDates,
         )
         DatePickerDialog(
             onDismissRequest = { pickerVisible = false },
@@ -497,9 +533,12 @@ private fun CalendarControls(
                 TextButton(
                     onClick = {
                         pickerState.selectedDateMillis?.let { millis ->
-                            onAnchorChange(
-                                Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate(),
-                            )
+                            val selected = Instant.ofEpochMilli(millis)
+                                .atZone(ZoneOffset.UTC)
+                                .toLocalDate()
+                            if (isCalendarAnchorSelectable(selected, today)) {
+                                onAnchorChange(selected)
+                            }
                         }
                         pickerVisible = false
                     },
@@ -1244,48 +1283,21 @@ private fun AuqDetailCard(bucket: AuqBucket, range: String) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 5 · 신호 데이터 (PPG)
+// 5 · 실시간 신호 데이터 (PPG/EDA)
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Two sources, labelled apart so a live trace is never read as a stored measurement.
- *
- * 실시간 is the watch's PPG_GREEN stream, held only while it keeps arriving. 선택한 측정 is the stored
- * preview of one selected prediction, served `no-store` over a temporarily decrypted window and kept
- * in screen state only for as long as the selection lasts. Neither is ever drawn as a flat zero line.
- */
 @Composable
 private fun PpgSection(
     live: LivePpgState,
     watchState: WatchConnectionState,
-    hasSelectionPath: Boolean,
-    selectedPredictionId: String?,
-    isLoading: Boolean,
-    result: PpgPreviewResult?,
-    errorMessage: String?,
 ) {
-    SectionBlock(label = "신호 데이터") {
+    SectionBlock(label = "실시간 신호") {
         Text(
-            text = "실시간 · Watch",
+            text = "Watch · 최근 ${LivePpgWindow.WINDOW_MS / 1000}초",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
         )
         LivePpgBlock(live = live, watchState = watchState)
-
-        HorizontalDivider()
-
-        Text(
-            text = "선택한 측정 · 저장된 기록",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        StoredPpgBlock(
-            hasSelectionPath = hasSelectionPath,
-            selectedPredictionId = selectedPredictionId,
-            isLoading = isLoading,
-            result = result,
-            errorMessage = errorMessage,
-        )
     }
 }
 
@@ -1294,14 +1306,29 @@ private fun PpgSection(
 private fun LivePpgBlock(live: LivePpgState, watchState: WatchConnectionState) {
     when (live) {
         is LivePpgState.Streaming -> {
-            PpgWaveform(
-                samples = live.trace.samples,
-                accent = MaterialTheme.colorScheme.primary,
-                description = "실시간 PPG 신호 그래프, ${live.trace.samples.size}개 지점",
-            )
+            Text("PPG", style = MaterialTheme.typography.labelLarge)
+            if (live.trace.samples.isEmpty()) {
+                EmptyLine("PPG 신호가 아직 도착하지 않았어요.")
+            } else {
+                PpgWaveform(
+                    samples = live.trace.samples,
+                    accent = MaterialTheme.colorScheme.primary,
+                    description = "실시간 PPG 신호 그래프, ${live.trace.samples.size}개 지점",
+                )
+            }
+            Text("EDA", style = MaterialTheme.typography.labelLarge)
+            if (live.trace.edaSamples.isEmpty()) {
+                EmptyLine("EDA 신호가 아직 도착하지 않았어요.")
+            } else {
+                PpgWaveform(
+                    samples = live.trace.edaSamples,
+                    accent = MaterialTheme.colorScheme.secondary,
+                    description = "실시간 EDA 신호 그래프, ${live.trace.edaSamples.size}개 지점",
+                )
+            }
             Text(
-                text = "최근 ${LivePpgWindow.WINDOW_MS / 1000}초 · ${live.trace.samples.size}개 표시 지점 " +
-                    "· ${clockOf(live.trace.latestAtMs)} 기준",
+                text = "PPG ${live.trace.samples.size}개 · EDA ${live.trace.edaSamples.size}개 표시 지점 " +
+                    "· ${clockOf(live.trace.latestAtMs)} 기준 · 표시용 채널별 정규화",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1319,64 +1346,7 @@ private fun LivePpgBlock(live: LivePpgState, watchState: WatchConnectionState) {
     }
 }
 
-@Composable
-private fun StoredPpgBlock(
-    hasSelectionPath: Boolean,
-    selectedPredictionId: String?,
-    isLoading: Boolean,
-    result: PpgPreviewResult?,
-    errorMessage: String?,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(NeuroTruthSpacing.betweenRows)) {
-        when {
-            errorMessage != null -> EmptyLine(errorMessage)
-
-            isLoading -> Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(ChartHeight),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .semantics { contentDescription = "신호 데이터를 불러오고 있어요" },
-                )
-            }
-
-            // The recent-hour buckets are averages and carry no prediction id, so there is nothing
-            // to select yet. No id is invented to fill the gap.
-            !hasSelectionPath -> EmptyLine(
-                "신호를 보려면 먼저 측정을 선택해야 해요. 지금은 최근 1시간 기록에서 선택할 수 있는 측정이 없어요.",
-            )
-
-            selectedPredictionId == null -> EmptyLine("위 그래프에서 측정을 선택하면 그 구간의 신호를 볼 수 있어요.")
-
-            result is PpgPreviewResult.Empty || result == null ->
-                EmptyLine("선택한 측정의 신호 데이터가 없어요.")
-
-            result is PpgPreviewResult.Invalid -> EmptyLine(ppgInvalidCopy(result.reason))
-
-            result is PpgPreviewResult.Ready -> {
-                PpgWaveform(
-                    samples = result.preview.samples,
-                    accent = MaterialTheme.colorScheme.secondary,
-                    description = "선택한 측정의 PPG 신호 그래프, ${result.preview.samples.size}개 지점",
-                )
-                Text(
-                    text = buildString {
-                        append("${result.preview.samples.size}개 표시 지점")
-                        result.preview.samplingHz?.let { append(" · 약 ${it.roundToInt()}Hz") }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-/** Shared by both halves so a live trace and a stored preview are drawn the same way. */
+/** Shared by the two independently normalized live channels. */
 @Composable
 private fun PpgWaveform(samples: List<PpgSample>, accent: Color, description: String) {
     if (samples.isEmpty()) return
@@ -1390,7 +1360,7 @@ private fun PpgWaveform(samples: List<PpgSample>, accent: Color, description: St
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(ChartHeight)
+                    .height(SignalChartHeight)
                     .semantics { contentDescription = description },
             ) {
                 drawLine(
@@ -1419,14 +1389,6 @@ private fun PpgWaveform(samples: List<PpgSample>, accent: Color, description: St
             AxisRow(listOf(clockOf(samples.first().atMs), clockOf(samples.last().atMs)))
         }
     }
-}
-
-private fun ppgInvalidCopy(reason: String): String = when (reason) {
-    PpgPreviewParser.REASON_TOO_MANY_POINTS ->
-        "신호 데이터를 표시할 수 없어요. 응답 형식이 예상과 달라요."
-    PpgPreviewParser.REASON_OUT_OF_ORDER ->
-        "신호 데이터의 시간 순서가 맞지 않아 표시하지 않았어요."
-    else -> "신호 데이터를 표시할 수 없어요."
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1487,11 +1449,11 @@ private fun EmptyLine(text: String) {
 }
 
 @Composable
-private fun AxisLabels(labels: List<String>) {
+private fun AxisLabels(labels: List<String>, height: androidx.compose.ui.unit.Dp = ChartHeight) {
     Column(
         modifier = Modifier
             .width(AxisLabelWidth)
-            .height(ChartHeight),
+            .height(height),
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.End,
     ) {

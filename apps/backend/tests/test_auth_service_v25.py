@@ -12,7 +12,13 @@ import pytest
 from app.core.security.crypto import AesGcmKeyring, aad_for
 from app.core.security.passwords import hash_password
 from app.core.security.tokens import hash_refresh_token, verify_access_token
-from app.services.auth import AuthenticationError, AuthorizationError, AuthService
+from app.maintenance.seed_vp012_demo import DEMO_EMAIL, DEMO_PATIENT_ID
+from app.services.auth import (
+    AuthenticationError,
+    AuthorizationError,
+    AuthService,
+    DemoLifecycleUnavailable,
+)
 from app.models.records import (
     AuthSessionRecord,
     ConsentRecord,
@@ -262,6 +268,91 @@ async def _logout_and_password_change_revoke_sessions(service: Any) -> None:
 
 def test_logout_and_password_change_revoke_sessions(service: Any) -> None:
     asyncio.run(_logout_and_password_change_revoke_sessions(service))
+
+
+class FakeDemoLifecycle:
+    def __init__(self) -> None:
+        self.started = 0
+        self.deleted = 0
+        self.fail_start = False
+        self.fail_delete = False
+        self.delete_match = True
+
+    async def start_for_login(self, **_values: Any) -> None:
+        if self.fail_start:
+            raise RuntimeError("provider details must stay hidden")
+        self.started += 1
+
+    async def delete_for_logout(self, _refresh_hash: str) -> bool:
+        if self.fail_delete:
+            raise RuntimeError("database details must stay hidden")
+        self.deleted += 1
+        return self.delete_match
+
+
+def test_demo_lifecycle_is_guarded_and_failures_issue_no_tokens(service: Any) -> None:
+    async def scenario() -> None:
+        _, repo, ring = service
+        lifecycle = FakeDemoLifecycle()
+        auth = AuthService(
+            repo, ring, jwt_signing_key="j" * 32,
+            demo_scenario_enabled=True, demo_lifecycle=lifecycle,
+        )
+        user = UserRecord(
+            DEMO_PATIENT_ID, DEMO_EMAIL, hash_password("long-demo-password"),
+            "patient", "active", False, NOW,
+        )
+        repo.users[user.id] = user
+        repo.consents[user.id] = []
+
+        lifecycle.fail_start = True
+        with pytest.raises(DemoLifecycleUnavailable, match="demo_seed_failed"):
+            await auth.login(LoginInput(
+                email=DEMO_EMAIL, password="long-demo-password",
+            ))
+        assert repo.sessions == {}
+        assert lifecycle.started == 0
+
+        lifecycle.fail_start = False
+        login = await auth.login(LoginInput(
+            email=DEMO_EMAIL, password="long-demo-password",
+        ))
+        assert lifecycle.started == 1
+        lifecycle.fail_delete = True
+        with pytest.raises(DemoLifecycleUnavailable, match="demo_delete_failed"):
+            await auth.logout(login["refreshToken"])
+        assert repo.sessions[hash_refresh_token(login["refreshToken"])].revoked_at is None
+        lifecycle.fail_delete = False
+        await auth.logout(login["refreshToken"])
+        assert lifecycle.deleted == 1
+
+        disabled = AuthService(
+            repo, ring, jwt_signing_key="j" * 32,
+            demo_scenario_enabled=False, demo_lifecycle=lifecycle,
+        )
+        before = lifecycle.started
+        await disabled.login(LoginInput(
+            email=DEMO_EMAIL, password="long-demo-password",
+        ))
+        assert lifecycle.started == before
+
+        ordinary = UserRecord(
+            uuid4(), "ordinary@example.com", hash_password("ordinary-password"),
+            "patient", "active", False, NOW,
+        )
+        repo.users[ordinary.id] = ordinary
+        repo.consents[ordinary.id] = []
+        lifecycle.delete_match = False
+        ordinary_login = await auth.login(LoginInput(
+            email=ordinary.email, password="ordinary-password",
+        ))
+        assert lifecycle.started == before
+        await auth.logout(ordinary_login["refreshToken"])
+        assert repo.sessions[
+            hash_refresh_token(ordinary_login["refreshToken"])
+        ].revoked_at is not None
+
+    asyncio.run(scenario())
 
 
 async def _append_only_consent_and_independent_feature_gate(service: Any) -> None:

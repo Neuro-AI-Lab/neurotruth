@@ -15,6 +15,7 @@ from app.agents.intervention import InterventionAgent
 from app.agents.report import ReportAgent
 from app.agents.state_summary import StateSummaryAgent
 from app.core.config import SecuritySettings
+from app.maintenance.seed_vp012_demo import Vp012DemoSeeder
 from app.repositories.postgres import SqlAlchemyV25Repository
 from app.services.auth import AuthService
 
@@ -77,6 +78,13 @@ async def initialize_runtime(app: FastAPI) -> BackendRuntime:
                 rppg_root.mkdir(parents=True, exist_ok=True)
                 with tempfile.NamedTemporaryFile(prefix=".readiness-", dir=rppg_root, delete=True):
                     pass
+        from app.storage.rppg import EncryptedRppgStorage
+        from app.storage.sensor import EncryptedSensorStorage
+        sensor_storage = EncryptedSensorStorage(root, settings.keyring())
+        rppg_root = settings.rppg_storage_root or (root / "rppg-disabled")
+        rppg_storage = EncryptedRppgStorage(
+            rppg_root, settings.rppg_tmpfs_root, settings.keyring()
+        )
 
         service = AuthService(
             repository,
@@ -84,6 +92,13 @@ async def initialize_runtime(app: FastAPI) -> BackendRuntime:
             jwt_signing_key=settings.jwt_signing_key,
             access_minutes=settings.access_token_minutes,
             refresh_days=settings.refresh_token_days,
+            demo_scenario_enabled=getattr(settings, "demo_scenario_enabled", False),
+            demo_lifecycle=Vp012DemoSeeder(
+                repository.engine,
+                settings.keyring(),
+                sensor_storage=sensor_storage,
+                rppg_storage=rppg_storage,
+            ),
         )
         await service.bootstrap_admin_code(settings.admin_signup_code.get_secret_value())
         runtime.settings = settings
@@ -105,22 +120,15 @@ async def initialize_runtime(app: FastAPI) -> BackendRuntime:
                 await stt_client.close()
             runtime.stt_service = None
         from app.repositories.rppg import SqlAlchemyRppgRepository
-        from app.storage.rppg import EncryptedRppgStorage
         runtime.rppg_repository = SqlAlchemyRppgRepository(repository.engine)
-        rppg_root = settings.rppg_storage_root or (settings.sensor_storage_root / "rppg-disabled")
-        runtime.rppg_storage = EncryptedRppgStorage(
-            rppg_root, settings.rppg_tmpfs_root, settings.keyring()
-        )
+        runtime.rppg_storage = rppg_storage
         from app.services.admin import AdminService
-        from app.storage.sensor import EncryptedSensorStorage
         runtime.admin_service = AdminService(
-            repository, settings.keyring(),
-            EncryptedSensorStorage(settings.sensor_storage_root, settings.keyring()),
+            repository, settings.keyring(), sensor_storage,
         )
         from app.services.dashboard import DashboardService
         runtime.dashboard_service = DashboardService(
-            repository, settings.keyring(),
-            EncryptedSensorStorage(settings.sensor_storage_root, settings.keyring()),
+            repository, settings.keyring(), sensor_storage,
             state_summary_ai_enabled=getattr(settings, "state_summary_ai_enabled", False),
         )
         runtime.admin_service.configure_dashboard(runtime.dashboard_service)
