@@ -92,9 +92,9 @@ private val AxisLabelWidth = 44.dp
  * One scroll, five sections: 최근 1시간, 기간별 갈망 단계, 갈망 이벤트, 자기설문,
  * 실시간 신호(PPG/EDA).
  *
- * Two absences are never drawn as zero. An hour with no prediction is a grey empty bar rather than a
- * 0% stack, and a day with no prediction is an empty span rather than the dot that marks a day whose
- * predictions raised no alert. Charts are drawn with [Canvas]; no charting library is involved.
+ * Missing measurements are left blank on the white chart surface rather than rendered as zero or
+ * as a placeholder bar. A day with predictions but no alert remains a real zero and is drawn as a
+ * dot. Charts are drawn with [Canvas]; no charting library is involved.
  *
  * The patient dashboard carries no state-inference card and no report-status card by design.
  */
@@ -607,58 +607,59 @@ private fun CalendarStageChart(
     selectedIndex: Int?,
     onSelect: (Int?) -> Unit,
 ) {
-    val empty = MaterialTheme.colorScheme.surfaceContainerHighest
     val selection = MaterialTheme.colorScheme.onSurface
     val accents = CravingStage.entries.associateWith { stage -> cravingAccent(stage) }
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(ChartHeight)
-            .semantics { contentDescription = "선택한 기간 갈망 단계 구성 막대그래프" }
-            .pointerInput(buckets.size) {
-                detectTapGestures { offset ->
-                    val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
-                    onSelect((offset.x / slot).toInt().coerceIn(0, buckets.lastIndex))
-                }
-            },
-    ) {
-        if (buckets.isEmpty()) return@Canvas
-        val slot = size.width / buckets.size
-        val barWidth = (slot * 0.64f).coerceAtLeast(2f)
-        buckets.forEachIndexed { index, bucket ->
-            val left = index * slot + (slot - barWidth) / 2f
-            if (!bucket.hasStageData) {
-                drawRoundRect(
-                    color = empty,
-                    topLeft = Offset(left, 0f),
-                    size = Size(barWidth, size.height),
-                    cornerRadius = CornerRadius(3.dp.toPx()),
-                )
-            } else {
-                var bottom = size.height
-                bucket.proportions().forEach { (stage, proportion) ->
-                    if (proportion <= 0f) return@forEach
-                    val height = size.height * proportion
-                    drawRect(
-                        color = accents.getValue(stage),
-                        topLeft = Offset(left, bottom - height),
-                        size = Size(barWidth, height),
-                    )
-                    bottom -= height
+    ChartYAxisTitle("Y축 · 단계 구성 비율 (0–100%)")
+    Row(modifier = Modifier.fillMaxWidth()) {
+        AxisLabels(listOf("100%", "50%", "0%"))
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(ChartHeight)
+                    .semantics {
+                        contentDescription =
+                            "선택한 기간 갈망 단계 구성 막대그래프, 세로축 단계 구성 비율 0에서 100퍼센트"
+                    }
+                    .pointerInput(buckets.size) {
+                        detectTapGestures { offset ->
+                            val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
+                            onSelect((offset.x / slot).toInt().coerceIn(0, buckets.lastIndex))
+                        }
+                    },
+            ) {
+                if (buckets.isEmpty()) return@Canvas
+                val slot = size.width / buckets.size
+                val barWidth = (slot * 0.64f).coerceAtLeast(2f)
+                buckets.forEachIndexed { index, bucket ->
+                    val left = index * slot + (slot - barWidth) / 2f
+                    if (bucket.hasStageData) {
+                        var bottom = size.height
+                        bucket.proportions().forEach { (stage, proportion) ->
+                            if (proportion <= 0f) return@forEach
+                            val height = size.height * proportion
+                            drawRect(
+                                color = accents.getValue(stage),
+                                topLeft = Offset(left, bottom - height),
+                                size = Size(barWidth, height),
+                            )
+                            bottom -= height
+                        }
+                    }
+                    if (index == selectedIndex) {
+                        drawRoundRect(
+                            color = selection,
+                            topLeft = Offset(left - 2f, 0f),
+                            size = Size(barWidth + 4f, size.height),
+                            cornerRadius = CornerRadius(3.dp.toPx()),
+                            style = Stroke(width = 2.dp.toPx()),
+                        )
+                    }
                 }
             }
-            if (index == selectedIndex) {
-                drawRoundRect(
-                    color = selection,
-                    topLeft = Offset(left - 2f, 0f),
-                    size = Size(barWidth + 4f, size.height),
-                    cornerRadius = CornerRadius(3.dp.toPx()),
-                    style = Stroke(width = 2.dp.toPx()),
-                )
-            }
+            AxisRow(edgeLabels(buckets.map { it.label }))
         }
     }
-    AxisRow(edgeLabels(buckets.map { it.label }))
 }
 
 @Composable
@@ -681,6 +682,7 @@ private fun CalendarEventSection(
                     selectedIndex = selectedIndex,
                     onSelect = onSelect,
                     description = "선택한 기간 갈망 이벤트 막대그래프",
+                    yAxisTitle = "Y축 · 갈망 이벤트 발생 횟수 (건)",
                 )
                 selectedIndex?.let { index ->
                     buckets.getOrNull(index)?.let { bucket ->
@@ -720,6 +722,7 @@ private fun CalendarAuqSection(
                     selectedIndex = selectedIndex,
                     onSelect = onSelect,
                     description = "선택한 기간 자기설문 평균 막대그래프",
+                    yAxisTitle = "Y축 · 자기설문 평균 점수 (0–48점)",
                     fixedMaximum = Auq.SCALE_MAX.toFloat(),
                 )
                 selectedIndex?.let { index ->
@@ -752,62 +755,86 @@ private fun CalendarValueBars(
     selectedIndex: Int?,
     onSelect: (Int?) -> Unit,
     description: String,
+    yAxisTitle: String,
     fixedMaximum: Float? = null,
 ) {
     val bar = MaterialTheme.colorScheme.primary
-    val empty = MaterialTheme.colorScheme.surfaceContainerHighest
     val selection = MaterialTheme.colorScheme.onSurface
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(ChartHeight)
-            .semantics { contentDescription = description }
-            .pointerInput(buckets.size) {
-                detectTapGestures { offset ->
-                    val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
-                    onSelect((offset.x / slot).toInt().coerceIn(0, buckets.lastIndex))
-                }
-            },
-    ) {
-        if (buckets.isEmpty()) return@Canvas
-        val maximum = fixedMaximum ?: values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
-        val slot = size.width / buckets.size
-        val barWidth = (slot * 0.58f).coerceAtLeast(2f)
-        buckets.forEachIndexed { index, _ ->
-            val left = index * slot + (slot - barWidth) / 2f
-            if (!present.getOrElse(index) { false }) {
-                drawRoundRect(
-                    color = empty,
-                    topLeft = Offset(left, 0f),
-                    size = Size(barWidth, size.height),
-                    cornerRadius = CornerRadius(3.dp.toPx()),
-                )
-            } else {
-                val value = values.getOrElse(index) { 0f }.coerceAtLeast(0f)
-                if (value == 0f) {
-                    drawCircle(bar, 3.dp.toPx(), Offset(left + barWidth / 2f, size.height - 3.dp.toPx()))
-                } else {
-                    val height = size.height * (value / maximum).coerceIn(0f, 1f)
-                    drawRoundRect(
-                        color = bar,
-                        topLeft = Offset(left, size.height - height),
-                        size = Size(barWidth, height),
-                        cornerRadius = CornerRadius(3.dp.toPx()),
-                    )
+    val maximum = fixedMaximum ?: values
+        .filterIndexed { index, _ -> present.getOrElse(index) { false } }
+        .maxOrNull()
+        ?.coerceAtLeast(1f)
+        ?: 1f
+    val axisLabels = when {
+        fixedMaximum != null ->
+            listOf(
+                fixedMaximum.roundToInt().toString(),
+                (fixedMaximum / 2f).roundToInt().toString(),
+                "0",
+            )
+        maximum <= 1f -> listOf("1", "", "0")
+        else -> listOf(
+            maximum.roundToInt().toString(),
+            (maximum / 2f).roundToInt().toString(),
+            "0",
+        )
+    }
+
+    ChartYAxisTitle(yAxisTitle)
+    Row(modifier = Modifier.fillMaxWidth()) {
+        AxisLabels(axisLabels)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(ChartHeight)
+                    .semantics {
+                        contentDescription = "$description, $yAxisTitle"
+                    }
+                    .pointerInput(buckets.size) {
+                        detectTapGestures { offset ->
+                            val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
+                            onSelect((offset.x / slot).toInt().coerceIn(0, buckets.lastIndex))
+                        }
+                    },
+            ) {
+                if (buckets.isEmpty()) return@Canvas
+                val slot = size.width / buckets.size
+                val barWidth = (slot * 0.58f).coerceAtLeast(2f)
+                buckets.forEachIndexed { index, _ ->
+                    val left = index * slot + (slot - barWidth) / 2f
+                    if (present.getOrElse(index) { false }) {
+                        val value = values.getOrElse(index) { 0f }.coerceAtLeast(0f)
+                        if (value == 0f) {
+                            drawCircle(
+                                bar,
+                                3.dp.toPx(),
+                                Offset(left + barWidth / 2f, size.height - 3.dp.toPx()),
+                            )
+                        } else {
+                            val height = size.height * (value / maximum).coerceIn(0f, 1f)
+                            drawRoundRect(
+                                color = bar,
+                                topLeft = Offset(left, size.height - height),
+                                size = Size(barWidth, height),
+                                cornerRadius = CornerRadius(3.dp.toPx()),
+                            )
+                        }
+                    }
+                    if (index == selectedIndex) {
+                        drawRoundRect(
+                            color = selection,
+                            topLeft = Offset(left - 2f, 0f),
+                            size = Size(barWidth + 4f, size.height),
+                            cornerRadius = CornerRadius(3.dp.toPx()),
+                            style = Stroke(width = 2.dp.toPx()),
+                        )
+                    }
                 }
             }
-            if (index == selectedIndex) {
-                drawRoundRect(
-                    color = selection,
-                    topLeft = Offset(left - 2f, 0f),
-                    size = Size(barWidth + 4f, size.height),
-                    cornerRadius = CornerRadius(3.dp.toPx()),
-                    style = Stroke(width = 2.dp.toPx()),
-                )
-            }
+            AxisRow(edgeLabels(buckets.map { it.label }))
         }
     }
-    AxisRow(edgeLabels(buckets.map { it.label }))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1443,6 +1470,16 @@ private fun EmptyLine(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.semantics { contentDescription = text },
+    )
+}
+
+@Composable
+private fun ChartYAxisTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.semantics { contentDescription = text },
     )
