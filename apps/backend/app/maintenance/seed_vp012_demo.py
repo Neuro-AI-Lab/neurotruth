@@ -5,7 +5,9 @@ import asyncio
 import json
 import math
 import os
+import random
 import sys
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
@@ -26,12 +28,15 @@ PROVISION_CONFIRMATION = "PROVISION-VP012-DEMO"
 DELETE_CONFIRMATION = "DELETE-VP012-DEMO"
 ADVISORY_LOCK_KEY = "neurotruth-vp012-120day-demo"
 DEMO_EMAIL = "woosik.jeong@neurotruth.kr"
-DEMO_SEED = "vp012-120d-v6"
+DEMO_SEED = "vp012-120d-v7"
 DEMO_DAYS = 120
 HISTORICAL_DISPLAY_WEIGHT = 90
-# Every other historical day has one recorded craving event.  The current login
-# day adds one more event from the checked-in recent-hour trace.
-HISTORICAL_EVENT_DAY_OFFSETS = tuple(range(1, 119, 2))
+DEMO_EVENT_MIN_PER_DAY = 2
+DEMO_EVENT_MAX_PER_DAY = 10
+DEMO_EVENT_COOLDOWN = timedelta(minutes=15)
+# Six of 120 days include an overnight Watch-worn period. This remains rare
+# (5% of the demo days) and is never used to synthesize an alert event.
+SLEEP_WEAR_DAY_OFFSETS = (11, 29, 47, 68, 91, 113)
 RECENT_HOUR_TRACE_SCHEMA = "neurotruth-vp012-recent-hour-v1"
 RECENT_HOUR_TRACE_SOURCE = "Alcohol_Test/1_1_010_V1"
 RECENT_HOUR_TRACE_PATH = (
@@ -140,8 +145,8 @@ def _historical_probability(
 
     hourly_profile = (
         0.18, 0.16, 0.15, 0.14, 0.14, 0.16,
-        0.20, 0.23, 0.26, 0.28, 0.31, 0.34,
-        0.36, 0.38, 0.40, 0.43, 0.46, 0.50,
+        0.18, 0.15, 0.17, 0.20, 0.31, 0.34,
+        0.18, 0.22, 0.40, 0.43, 0.46, 0.50,
         0.55, 0.60, 0.65, 0.70, 0.58, 0.36,
     )
     day_variation = (
@@ -170,50 +175,48 @@ def _historical_day_points(
     production three-danger alert rule.
     """
 
-    event_day = day_index in HISTORICAL_EVENT_DAY_OFFSETS
     weekend = local_day.weekday() >= 5
     start = datetime.combine(local_day, time.min, SEOUL).astimezone(timezone.utc)
-    event_probabilities = {
-        (20, 2): 0.77,
-        (20, 3): 0.79,
-        (21, 0): 0.81,
-        (21, 1): 0.83,
-        (21, 3): 0.80,
-    }
     morning_start = 7 + (day_index % 3)
     evening_start = 16 if weekend else 17
     evening_end = 23 + (day_index % 2)
+    sleep_worn = day_index in SLEEP_WEAR_DAY_OFFSETS
+    worn_slots = [
+        (hour, quarter)
+        for hour in range(24)
+        for quarter in range(4)
+        if (
+            (sleep_worn and 0 <= hour < 6)
+            or morning_start <= hour < 10
+            or (day_index % 4 != 0 and 12 <= hour < 14)
+            or evening_start <= hour < evening_end
+        )
+    ]
+    event_eligible_slots = [
+        slot for slot in worn_slots if slot[0] >= 6
+    ]
+    rng = random.Random(12_012 + day_index)
+    event_count = rng.randint(DEMO_EVENT_MIN_PER_DAY, DEMO_EVENT_MAX_PER_DAY)
+    event_slots = set(rng.sample(event_eligible_slots, event_count))
     points: list[tuple[datetime, float, int]] = []
-    for hour in range(24):
-        for quarter in range(4):
-            worn = (
-                morning_start <= hour < 10
-                or (day_index % 4 != 0 and 12 <= hour < 14)
-                or evening_start <= hour < evening_end
-            )
-            if not worn:
-                continue
-            offset = timedelta(hours=hour, minutes=quarter * 15)
-            if event_day and hour == 21 and quarter == 2:
-                for seconds, probability in zip((0, 10, 20), (0.82, 0.87, 0.84)):
-                    points.append((
-                        start + offset + timedelta(seconds=seconds),
-                        probability,
-                        HISTORICAL_DISPLAY_WEIGHT // 3,
-                    ))
-                continue
-            if event_day and (hour, quarter) in event_probabilities:
+    for hour, quarter in worn_slots:
+        offset = timedelta(hours=hour, minutes=quarter * 15)
+        if (hour, quarter) in event_slots:
+            # One alert event is represented by the same three-danger sequence
+            # used by production. The total display weight of the 15-minute
+            # block is preserved for the stacked dashboard.
+            for seconds, probability in zip((0, 10, 20), (0.82, 0.87, 0.84)):
                 points.append((
-                    start + offset,
-                    event_probabilities[(hour, quarter)],
-                    HISTORICAL_DISPLAY_WEIGHT,
+                    start + offset + timedelta(seconds=seconds),
+                    probability,
+                    HISTORICAL_DISPLAY_WEIGHT // 3,
                 ))
-                continue
-            points.append((
-                start + offset,
-                _historical_probability(day_index, hour, quarter, weekend),
-                HISTORICAL_DISPLAY_WEIGHT,
-            ))
+            continue
+        points.append((
+            start + offset,
+            _historical_probability(day_index, hour, quarter, weekend),
+            HISTORICAL_DISPLAY_WEIGHT,
+        ))
     return points
 
 
@@ -246,11 +249,13 @@ def _recent_hour_trace() -> tuple[float, ...]:
         raise DemoSeedError("demo_recent_hour_fixture_invalid") from exc
 
 
-def _consecutive_danger_trigger(
+def _consecutive_danger_triggers(
     rows: list[dict[str, Any]],
-) -> dict[str, Any] | None:
+) -> list[dict[str, Any]]:
     streak: list[dict[str, Any]] = []
-    for row in rows:
+    triggers: list[dict[str, Any]] = []
+    last_triggered_at: datetime | None = None
+    for row in sorted(rows, key=lambda item: item["predicted_at"]):
         if (
             row["continuous_value"] < 0.75
             or (
@@ -263,8 +268,14 @@ def _consecutive_danger_trigger(
         if row["continuous_value"] >= 0.75:
             streak.append(row)
             if len(streak) >= 3:
-                return row
-    return None
+                if (
+                    last_triggered_at is None
+                    or row["predicted_at"] - last_triggered_at >= DEMO_EVENT_COOLDOWN
+                ):
+                    triggers.append(row)
+                    last_triggered_at = row["predicted_at"]
+                streak = []
+    return triggers
 
 
 def prepare_demo(
@@ -369,11 +380,12 @@ def prepare_demo(
             }
             predictions.append(row)
             day_rows.append(row)
-        if day_index in HISTORICAL_EVENT_DAY_OFFSETS or local_day == today:
-            consecutive_trigger = _consecutive_danger_trigger(day_rows)
-            if consecutive_trigger is None:
-                raise DemoSeedError("demo_event_streak_invalid")
-            alert_candidates.append(consecutive_trigger)
+        day_triggers = _consecutive_danger_triggers(day_rows)
+        if local_day < today and not (
+            DEMO_EVENT_MIN_PER_DAY <= len(day_triggers) <= DEMO_EVENT_MAX_PER_DAY
+        ):
+            raise DemoSeedError("demo_event_count_invalid")
+        alert_candidates.extend(day_triggers[:DEMO_EVENT_MAX_PER_DAY])
 
     alerts: list[dict[str, Any]] = []
     for alert_index, prediction in enumerate(alert_candidates):
@@ -550,6 +562,14 @@ def _validate(prepared: PreparedDemo, now_utc: datetime) -> None:
     stages = {_stage(float(row["continuous_value"])) for row in prepared.predictions}
     if stages != {"low", "observe", "caution", "high"}:
         raise DemoSeedError("demo_stage_distribution_invalid")
+    stage_weights: Counter[str] = Counter()
+    for row in prepared.predictions:
+        metadata = json.loads(row["output_metadata"])
+        stage_weights[metadata["stage"]] += int(metadata["demoDisplayWeight"])
+    total_stage_weight = sum(stage_weights.values())
+    low_ratio = stage_weights["low"] / total_stage_weight
+    if not 0.20 <= low_ratio <= 0.30:
+        raise DemoSeedError("demo_stable_stage_balance_invalid")
     monthly: list[float] = []
     for offset in range(0, DEMO_DAYS, 30):
         block_start = prepared.start_date + timedelta(days=offset)
@@ -584,6 +604,21 @@ def _validate(prepared: PreparedDemo, now_utc: datetime) -> None:
         for earlier, later in zip(alert_times, alert_times[1:])
     ):
         raise DemoSeedError("demo_alert_spacing_invalid")
+    alert_counts = Counter(
+        alert["triggered_at"].astimezone(SEOUL).date()
+        for alert in prepared.alerts
+    )
+    today = now_utc.astimezone(SEOUL).date()
+    if any(count > DEMO_EVENT_MAX_PER_DAY for count in alert_counts.values()):
+        raise DemoSeedError("demo_event_daily_cap_invalid")
+    if any(
+        not DEMO_EVENT_MIN_PER_DAY <= alert_counts[local_day] <= DEMO_EVENT_MAX_PER_DAY
+        for local_day in local_dates
+        if local_day < today
+    ):
+        raise DemoSeedError("demo_event_daily_count_invalid")
+    if len(prepared.assessments) != len(prepared.alerts):
+        raise DemoSeedError("demo_event_auq_link_invalid")
     if any(not 0 <= row["score"] <= 48 for row in prepared.assessments):
         raise DemoSeedError("demo_auq_contract_invalid")
 
