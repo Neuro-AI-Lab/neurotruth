@@ -49,6 +49,8 @@
 - 고정 seed와 안정 UUID를 이용한 중복 없는 재실행.
 - `Asia/Seoul` 기준 명시한 `--anchor-date` 또는 오늘까지 120일.
 - 단조로운 치료효과 곡선이 아닌 식당 업무·저녁·주말 변동.
+- 기존 `Alcohol_Test/1_1_010_V1` 데모 시나리오에서 값 순서를 보존해 가져온
+  10초 간격 360개 최근 1시간 곡선.
 - 현재 대시보드가 읽는 prediction, alert, AUQ, session, message, intervention, state-inference, report 행.
 - 현재 keyring과 정확한 AAD를 이용한 민감 필드 AES-256-GCM 암호화.
 - 과거 seed 세션은 모두 완료 상태로 만들어 실시간 데모 세션 시작을 방해하지 않음.
@@ -81,6 +83,8 @@
 - 비밀번호는 `DEMO_PATIENT_PASSWORD`에서만 읽고 명령 인자나 문서에 저장하지 않습니다.
 - `DEMO_SCENARIO_ENABLED` 기본값은 `false`이며 일반 사용자와 설정 비활성 상태의 demo identity는 정상 인증 흐름을 유지합니다.
 - reserved profile 표시 이름은 demo suffix가 없는 `"정우식"`이며 가상/demo 고지는 seeded metadata와 제작 runbook에 유지합니다.
+- 최근 1시간 곡선은 VP-012 참여자의 측정값이 아닌 Alcohol_Test 데모용
+  모델 출력이며, 각 최근 prediction에 출처를 보존합니다.
 
 ## 3. Repository Pattern Baseline
 
@@ -103,6 +107,7 @@
 | R-003 | Argon2id password helper | `apps/backend/app/core/security/passwords.py::hash_password` | 운영자가 제공한 데모 비밀번호 해시 |
 | R-004 | Existing dashboard tables and aggregation | `apps/backend/app/repositories/postgres.py` | 현재 API가 소비하는 행만 삽입 |
 | R-005 | VP-012 persona facts and dialogue style | `../neurosync/docs/ai/personas/VP-012_first_visit_alcohol.md` | 재현 가능한 대사와 시간 변동 구성 |
+| R-006 | 지속 반등형 최근 1시간 모델 곡선 | `../Alcohol_Test/demo_scenarios/1_1_010_V1.json`; `../Alcohol_Test/docs/ai/personas/NT-DP-002_1_1_010_V1_rebound.ko.md` | 기존 360개 값 순서와 60분 시간축 정규화 보존 |
 
 ## 4. Decisions and Questions
 
@@ -123,8 +128,9 @@
 | D-011 | Repeat takes | 각 촬영 완료 후 demo account와 scenario 전체를 제거하고 다음 촬영 전 다시 provision한다. | user | 실수한 촬영을 이전 자료 누적 없이 반복해야 한다. | 매 촬영이 깨끗한 identity와 dataset에서 시작한다. | confirmed | resolved |
 | D-012 | Demo end | 기존 앱 logout을 정확한 demo-end boundary로 사용한다. 전체 demo 삭제가 commit된 뒤에만 logout success를 반환하고 삭제 실패는 재시도 가능하게 한다. | user | 사용자가 “로그아웃 버튼으로 보고 싶다.”라고 답했다. | 신규 mobile button/API route가 없고 force-close·disconnect는 삭제를 일으키지 않는다. | confirmed | resolved |
 | D-013 | Error mapping | 정제된 retryable demo lifecycle `503` 응답을 위해 기존 auth route error mapper를 확장한다. | repository | `routes/auth.py`는 현재 authentication/authorization/conflict 오류만 mapping하고 logout에는 service-error mapping이 없다. | 신규 route 없이 FR-011·FR-013을 충족한다. | not-required | resolved |
-| D-014 | Login validation | `LoginInput.email`에서 `EmailStr`의 literal 대안으로 `demo.vp012@neurotruth.invalid`만 허용하고 signup schema는 strict로 유지한다. | repository | 기존 Pydantic/email-validator가 `AuthService.login` 전에 reserved `.invalid` domain을 거부한다. | 일반 account 생성이나 임의 login email 검증을 약화하지 않고 reviewed reserved account를 사용할 수 있다. | not-required | resolved |
+| D-014 | Login validation | 일반 사용자처럼 보이는 가상 로그인 `woosik.jeong@neurotruth.kr`를 사용하고 `LoginInput.email`은 strict `EmailStr`로 유지한다. | user | reserved `.invalid` 로그인이 촬영 화면에서 데모 계정처럼 보였다. | 일반 이메일 검증을 유지하면서 가상 프로필을 데모 화면에 일관되게 표시한다. | not-required | resolved |
 | D-015 | Mobile logout | Backend logout 성공 후에만 local credential과 per-user cache를 지우고 transport/non-2xx 실패 시 session을 유지하며 retryable error를 표시한다. | repository | 현재 `AuthenticatedApiClient.logout`은 `finally`에서 지우고 `SettingsViewModel`은 결과를 무시해 D-012 retry 의미와 충돌한다. | 신규 screen/API 없이 기존 logout button이 신뢰 가능한 demo-end boundary가 된다. | not-required | resolved |
+| D-016 | 최근 1시간 출처 | 임의 7구간 파형을 기존 `Alcohol_Test/1_1_010_V1` 360개 곡선으로 교체하고, MA10이 있으면 MA10을, 초기 warm-up에서는 원본 softmax를 사용한다. | user | VP-012에 수치형 갈망 시계열이 없어 사용자가 없을 경우 Alcohol_Test 데이터를 사용하라고 지시했다. | 명시적 데모 출처를 유지하면서 기존 지속 반등형 데모 곡선을 사용한다. | confirmed | resolved |
 
 ### Question Register
 
@@ -139,7 +145,10 @@
 
 - **FR-001:** CLI는 `--dry-run`, `--confirm SEED-VP012-120D-DEMO`, `--status`, `--delete-confirm DELETE-VP012-DEMO`를 지원해야 합니다.
 - **FR-002:** seed는 현재 consent를 가진 정상 로그인 가능 가상 환자 하나만 생성하고 비데모 계정은 바꾸지 않아야 합니다.
-- **FR-003:** 120일 동안 미래 시각이 없는 대시보드 호환 prediction을 결정론적으로 생성하고 네 단계 변동과 최근 1시간 데이터를 포함해야 합니다.
+- **FR-003:** 120일 동안 미래 시각이 없는 대시보드 호환 prediction을
+  결정론적으로 생성하고 네 단계 변동을 포함해야 합니다. 최근 1시간은
+  정확한 `Alcohol_Test/1_1_010_V1` 360개 값을 10초 간격으로 사용하며,
+  출처를 기록하고 별도 보간이나 임의 단계 구간을 만들지 않아야 합니다.
 - **FR-004:** alert는 위험 prediction에 연결되고 15분 이상 간격이며 demo로 표시되어야 합니다.
 - **FR-005:** AUQ는 version `2.0`, 8개 `0..6` 응답, 합계 `0..48`을 사용해야 합니다.
 - **FR-006:** 완료된 자유대화 세션은 암호화된 user/assistant turn, 선택형 delivered intervention, state inference, ready report metadata를 가져야 합니다.

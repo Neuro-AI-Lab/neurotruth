@@ -8,6 +8,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -24,9 +25,14 @@ SEED_CONFIRMATION = "SEED-VP012-120D-DEMO"
 PROVISION_CONFIRMATION = "PROVISION-VP012-DEMO"
 DELETE_CONFIRMATION = "DELETE-VP012-DEMO"
 ADVISORY_LOCK_KEY = "neurotruth-vp012-120day-demo"
-DEMO_EMAIL = "demo.vp012@neurotruth.invalid"
-DEMO_SEED = "vp012-120d-v1"
+DEMO_EMAIL = "woosik.jeong@neurotruth.kr"
+DEMO_SEED = "vp012-120d-v3"
 DEMO_DAYS = 120
+RECENT_HOUR_TRACE_SCHEMA = "neurotruth-vp012-recent-hour-v1"
+RECENT_HOUR_TRACE_SOURCE = "Alcohol_Test/1_1_010_V1"
+RECENT_HOUR_TRACE_PATH = (
+    Path(__file__).with_name("fixtures") / "vp012_recent_hour_1_1_010_V1.json"
+)
 SEOUL = ZoneInfo("Asia/Seoul")
 _NS = uuid5(NAMESPACE_URL, "https://neurotruth.invalid/demo/vp012/v1")
 DEMO_PATIENT_ID = uuid5(_NS, "patient")
@@ -129,6 +135,35 @@ def _probability(day_index: int, point_index: int, weekend: bool) -> float:
     return round(min(0.96, max(0.04, baseline + within_window[point_index % 8])), 4)
 
 
+@lru_cache(maxsize=1)
+def _recent_hour_trace() -> tuple[float, ...]:
+    """Load the checked-in Alcohol_Test trace used by the login-relative hour.
+
+    The fixture preserves the value order of ``1_1_010_V1`` after its existing
+    60-minute normalization. It is demo-only source data, not a VP-012
+    participant measurement.
+    """
+    try:
+        payload = json.loads(RECENT_HOUR_TRACE_PATH.read_text(encoding="utf-8"))
+        if payload.get("schemaVersion") != RECENT_HOUR_TRACE_SCHEMA:
+            raise ValueError("schema")
+        if payload.get("sourceSubjectVisit") != "1_1_010_V1":
+            raise ValueError("source")
+        if payload.get("bucketSeconds") != 10:
+            raise ValueError("bucket")
+        values = tuple(float(value) for value in payload["probabilities"])
+        if len(values) != 360:
+            raise ValueError("length")
+        if any(
+            not math.isfinite(value) or not 0.0 <= value <= 1.0
+            for value in values
+        ):
+            raise ValueError("probability")
+        return values
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise DemoSeedError("demo_recent_hour_fixture_invalid") from exc
+
+
 def _consecutive_danger_trigger(
     rows: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -184,12 +219,13 @@ def prepare_demo(
 
     predictions: list[dict[str, Any]] = []
     alert_candidates: list[dict[str, Any]] = []
+    recent_hour_trace = _recent_hour_trace()
     for day_index in range(DEMO_DAYS):
         local_day = start_date + timedelta(days=day_index)
         if local_day == today:
             latest = now_utc.replace(microsecond=0)
             latest -= timedelta(seconds=latest.second % 10)
-            point_count = 360
+            point_count = len(recent_hour_trace)
             first = latest - timedelta(seconds=(point_count - 1) * 10)
         else:
             point_count = 24
@@ -202,14 +238,21 @@ def prepare_demo(
             predicted_at = first + timedelta(seconds=point_index * 10)
             if predicted_at > now_utc:
                 continue
-            probability = _probability(day_index, point_index, local_day.weekday() >= 5)
-            if local_day == today and point_index >= point_count - 3:
-                # End the seeded recent-hour series below the danger threshold.
-                # A live Watch test must establish its own three consecutive
-                # danger predictions instead of inheriting a synthetic streak.
-                probability = (0.36, 0.42, 0.48)[point_index - (point_count - 3)]
+            probability = (
+                recent_hour_trace[point_index]
+                if local_day == today
+                else _probability(day_index, point_index, local_day.weekday() >= 5)
+            )
             prediction_id = stable_id("prediction", day_index * 400 + point_index)
             stage = _stage(probability)
+            trace_metadata = (
+                {
+                    "traceSource": RECENT_HOUR_TRACE_SOURCE,
+                    "traceTransformation": "ma10_order_preserved_time_normalized_60m",
+                }
+                if local_day == today
+                else {}
+            )
             row = {
                 "id": prediction_id, "patient_id": DEMO_PATIENT_ID,
                 "window_started_at": predicted_at - timedelta(seconds=20),
@@ -221,10 +264,19 @@ def prepare_demo(
                     {"low": round(1.0 - probability, 5), "high": probability},
                 ),
                 "continuous_value": probability,
-                "signal_quality": _json({"passed": True, "demo": True}),
+                "signal_quality": _json({
+                    "passed": True,
+                    "demo": True,
+                    **(
+                        {"traceSource": RECENT_HOUR_TRACE_SOURCE}
+                        if local_day == today
+                        else {}
+                    ),
+                }),
                 "output_metadata": _json({
                     "predictionSchema": "binary-craving-v1", "source": "watch_sensor",
                     "stage": stage, "demo": True, "fictional": True, "seed": DEMO_SEED,
+                    **trace_metadata,
                 }),
                 "predicted_at": predicted_at,
             }

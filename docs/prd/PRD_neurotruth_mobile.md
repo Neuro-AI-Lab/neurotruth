@@ -493,28 +493,30 @@ Ready → Finding face → Stabilizing → 20s capture → Upload → Awaiting a
 
 | Section | Default range | Representation | Empty-data handling |
 |---|---|---|---|
-| Recent craving change | Last 1 hour | 0–100% line chart, 10-second buckets, up to 360 points | Leave a gap; do not connect the line |
-| Hourly craving probability | Today, 24 hours | Four-stage 100% stacked bars | Grey empty bar |
-| Craving events | Last 7 / 30 days | Daily count of `recommend|required` | Distinguish no-data from a valid zero |
-| Self-report | Today / 7 / 30 days | Hourly for today, daily otherwise, 0–48 average | No responses = no data |
-| PPG | Live and selected prediction | Live Watch signal and up to 512 preview points | Not-connected / no-data copy |
+| Recent craving change | Last 1 hour | Four-stage step timeline over real 10-second samples | Leave a gap; do not connect missing samples |
+| Period stage history | Selected day / week / month | Count-scaled four-stage stacked bars | Blank white span |
+| Craving events | Selected day / week / month | Hourly or daily event count | Distinguish no-data from a valid zero |
+| Self-report | Selected day / week / month | Hourly or daily 0–48 average | No responses = no data |
+| Signals | Live | Separate preprocessed Watch PPG and EDA traces | Not-connected / no-data copy |
 
 **The patient dashboard does not render state-inference cards or report-status cards.** The backend's create/store/read contracts remain intact for compatibility.
 
-#### Recent-hour chart
+#### Recent-hour stage timeline
 
-- Plot class-1 softmax as 0–100%.
-- **No smoothing and no interpolation across gaps.**
-- Plot points only at timestamps with real samples, and connect the line only between contiguous data.
-- The latest value and the chart's end point must refer to the same timestamp.
+- Map class-1 softmax to four horizontal stage lanes: 안정, 관찰, 주의, 위험.
+- Render thick rounded categorical runs and keep missing intervals disconnected.
+- Show only timestamp and stage in selection detail; do not expose the exact probability.
 - Use `GET /api/me/craving-probability-series?range=1h`: last 60 minutes, 10-second buckets, up to 360 points. **Never substitute truncated 24-hour data.**
 
-#### Today's 24-hour stacked bars
+#### Selected day/week/month stage counts
 
-- Each hourly bar stacks that hour's predictions as a **100% composition** of 안전 / 관찰 / 주의 / 심각.
-- Normalize `stageCounts` (`low|observe|caution|high`) from `GET /api/me/craving-dashboard?timezone=<IANA>`. A valid IANA timezone is required.
-- Tapping a bar shows the hour, sample count, and per-stage proportions in a compact detail card.
-- Never let an hour with zero samples read as "0%".
+- Use `GET /api/me/craving-calendar?timezone=<IANA>&view=day|week|month&anchor=YYYY-MM-DD`.
+- Stack the raw `stageCounts` (`low|observe|caution|high`) without percentage normalization.
+- A day view contains 24 hourly buckets on a fixed `0..360` measurements/hour axis.
+- Week and month views contain daily buckets on a fixed
+  `0..8,640` measurements/day axis (`360 × 24`).
+- Tapping a bar shows the period, total measurements, and raw count per stage.
+- A bucket with no samples is a blank white span, not a grey placeholder or a zero-percent bar.
 
 #### Craving events
 

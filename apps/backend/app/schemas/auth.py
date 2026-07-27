@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -53,7 +53,7 @@ class AdminSignupInput(ApiModel):
 
 
 class LoginInput(ApiModel):
-    email: EmailStr | Literal["demo.vp012@neurotruth.invalid"]
+    email: EmailStr
     password: str = Field(min_length=1, max_length=1024)
     device: dict[str, Any] = Field(default_factory=dict)
 

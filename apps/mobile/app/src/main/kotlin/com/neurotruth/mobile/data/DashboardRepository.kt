@@ -76,12 +76,7 @@ data class CravingSeries(
     }
 }
 
-/**
- * One local hour of today's stacked bar.
- *
- * An hour the server reports with `sampleCount = 0` is *no measurement*, not 0%. [hasData] is the
- * only thing allowed to decide which of the two a bar renders as.
- */
+/** One local hour of raw stage counts for the count-scaled stacked bar. */
 data class HourlyCravingBucket(
     val hour: Int,
     val localStartIso: String,
@@ -91,24 +86,6 @@ data class HourlyCravingBucket(
     val countedSamples: Int get() = stageCounts.values.sum()
 
     val hasData: Boolean get() = sampleCount > 0 && countedSamples > 0
-
-    /**
-     * The 100% composition. Normalized over the counts actually present rather than over
-     * `sampleCount`, so a bar always fills exactly once even if the two ever disagree.
-     */
-    fun proportions(): List<Pair<CravingStage, Float>> {
-        val total = countedSamples
-        if (total <= 0) return emptyList()
-        return CravingStage.entries.map { stage ->
-            stage to (stageCounts[stage] ?: 0).toFloat() / total.toFloat()
-        }
-    }
-
-    fun proportionOf(stage: CravingStage): Float {
-        val total = countedSamples
-        if (total <= 0) return 0f
-        return (stageCounts[stage] ?: 0).toFloat() / total.toFloat()
-    }
 
     val hourLabel: String get() = "%02d:00-%02d:59".format(hour, hour)
 }
@@ -168,7 +145,7 @@ data class CravingDashboard(
 }
 
 /**
- * One bucket of the patient-selected local day or month.
+ * One hourly or daily bucket of the patient-selected local day, week, or month.
  *
  * The server includes empty buckets. [hasPredictionData] distinguishes a measurement-free bucket
  * from a measured bucket whose alert count is a valid zero.
@@ -186,14 +163,6 @@ data class CravingCalendarBucket(
     val countedSamples: Int get() = stageCounts.values.sum()
     val hasStageData: Boolean get() = hasPredictionData && countedSamples > 0
     val hasAuqData: Boolean get() = auqAverageScore != null && auqResponseCount > 0
-
-    fun proportions(): List<Pair<CravingStage, Float>> {
-        val total = countedSamples
-        if (total <= 0) return emptyList()
-        return CravingStage.entries.map { stage ->
-            stage to (stageCounts[stage] ?: 0).toFloat() / total.toFloat()
-        }
-    }
 }
 
 data class CravingCalendar(
