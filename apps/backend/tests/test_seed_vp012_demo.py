@@ -42,7 +42,7 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
     assert [row["id"] for row in first.predictions] == [
         row["id"] for row in second.predictions
     ]
-    assert len(first.predictions) == 119 * 96 + len(HISTORICAL_EVENT_DAY_OFFSETS) * 2 + 360
+    assert len(first.predictions) == 5_314
     assert len({row["id"] for row in first.predictions}) == len(first.predictions)
     local_dates = {
         row["predicted_at"].astimezone(SEOUL).date() for row in first.predictions
@@ -101,9 +101,17 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         hour_key = (local.date(), local.hour)
         weighted_hours[hour_key] = weighted_hours.get(hour_key, 0) + weight
     assert len(weighted_days) == 119
-    assert set(weighted_days.values()) == {8_640}
+    assert min(weighted_days.values()) == 2_520
+    assert max(weighted_days.values()) == 4_680
+    assert all(value < 8_640 for value in weighted_days.values())
     assert set(weighted_hours.values()) == {360}
-    assert sum(weighted_days.values()) == 119 * 8_640
+    assert all(
+        len({
+            hour for (day, hour), _count in weighted_hours.items()
+            if day == local_day
+        }) < 24
+        for local_day in weighted_days
+    )
     assert HISTORICAL_EVENT_DAY_OFFSETS[-1] < 119
     assert {
         later - earlier
@@ -111,7 +119,7 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
             HISTORICAL_EVENT_DAY_OFFSETS,
             HISTORICAL_EVENT_DAY_OFFSETS[1:],
         )
-    } <= {7, 8}
+    } == {4}
     high_by_day: dict[date, int] = {}
     for row in historical:
         if row["continuous_value"] < 0.75:
@@ -143,8 +151,15 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         run = ordered[index - 2:index + 1]
         assert len(run) == 3
         assert all(row["continuous_value"] >= 0.75 for row in run)
+        expected_weight = (
+            1
+            if alert["triggered_at"].astimezone(SEOUL).date()
+            == fixed_now().astimezone(SEOUL).date()
+            else 30
+        )
         assert all(
-            json.loads(row["output_metadata"])["demoDisplayWeight"] == 30
+            json.loads(row["output_metadata"])["demoDisplayWeight"]
+            == expected_weight
             for row in run
         )
         assert all(
@@ -155,9 +170,13 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         later["triggered_at"] - earlier["triggered_at"] >= timedelta(minutes=15)
         for earlier, later in zip(first.alerts, first.alerts[1:])
     )
-    assert len(first.alerts) == len(HISTORICAL_EVENT_DAY_OFFSETS) == 16
-    assert len(first.sessions) == 4
-    assert all(0 <= row["score"] <= 48 for row in first.assessments)
+    assert len(HISTORICAL_EVENT_DAY_OFFSETS) == 29
+    assert len(first.alerts) == len(HISTORICAL_EVENT_DAY_OFFSETS) + 1
+    assert len(first.sessions) == len(first.alerts)
+    assert len(first.assessments) == len(first.alerts)
+    assert all(39 <= row["score"] <= 41 for row in first.assessments)
+    assert first.alerts[-1]["triggered_at"].astimezone(SEOUL).date() == date(2026, 7, 26)
+    assert first.assessments[-1]["completed_at"].astimezone(SEOUL).date() == date(2026, 7, 26)
 
 
 def test_sensitive_values_use_exact_aad_and_wrong_aad_is_rejected() -> None:

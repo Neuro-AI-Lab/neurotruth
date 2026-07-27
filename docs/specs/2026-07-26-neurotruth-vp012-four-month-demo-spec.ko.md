@@ -132,7 +132,8 @@
 | D-015 | Mobile logout | Backend logout 성공 후에만 local credential과 per-user cache를 지우고 transport/non-2xx 실패 시 session을 유지하며 retryable error를 표시한다. | repository | 현재 `AuthenticatedApiClient.logout`은 `finally`에서 지우고 `SettingsViewModel`은 결과를 무시해 D-012 retry 의미와 충돌한다. | 신규 screen/API 없이 기존 logout button이 신뢰 가능한 demo-end boundary가 된다. | not-required | resolved |
 | D-016 | 최근 1시간 출처 | 임의 7구간 파형을 기존 `Alcohol_Test/1_1_010_V1` 360개 곡선으로 교체하고, MA10이 있으면 MA10을, 초기 warm-up에서는 원본 softmax를 사용한다. | user | VP-012에 수치형 갈망 시계열이 없어 사용자가 없을 경우 Alcohol_Test 데이터를 사용하라고 지시했다. | 명시적 데모 출처를 유지하면서 기존 지속 반등형 데모 곡선을 사용한다. | confirmed | resolved |
 | D-017 | 실시간 위험 촬영 | 데모 flag가 켜진 경우 fresh login 뒤 reserved 환자의 첫 다섯 Watch upload에만 `0.38, 0.62, 0.82, 0.86, 0.89`를 overlay하고 production alert transaction으로 저장·판정한다. | user | 과거 seed 행은 SSE로 재생되지 않으므로 실제 모델만 기다려서는 위험→챗봇 장면을 보장할 수 없었다. | 공개 demo endpoint나 일반 사용자 prediction 변경 없이 약 60초에 세 번째 위험 결과가 정상 Phone/Watch 알림 하나를 생성한다. | confirmed | resolved |
-| D-018 | 과거 대시보드 일관성 | 완료된 과거 시간마다 15분 대표 행 4개를 두고 각 행을 10초 측정 90개로 환산한다. 120일에 이벤트 날짜 16개를 분산하고 각 날짜에 마감 전후 90분 위험 구간과 위험 3회 연속 근거를 둔다. | user | 이전 seed는 일간 최대 8,640개 축에 하루 24행만 저장했고, 위험 단계가 있는 날짜와 군집된 알림 8건이 서로 맞지 않았다. | 100만 개가 넘는 가상 행을 넣지 않고도 완료된 과거 날짜는 8,640개, 각 시간은 360개가 되며 이벤트 건수와 화면에 보이는 위험 단계 근거가 일치한다. | confirmed | resolved |
+| D-018 | 과거 대시보드 일관성 | 결정론적인 아침·점심·저녁 Watch 착용 구간에만 가중 15분 행을 만들고 나머지 시간은 미측정으로 둔다. 120일에 과거 이벤트 날짜 29개를 분산하고 모든 이벤트에 실제 위험 3회 연속 근거를 둔다. | user | 사용자가 매일 24시간 연속 측정처럼 보이는 달력을 거부하고 갈망 이벤트 이력을 더 잘 보이게 해 달라고 요청했다. | 측정된 시간은 10초 샘플 360개를 유지하지만 일간 합계는 최대 8,640보다 작고 미측정 시간은 빈 구간으로 남는다. | confirmed | resolved |
+| D-019 | 로그인 당일 표시 | 데모 로그인 성공 시 최근 1시간 곡선과 함께 오늘 이벤트 1건, 이벤트 연결 AUQ, 완료 대화 세션, 상태 추론, 리포트를 생성한다. AUQ는 유효한 0..48 범위 안에서 화면에 잘 보이는 39..41점으로 둔다. | user | 당일에는 prediction만 있고 이벤트·AUQ가 없었으며 두 이력이 촬영 화면에서 너무 작게 보였다. | 미래 행이나 임상 해석을 만들지 않고 로그인 현재 시각에 맞춰 당일 대시보드를 즉시 채운다. | confirmed | resolved |
 
 ### Question Register
 
@@ -151,8 +152,10 @@
   결정론적으로 생성하고 네 단계 변동을 포함해야 합니다. 최근 1시간은
   정확한 `Alcohol_Test/1_1_010_V1` 360개 값을 10초 간격으로 사용하며,
   출처를 기록하고 별도 보간이나 임의 단계 구간을 만들지 않아야 합니다.
-- **FR-004:** alert는 위험 prediction에 연결되고 15분 이상 간격이며 demo로 표시되어야 합니다.
-- **FR-005:** AUQ는 version `2.0`, 8개 `0..6` 응답, 합계 `0..48`을 사용해야 합니다.
+  과거 prediction은 명시한 Watch 착용 구간에만 존재하고 미측정 시간은
+  빈 구간으로 남겨야 합니다.
+- **FR-004:** alert는 위험 prediction에 연결되고 15분 이상 간격이며 demo로 표시되어야 합니다. 로그인 당일에는 최근 1시간 곡선에서 이벤트 1건을 포함해야 합니다.
+- **FR-005:** AUQ는 version `2.0`, 8개 `0..6` 응답, 합계 `0..48`을 사용해야 합니다. 로그인 당일과 달력 화면이 채워지도록 모든 seed 이벤트에 AUQ 하나를 연결해야 합니다.
 - **FR-006:** 완료된 자유대화 세션은 암호화된 user/assistant turn, 선택형 delivered intervention, state inference, ready report metadata를 가져야 합니다.
 - **FR-007:** 확인형 seed를 다시 실행해도 같은 계정·record ID를 사용하고 중복 생성하지 않아야 합니다.
 - **FR-008:** 확인형 삭제는 안정된 demo user와 cascade record만 삭제하고 다른 사용자는 건드리지 않아야 합니다.

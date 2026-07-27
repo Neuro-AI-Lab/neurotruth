@@ -26,13 +26,12 @@ PROVISION_CONFIRMATION = "PROVISION-VP012-DEMO"
 DELETE_CONFIRMATION = "DELETE-VP012-DEMO"
 ADVISORY_LOCK_KEY = "neurotruth-vp012-120day-demo"
 DEMO_EMAIL = "woosik.jeong@neurotruth.kr"
-DEMO_SEED = "vp012-120d-v4"
+DEMO_SEED = "vp012-120d-v5"
 DEMO_DAYS = 120
 HISTORICAL_DISPLAY_WEIGHT = 90
-HISTORICAL_EVENT_DAY_OFFSETS = (
-    5, 12, 19, 27, 34, 41, 48, 56,
-    63, 70, 77, 85, 92, 99, 106, 114,
-)
+# Roughly two recorded craving events per week.  The current login day adds one
+# more event from the checked-in recent-hour trace.
+HISTORICAL_EVENT_DAY_OFFSETS = tuple(range(3, 116, 4))
 RECENT_HOUR_TRACE_SCHEMA = "neurotruth-vp012-recent-hour-v1"
 RECENT_HOUR_TRACE_SOURCE = "Alcohol_Test/1_1_010_V1"
 RECENT_HOUR_TRACE_PATH = (
@@ -160,13 +159,15 @@ def _historical_day_points(
     day_index: int,
     local_day: date,
 ) -> list[tuple[datetime, float, int]]:
-    """Compress a full day into weighted 15-minute representatives.
+    """Compress plausible Watch-worn periods into weighted representatives.
 
-    Four equal representatives per hour carry a display weight of 90 ten-second samples, so
-    calendar totals remain the truthful 360/hour and 8,640/day contracts without inserting over a
-    million fictional rows. On a scheduled event day, one 15-minute representative is split into
-    three 30-sample representatives ten seconds apart; this preserves the same total while
-    satisfying the production three-danger alert rule.
+    Each representative carries the display weight of one 15-minute period at
+    the production ten-second cadence.  Deliberate gaps remain outside the
+    morning, midday, and evening wearing periods, so the dashboard never implies
+    that this fictional patient was measured continuously for 24 hours.  On a
+    scheduled event day, one representative is split into three ten-second
+    points while preserving the same aggregate count and satisfying the
+    production three-danger alert rule.
     """
 
     event_day = day_index in HISTORICAL_EVENT_DAY_OFFSETS
@@ -179,9 +180,19 @@ def _historical_day_points(
         (21, 1): 0.83,
         (21, 3): 0.80,
     }
+    morning_start = 7 + (day_index % 3)
+    evening_start = 16 if weekend else 17
+    evening_end = 23 + (day_index % 2)
     points: list[tuple[datetime, float, int]] = []
     for hour in range(24):
         for quarter in range(4):
+            worn = (
+                morning_start <= hour < 10
+                or (day_index % 4 != 0 and 12 <= hour < 14)
+                or evening_start <= hour < evening_end
+            )
+            if not worn:
+                continue
             offset = timedelta(hours=hour, minutes=quarter * 15)
             if event_day and hour == 21 and quarter == 2:
                 for seconds, probability in zip((0, 10, 20), (0.82, 0.87, 0.84)):
@@ -347,7 +358,7 @@ def prepare_demo(
             }
             predictions.append(row)
             day_rows.append(row)
-        if day_index in HISTORICAL_EVENT_DAY_OFFSETS:
+        if day_index in HISTORICAL_EVENT_DAY_OFFSETS or local_day == today:
             consecutive_trigger = _consecutive_danger_trigger(day_rows)
             if consecutive_trigger is None:
                 raise DemoSeedError("demo_event_streak_invalid")
@@ -381,7 +392,7 @@ def prepare_demo(
         ("집사람에게 걱정을 끼치고 싶지는 않아요.",
          "걱정을 줄이고 싶은 마음이 중요하게 느껴져요. 지금 가능한 작은 선택부터 살펴봐도 좋습니다."),
     )
-    for session_index, alert in enumerate(alerts[::4]):
+    for session_index, alert in enumerate(alerts):
         session_id = stable_id("session", session_index)
         started = alert["triggered_at"] + timedelta(minutes=1)
         ended = started + timedelta(minutes=8)
@@ -422,7 +433,9 @@ def prepare_demo(
                     }),
                     "created_at": started + timedelta(seconds=sequence * 45),
                 })
-        responses = [min(6, max(0, 3 + ((session_index + item) % 5) - 2)) for item in range(8)]
+        # Event-linked demo AUQ results stay in a clearly visible but
+        # non-diagnostic range on the 0..48 dashboard axis.
+        responses = [4 + ((session_index + item) % 3) for item in range(8)]
         assessment_id = stable_id("assessment", session_index)
         score = sum(responses)
         assessments.append({
