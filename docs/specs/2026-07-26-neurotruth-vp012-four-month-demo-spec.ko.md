@@ -131,6 +131,7 @@
 | D-014 | Login validation | 일반 사용자처럼 보이는 가상 로그인 `woosik.jeong@neurotruth.kr`를 사용하고 `LoginInput.email`은 strict `EmailStr`로 유지한다. | user | reserved `.invalid` 로그인이 촬영 화면에서 데모 계정처럼 보였다. | 일반 이메일 검증을 유지하면서 가상 프로필을 데모 화면에 일관되게 표시한다. | not-required | resolved |
 | D-015 | Mobile logout | Backend logout 성공 후에만 local credential과 per-user cache를 지우고 transport/non-2xx 실패 시 session을 유지하며 retryable error를 표시한다. | repository | 현재 `AuthenticatedApiClient.logout`은 `finally`에서 지우고 `SettingsViewModel`은 결과를 무시해 D-012 retry 의미와 충돌한다. | 신규 screen/API 없이 기존 logout button이 신뢰 가능한 demo-end boundary가 된다. | not-required | resolved |
 | D-016 | 최근 1시간 출처 | 임의 7구간 파형을 기존 `Alcohol_Test/1_1_010_V1` 360개 곡선으로 교체하고, MA10이 있으면 MA10을, 초기 warm-up에서는 원본 softmax를 사용한다. | user | VP-012에 수치형 갈망 시계열이 없어 사용자가 없을 경우 Alcohol_Test 데이터를 사용하라고 지시했다. | 명시적 데모 출처를 유지하면서 기존 지속 반등형 데모 곡선을 사용한다. | confirmed | resolved |
+| D-017 | 실시간 위험 촬영 | 데모 flag가 켜진 경우 fresh login 뒤 reserved 환자의 첫 다섯 Watch upload에만 `0.38, 0.62, 0.82, 0.86, 0.89`를 overlay하고 production alert transaction으로 저장·판정한다. | user | 과거 seed 행은 SSE로 재생되지 않으므로 실제 모델만 기다려서는 위험→챗봇 장면을 보장할 수 없었다. | 공개 demo endpoint나 일반 사용자 prediction 변경 없이 약 60초에 세 번째 위험 결과가 정상 Phone/Watch 알림 하나를 생성한다. | confirmed | resolved |
 
 ### Question Register
 

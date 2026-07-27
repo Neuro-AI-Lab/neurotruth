@@ -156,6 +156,16 @@ demo account and scenario; provision it again before another take. The tooling
 does not generate raw PPG/EDA files or call Bedrock, STT, rPPG, or the craving
 model. Never present these records as research participant data.
 
+For the reserved patient only, the same flag also overlays the first five live
+Watch uploads after a fresh app login with the deterministic sequence
+`0.38 → 0.62 → 0.82 → 0.86 → 0.89`. With the normal 20-second warm-up and
+10-second upload cadence, the third consecutive danger result reaches the
+existing PostgreSQL alert rule at about 60 seconds. The resulting alert still
+uses the production SSE, Phone/Watch notification, 15-minute cooldown, AUQ, and
+chat entry paths. No public demo trigger API exists, and non-demo patients
+always keep the model result. App logout clears the client measurement session
+and deletes the reserved account so another take starts from the first step.
+
 The login-relative recent hour uses the checked-in 360-point
 `Alcohol_Test/1_1_010_V1` demo trace at 10-second intervals. Its existing
 MA10/value order and 60-minute time normalization are preserved. This trace

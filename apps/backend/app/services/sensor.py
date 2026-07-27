@@ -9,6 +9,7 @@ from weakref import WeakValueDictionary
 
 from app.models.records import SensorResultRecord
 from app.repositories.postgres import RepositoryConflictError, V25Repository
+from app.services.demo_prediction_playback import DemoPredictionPlayback
 from app.storage.sensor import EncryptedSensorStorage, canonical_sensor_json
 
 
@@ -45,6 +46,7 @@ class SensorService:
         alert_decider: Callable[[UUID, dict[str, Any]], dict[str, Any]],
         hub: Any,
         latency: Any,
+        demo_playback: DemoPredictionPlayback | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -52,6 +54,7 @@ class SensorService:
         self.alert_decider = alert_decider
         self.hub = hub
         self.latency = latency
+        self.demo_playback = demo_playback
         self._ingest_locks: WeakValueDictionary[
             tuple[UUID, datetime, datetime], asyncio.Lock
         ] = WeakValueDictionary()
@@ -174,6 +177,12 @@ class SensorService:
             prediction = await self.predictor.predict(payload)
         except Exception as exc:
             raise SensorModelUnavailable("Prediction model is unavailable") from exc
+        if self.demo_playback is not None:
+            prediction = self.demo_playback.apply(
+                patient_id=patient_id,
+                payload=payload,
+                prediction=prediction,
+            )
         if int(prediction.get("class", -1)) not in (0, 1):
             raise SensorModelUnavailable("Prediction model returned an incompatible class")
         public_prediction = {

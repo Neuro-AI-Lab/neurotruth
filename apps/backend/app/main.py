@@ -13,6 +13,8 @@ from app.adapters.rppg_dgx import DgxClient
 from app.adapters.rppg_media import FfprobeMediaInspector
 from app.api.v1.router import api_router
 from app.core.runtime import initialize_runtime, shutdown_runtime
+from app.maintenance.seed_vp012_demo import DEMO_PATIENT_ID
+from app.services.demo_prediction_playback import DemoPredictionPlayback
 from app.services.prediction import RuntimePredictorAdapter, prediction_service
 from app.services.rppg import RppgService
 from app.services.sensor import SensorService
@@ -41,6 +43,10 @@ async def lifespan(app: FastAPI):
                 decide_alert,
                 prediction_service.hub,
                 prediction_service.latency,
+                demo_playback=DemoPredictionPlayback(
+                    enabled=runtime.settings.demo_scenario_enabled,
+                    patient_id=DEMO_PATIENT_ID,
+                ),
             )
             runtime.rppg_service = RppgService(
                 repository=runtime.rppg_repository,
