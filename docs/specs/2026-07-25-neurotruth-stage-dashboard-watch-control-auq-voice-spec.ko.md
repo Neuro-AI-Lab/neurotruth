@@ -129,6 +129,7 @@
 | D-016 | DGX cooldown 배포 | source/default의 900초 계약을 유지하고 DGX `.env` 수정 및 backend 재생성을 문서화한다. 기존 반복 알림은 배포 전 상태로 본다. | user | 사용자가 현재 DGX에는 cooldown 변경을 아직 올리지 않았다고 확인했다. | alert 알고리즘 추가 변경 없이 배포 증거만 남는다. | confirmed | resolved |
 | D-017 | 대시보드·AUQ 후속 수정 | Phone 최근 1시간 차트 높이를 키우고 단독 bucket도 짧고 둥근 bar로 표시한다. AUQ 7개 응답은 한 줄에 하나의 전체 폭 버튼으로 배치한다. 환자 대시보드의 선택 측정·저장 PPG preview를 제거하고 실시간 PPG·EDA를 표시한다. 표시 신호는 기존 20초 고정격자 보간과 채널별 MinMax를 재사용하며 업로드·저장 원본은 바꾸지 않는다. | user | 실기기 확인 후 사용자가 직접 요청했고 전처리는 가장 가까운 기존 모델·업로드 경로를 재사용한다. | Phone 표시만 변경하며 backend·DB·API·Watch UI·모델 입력·저장은 유지한다. | confirmed | resolved |
 | D-018 | 달력 미래 경계 | 선택 일이 오늘, 선택 주가 현재 월요일~일요일 주, 선택 월이 현재 월이면 `다음`을 비활성화한다. 미래 anchor는 거부하고 날짜 선택기에서도 미래 날짜를 비활성화한다. | user | 일간·주간·월간 대시보드가 현재 날짜보다 미래로 이동하지 못하고 버튼이 비활성화되어야 한다는 직접 후속 요청이다. | Phone 달력 제어·상태만 변경하며 API와 저장 데이터는 유지한다. | confirmed | resolved |
+| D-019 | 단계 집계 축 | Calendar 단계 막대를 100% 비율이 아닌 실제 횟수로 누적한다. 10초 간격 기준 시간당 360회, 일당 8,640회를 고정 최댓값으로 사용하고 무측정 bucket은 비워 둔다. | user | 사용자가 횟수 기반 누적 막대와 시간별 최대 360회를 명시했다. | Phone Canvas·상세 문구만 바꾸며 API stage count와 저장 데이터는 유지한다. | confirmed | resolved |
 
 ### 질문 기록
 
@@ -154,6 +155,10 @@
 - **FR-016:** AUQ의 일곱 문장 선택지를 일곱 개 전체 폭 행으로 표시한다. 문항당 한 화면, 최소 48dp, 일반 글꼴 no-scroll 의도와 큰 글꼴 scroll fallback은 유지한다.
 - **FR-017:** 대시보드 신호 영역은 실시간 Watch PPG·EDA만 포함하고 저장 측정 선택/preview UI를 제거한다. 최근 20초 신호는 기존 upload grid에 보간하고 채널별 MinMax로 화면용 정규화하며, 없거나 stale인 채널은 0선으로 만들지 않는다.
 - **FR-018:** Phone 달력 이동은 미래 현지 기간으로 진입하지 않는다. 오늘, 현재 월요일~일요일 주, 현재 월에서는 `다음`이 비활성화되고 날짜 선택기는 내일 이후를 비활성화하며 상태 handler는 미래 anchor를 무시한다.
+- **FR-019:** Calendar 단계 차트는 퍼센트 정규화 없이 실제 단계별 횟수를
+  누적한다. 일간 시간별 막대는 고정 `0~360회`, 주간·월간 일별 막대는
+  고정 `0~8,640회` 축을 사용한다. 무측정 bucket은 비워 두고 선택 상세는
+  전체·단계별 횟수를 표시한다.
 - **FR-005:** AUQ를 `자기설문`으로 통일하고 정보 dialog와 한 화면 7개 선택지를 제공한다.
 - **FR-006:** AUQ 저장 성공 뒤 `총점 X/48` 중립 결과를 보여주고, skip은 바로 Chat으로 간다.
 - **FR-007:** Phone이 시작/중지를 소유하고 Watch ack 뒤 MonitoringService를 시작하며 Watch는 stop/확인만 제공한다.
@@ -180,6 +185,9 @@
 - **AC-008:** Phone 화면에서 최근 1시간 차트가 집계 차트보다 확실히 크고, 단독 측정은 점이 아닌 bar로 보이며, AUQ는 한 줄 한 버튼이고, 신호 카드에는 저장 측정 문구 없이 PPG와 EDA가 각각 표시된다.
 - **AC-009:** JVM test가 PPG/EDA 채널 분리, 고정격자 크기, 채널별 MinMax 범위와 상수 처리, freshness, 누락 채널 비생성을 검증하고 App unit/lint/debug build가 통과한다.
 - **AC-010:** JVM 테스트가 일·주·월 다음 이동 경계와 미래 anchor 거부를 검증한다. 비활성 `다음`과 날짜 선택기 최대 날짜가 컴파일되고 App unit/lint/debug build가 통과한다.
+- **AC-011:** App compile과 unit test가 통과하고 단계 UI에 퍼센트 계산
+  경로가 없으며, 차트는 횟수 축을, 선택 상세는 전체·단계별 실제 횟수를
+  표시한다.
 - **AC-003:** Phone 테스트가 정확한 문구, categorical gap, calendar, AUQ 결과/skip, STT 즉시 전송, TTS correlation, retry를 증명하고 Phone/Wear build와 화면 검토가 수면 단계형 최근 1시간 차트를 확인한다.
 - **AC-004:** Wear 테스트/build가 control/status, confirmation, 3화면, stage-only snapshot, alertId dedup을 증명한다.
 - **AC-005:** Backend full pytest, Core/App/Wear unit, lint, debug APK build가 통과한다.

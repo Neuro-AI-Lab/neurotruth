@@ -149,12 +149,20 @@ docker compose run --rm backend python -m app.maintenance.purge_legacy_predictio
 ## Fictional VP-012 Demo Dataset
 
 `app.maintenance.seed_vp012_demo` provisions one login-capable fictional patient
-(`demo.vp012@neurotruth.invalid`). With `DEMO_SCENARIO_ENABLED=true`, the first
+(`woosik.jeong@neurotruth.kr`). With `DEMO_SCENARIO_ENABLED=true`, the first
 successful login creates 120 days of deterministic dashboard-compatible demo
 records relative to that login time. Existing app logout deletes the complete
 demo account and scenario; provision it again before another take. The tooling
 does not generate raw PPG/EDA files or call Bedrock, STT, rPPG, or the craving
 model. Never present these records as research participant data.
+
+The login-relative recent hour uses the checked-in 360-point
+`Alcohol_Test/1_1_010_V1` demo trace at 10-second intervals. Its existing
+MA10/value order and 60-minute time normalization are preserved. This trace
+provides the “deep trough, rapid rebound, sustained high” demo shape; it is not
+a physiological measurement from VP-012 and must not be described as one.
+This is seed contract `vp012-120d-v3`; after rebuilding the backend, delete and
+re-provision any still-existing v1/v2 reserved demo account before login.
 
 The command reads the login password only from `DEMO_PATIENT_PASSWORD`. Do not
 put the password in a command argument, committed `.env`, screenshot, terminal

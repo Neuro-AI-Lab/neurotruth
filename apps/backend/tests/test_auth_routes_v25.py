@@ -142,7 +142,7 @@ def test_public_signup_login_refresh_contract_and_sanitized_errors() -> None:
     assert set(signup.json()) == {"user", "accessToken", "refreshToken", "expiresIn", "consent"}
     assert signup.json()["consent"] == {"biosignal": True}
     assert client.post("/api/auth/login", json={
-        "email": "demo.vp012@neurotruth.invalid",
+        "email": "woosik.jeong@neurotruth.kr",
         "password": "correct horse battery staple",
     }).status_code == 200
     assert client.post("/api/auth/login", json={"email": "patient@example.com", "password": "bad-password"}).status_code == 401

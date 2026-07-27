@@ -15,6 +15,7 @@ from app.maintenance.seed_vp012_demo import (
     DEMO_PATIENT_ID,
     DEMO_SEED,
     PROVISION_CONFIRMATION,
+    RECENT_HOUR_TRACE_SOURCE,
     SEOUL,
     DemoSeedError,
     Vp012DemoSeeder,
@@ -59,8 +60,33 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         later["predicted_at"] - earlier["predicted_at"] == timedelta(seconds=10)
         for earlier, later in zip(recent, recent[1:])
     )
-    assert [row["continuous_value"] for row in recent[-3:]] == [0.36, 0.42, 0.48]
+    recent_stage_sequence = [
+        json.loads(row["output_metadata"])["stage"] for row in recent
+    ]
+    recent_stage_runs = 1 + sum(
+        current != previous
+        for previous, current in zip(recent_stage_sequence, recent_stage_sequence[1:])
+    )
+    assert recent_stage_runs == 16
+    assert [row["continuous_value"] for row in recent[:3]] == [
+        0.999551, 0.797834, 0.596117,
+    ]
+    assert [row["continuous_value"] for row in recent[-3:]] == [
+        0.636578, 0.640273, 0.643968,
+    ]
+    assert min(row["continuous_value"] for row in recent) == 0.057622
+    assert max(row["continuous_value"] for row in recent) == 0.999551
     assert all(row["continuous_value"] < 0.75 for row in recent[-3:])
+    assert all(
+        json.loads(row["output_metadata"])["traceSource"]
+        == RECENT_HOUR_TRACE_SOURCE
+        for row in recent
+    )
+    assert all(
+        json.loads(row["output_metadata"])["traceTransformation"]
+        == "ma10_order_preserved_time_normalized_60m"
+        for row in recent
+    )
     stages = {
         json.loads(row["output_metadata"])["stage"] for row in first.predictions
     }

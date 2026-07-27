@@ -40,7 +40,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +84,8 @@ private val ChartHeight = 168.dp
 private val RecentHourChartHeight = 240.dp
 private val SignalChartHeight = 112.dp
 private val AxisLabelWidth = 44.dp
+private const val HourlyStageSampleMaximum = 360
+private const val DailyStageSampleMaximum = HourlyStageSampleMaximum * 24
 
 /**
  * NT-08 · 대시보드.
@@ -262,7 +263,6 @@ private fun StageTimelineFrame(
     selectedAtMs: Long?,
     onSelect: (CravingSeriesPoint?) -> Unit,
 ) {
-    val grid = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
     val selection = MaterialTheme.colorScheme.onSurface
     val selectionHalo = MaterialTheme.colorScheme.surface
     val safe = cravingAccent(CravingStage.SAFE)
@@ -312,21 +312,6 @@ private fun StageTimelineFrame(
                 fun yForLane(lane: Int): Float =
                     plotPadding + (plotHeight * lane / 3f)
 
-                val laneStages = listOf(
-                    CravingStage.SEVERE,
-                    CravingStage.CAUTION,
-                    CravingStage.OBSERVE,
-                    CravingStage.SAFE,
-                )
-                laneStages.forEachIndexed { lane, stage ->
-                    val y = yForLane(lane)
-                    drawLine(
-                        color = (accents[stage] ?: grid).copy(alpha = 0.14f),
-                        start = Offset(plotPadding, y),
-                        end = Offset(size.width - plotPadding, y),
-                        strokeWidth = 1.dp.toPx(),
-                    )
-                }
                 if (series == null || !series.hasData) return@Canvas
 
                 val span = (series.toMs - series.fromMs).coerceAtLeast(1L).toFloat()
@@ -344,75 +329,36 @@ private fun StageTimelineFrame(
                     return yForLane(lane)
                 }
 
-                fun drawShortRun(point: CravingSeriesPoint) {
-                    val pointIndex = series.points.indexOf(point)
-                    val x = xOf(point.atMs)
-                    val desiredWidth = 8.dp.toPx()
-                    val capsuleHeight = 6.dp.toPx()
-                    val visibleGap = 2.dp.toPx()
+                fun drawStageRun(run: List<CravingSeriesPoint>) {
+                    if (run.isEmpty()) return
                     val bucketMs = series.bucketSeconds * 1_000L
-                    val naturalEnd = xOf((point.atMs + bucketMs).coerceAtMost(series.toMs))
-                    val nextLimit = series.points.getOrNull(pointIndex + 1)
-                        ?.let { xOf(it.atMs) - visibleGap }
-                        ?: (size.width - plotPadding)
-                    var left = x
-                    var right = maxOf(naturalEnd, x + desiredWidth)
-                        .coerceAtMost(nextLimit)
+                    val left = xOf(run.first().atMs)
+                    val naturalRight = xOf(
+                        (run.last().atMs + bucketMs).coerceAtMost(series.toMs),
+                    )
+                    val right = maxOf(naturalRight, left + 5.dp.toPx())
                         .coerceAtMost(size.width - plotPadding)
-                    if (right <= left) {
-                        val previousLimit = series.points.getOrNull(pointIndex - 1)
-                            ?.let { xOf(it.atMs) + visibleGap }
-                            ?: plotPadding
-                        right = x.coerceAtMost(size.width - plotPadding)
-                        left = (x - desiredWidth).coerceAtLeast(previousLimit)
-                    }
                     if (right <= left) return
+                    val stage = run.first().stage
+                    val capsuleHeight = 18.dp.toPx()
                     drawRoundRect(
-                        color = accents[point.stage] ?: selection,
-                        topLeft = Offset(left, yOf(point.stage) - capsuleHeight / 2f),
+                        color = accents[stage] ?: selection,
+                        topLeft = Offset(left, yOf(stage) - capsuleHeight / 2f),
                         size = Size(right - left, capsuleHeight),
                         cornerRadius = CornerRadius(capsuleHeight / 2f, capsuleHeight / 2f),
                     )
                 }
 
                 for (segment in series.segments()) {
-                    if (segment.size == 1) {
-                        drawShortRun(segment.first())
-                        continue
-                    }
-                    for (index in 0 until segment.lastIndex) {
-                        val point = segment[index]
-                        val next = segment[index + 1]
-                        val currentY = yOf(point.stage)
-                        val nextX = xOf(next.atMs)
-                        drawLine(
-                            color = accents[point.stage] ?: selection,
-                            start = Offset(xOf(point.atMs), currentY),
-                            end = Offset(nextX, currentY),
-                            strokeWidth = 9.dp.toPx(),
-                            cap = StrokeCap.Round,
-                        )
-                        if (point.stage != next.stage) {
-                            val nextY = yOf(next.stage)
-                            val middleY = (currentY + nextY) / 2f
-                            drawLine(
-                                color = (accents[point.stage] ?: selection).copy(alpha = 0.78f),
-                                start = Offset(nextX, currentY),
-                                end = Offset(nextX, middleY),
-                                strokeWidth = 3.dp.toPx(),
-                                cap = StrokeCap.Round,
-                            )
-                            drawLine(
-                                color = (accents[next.stage] ?: selection).copy(alpha = 0.78f),
-                                start = Offset(nextX, middleY),
-                                end = Offset(nextX, nextY),
-                                strokeWidth = 3.dp.toPx(),
-                                cap = StrokeCap.Round,
-                            )
+                    var runStart = 0
+                    for (index in 1..segment.size) {
+                        val runEnded =
+                            index == segment.size || segment[index].stage != segment[index - 1].stage
+                        if (runEnded) {
+                            drawStageRun(segment.subList(runStart, index))
+                            runStart = index
                         }
                     }
-                    val last = segment.last()
-                    drawShortRun(last)
                 }
 
                 series.points.firstOrNull { it.atMs == selectedAtMs }?.let { point ->
@@ -579,20 +525,32 @@ private fun CalendarStageSection(
             errorMessage != null -> EmptyLine(errorMessage)
             buckets.none { it.hasStageData } -> EmptyLine("선택한 기간에 측정 기록이 없어요.")
             else -> {
-                CalendarStageChart(buckets, selectedIndex, onSelect)
+                CalendarStageChart(buckets, view, selectedIndex, onSelect)
+                StageLegend()
                 selectedIndex?.let { index ->
                     buckets.getOrNull(index)?.let { bucket ->
                         val dominant = bucket.stageCounts.maxByOrNull { it.value }
                             ?.takeIf { it.value > 0 }?.key
+                        val maximum = stageSampleMaximum(view)
                         SectionCard(tone = CardTone.Low, contentGap = 6.dp) {
                             Text(bucket.label, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 if (dominant == null) {
                                     "측정 데이터 없음"
                                 } else {
-                                    "가장 많이 측정된 단계 · ${dominant.label}"
+                                    "총 ${bucket.countedSamples}회 / 최대 ${formatCount(maximum)}회" +
+                                        " · 가장 많이 측정된 단계 ${dominant.label}"
                                 },
                             )
+                            if (dominant != null) {
+                                CravingStage.entries.forEach { stage ->
+                                    Text(
+                                        text = "${stage.label} ${bucket.stageCounts[stage] ?: 0}회",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = cravingAccent(stage),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -604,14 +562,27 @@ private fun CalendarStageSection(
 @Composable
 private fun CalendarStageChart(
     buckets: List<CravingCalendarBucket>,
+    view: String,
     selectedIndex: Int?,
     onSelect: (Int?) -> Unit,
 ) {
     val selection = MaterialTheme.colorScheme.onSurface
     val accents = CravingStage.entries.associateWith { stage -> cravingAccent(stage) }
-    ChartYAxisTitle("Y축 · 단계 구성 비율 (0–100%)")
+    val maximum = stageSampleMaximum(view).toFloat()
+    val hourly = view == DashboardRepository.CALENDAR_VIEW_DAY
+    val yAxisTitle = if (hourly) {
+        "Y축 · 시간별 측정 횟수 (0–360회)"
+    } else {
+        "Y축 · 일별 측정 횟수 (0–8,640회)"
+    }
+    val axisLabels = if (hourly) {
+        listOf("360", "180", "0")
+    } else {
+        listOf("8,640", "4,320", "0")
+    }
+    ChartYAxisTitle(yAxisTitle)
     Row(modifier = Modifier.fillMaxWidth()) {
-        AxisLabels(listOf("100%", "50%", "0%"))
+        AxisLabels(axisLabels)
         Column(modifier = Modifier.fillMaxWidth()) {
             Canvas(
                 modifier = Modifier
@@ -619,7 +590,7 @@ private fun CalendarStageChart(
                     .height(ChartHeight)
                     .semantics {
                         contentDescription =
-                            "선택한 기간 갈망 단계 구성 막대그래프, 세로축 단계 구성 비율 0에서 100퍼센트"
+                            "선택한 기간 갈망 단계 누적 막대그래프, $yAxisTitle"
                     }
                     .pointerInput(buckets.size) {
                         detectTapGestures { offset ->
@@ -635,9 +606,11 @@ private fun CalendarStageChart(
                     val left = index * slot + (slot - barWidth) / 2f
                     if (bucket.hasStageData) {
                         var bottom = size.height
-                        bucket.proportions().forEach { (stage, proportion) ->
-                            if (proportion <= 0f) return@forEach
-                            val height = size.height * proportion
+                        CravingStage.entries.forEach { stage ->
+                            val count = bucket.stageCounts[stage] ?: 0
+                            if (count <= 0) return@forEach
+                            val height = (size.height * count.toFloat() / maximum)
+                                .coerceAtMost(bottom)
                             drawRect(
                                 color = accents.getValue(stage),
                                 topLeft = Offset(left, bottom - height),
@@ -646,7 +619,7 @@ private fun CalendarStageChart(
                             bottom -= height
                         }
                     }
-                    if (index == selectedIndex) {
+                    if (index == selectedIndex && bucket.hasStageData) {
                         drawRoundRect(
                             color = selection,
                             topLeft = Offset(left - 2f, 0f),
@@ -885,72 +858,67 @@ private fun StackedHourChart(
     selectedHour: Int?,
     onSelect: (Int?) -> Unit,
 ) {
-    val empty = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
     val selection = MaterialTheme.colorScheme.onSurface
     val stageColors = CravingStage.entries.associateWith { cravingAccent(it) }
 
+    ChartYAxisTitle("Y축 · 시간별 측정 횟수 (0–360회)")
     Row(modifier = Modifier.fillMaxWidth()) {
-        Box(modifier = Modifier.width(AxisLabelWidth))
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(ChartHeight)
-                .semantics {
-                    contentDescription = "오늘 24시간 갈망 구성 막대그래프, 막대를 눌러 시간대를 선택"
-                }
-                .pointerInput(buckets.size) {
-                    detectTapGestures { offset ->
-                        val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
-                        val index = (offset.x / slot).toInt().coerceIn(0, buckets.lastIndex)
-                        onSelect(buckets[index].hour)
+        AxisLabels(listOf("360", "180", "0"))
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(ChartHeight)
+                    .semantics {
+                        contentDescription =
+                            "오늘 24시간 갈망 단계 누적 막대그래프, 시간별 최대 360회"
                     }
-                },
-        ) {
-            val slot = size.width / buckets.size
-            val barWidth = slot * 0.72f
-            val corner = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                    .pointerInput(buckets.size) {
+                        detectTapGestures { offset ->
+                            val slot = size.width.toFloat() / buckets.size.coerceAtLeast(1)
+                            val index = (offset.x / slot).toInt().coerceIn(0, buckets.lastIndex)
+                            onSelect(buckets[index].hour)
+                        }
+                    },
+            ) {
+                val slot = size.width / buckets.size
+                val barWidth = slot * 0.72f
+                val corner = CornerRadius(2.dp.toPx(), 2.dp.toPx())
 
-            buckets.forEachIndexed { index, bucket ->
-                val left = index * slot + (slot - barWidth) / 2f
+                buckets.forEachIndexed { index, bucket ->
+                    val left = index * slot + (slot - barWidth) / 2f
+                    if (bucket.hasData) {
+                        var bottom = size.height
+                        for (stage in CravingStage.entries) {
+                            val count = bucket.stageCounts[stage] ?: 0
+                            if (count <= 0) continue
+                            val height =
+                                (
+                                    size.height * count.toFloat() /
+                                        HourlyStageSampleMaximum.toFloat()
+                                    ).coerceAtMost(bottom)
+                            drawRect(
+                                color = stageColors.getValue(stage),
+                                topLeft = Offset(left, bottom - height),
+                                size = Size(barWidth, height),
+                            )
+                            bottom -= height
+                        }
+                    }
 
-                if (!bucket.hasData) {
-                    // Zero samples is not 0% — it is a grey placeholder with no composition.
-                    drawRoundRect(
-                        color = empty,
-                        topLeft = Offset(left, size.height * 0.72f),
-                        size = Size(barWidth, size.height * 0.28f),
-                        cornerRadius = corner,
-                    )
-                } else {
-                    var bottom = size.height
-                    for (stage in CravingStage.entries) {
-                        val portion = bucket.proportionOf(stage)
-                        if (portion <= 0f) continue
-                        val height = size.height * portion
-                        drawRect(
-                            color = stageColors[stage] ?: empty,
-                            topLeft = Offset(left, bottom - height),
-                            size = Size(barWidth, height),
+                    if (bucket.hour == selectedHour && bucket.hasData) {
+                        drawRoundRect(
+                            color = selection,
+                            topLeft = Offset(left - 2f, 0f),
+                            size = Size(barWidth + 4f, size.height),
+                            cornerRadius = corner,
+                            style = Stroke(width = 2.dp.toPx()),
                         )
-                        bottom -= height
                     }
-                }
-
-                if (bucket.hour == selectedHour) {
-                    drawRoundRect(
-                        color = selection,
-                        topLeft = Offset(left - 2f, 0f),
-                        size = Size(barWidth + 4f, size.height),
-                        cornerRadius = corner,
-                        style = Stroke(width = 2.dp.toPx()),
-                    )
                 }
             }
+            AxisRow(listOf("00시", "06시", "12시", "18시", "23시"))
         }
-    }
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Box(modifier = Modifier.width(AxisLabelWidth))
-        AxisRow(listOf("00시", "06시", "12시", "18시", "23시"))
     }
 }
 
@@ -996,12 +964,12 @@ private fun HourDetailCard(bucket: HourlyCravingBucket) {
             )
         } else {
             Text(
-                text = "측정 ${bucket.sampleCount}회",
+                text = "측정 ${bucket.countedSamples}회 / 최대 360회",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            bucket.proportions().forEach { (stage, portion) ->
+            CravingStage.entries.forEach { stage ->
                 Text(
-                    text = "${stage.label} ${percentOf(portion)} (${bucket.stageCounts[stage] ?: 0}회)",
+                    text = "${stage.label} ${bucket.stageCounts[stage] ?: 0}회",
                     style = MaterialTheme.typography.bodyMedium,
                     color = cravingAccent(stage),
                 )
@@ -1530,8 +1498,15 @@ private fun edgeLabels(labels: List<String>): List<String> = when {
     else -> listOf(labels.first(), labels[labels.size / 2], labels.last())
 }
 
-private fun percentOf(value: Float?): String =
-    if (value == null) CravingStage.NO_DATA_LABEL else "${(value * 100f).roundToInt()}%"
+private fun stageSampleMaximum(view: String): Int =
+    if (view == DashboardRepository.CALENDAR_VIEW_DAY) {
+        HourlyStageSampleMaximum
+    } else {
+        DailyStageSampleMaximum
+    }
+
+private fun formatCount(value: Int): String =
+    "%,d".format(value)
 
 private fun clockOf(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis)

@@ -18,8 +18,8 @@ import org.junit.Test
 /**
  * NT-08 response parsing.
  *
- * The three things that must never regress: a gap in the recent-hour series stays a gap, an hour's
- * `stageCounts` normalize to a 100% composition without an empty hour becoming 0%, and a day with no
+ * The three things that must never regress: a gap in the recent-hour series stays a gap, raw
+ * `stageCounts` remain exact without an empty hour becoming a zero measurement, and a day with no
  * prediction stays distinguishable from a day whose predictions raised no alert.
  */
 class DashboardParserTest {
@@ -115,11 +115,11 @@ class DashboardParserTest {
     }
 
     // -----------------------------------------------------------------------------------------
-    // 2 · stageCounts normalization
+    // 2 · raw stageCounts
     // -----------------------------------------------------------------------------------------
 
     @Test
-    fun `stage counts normalize to a full 100 percent stack`() {
+    fun `stage counts remain exact for count-scaled stacking`() {
         val dashboard = CravingDashboardParser.parse(
             dashboardJson(
                 hourly = listOf(
@@ -131,11 +131,10 @@ class DashboardParserTest {
         assertEquals(9, bucket.hour)
         assertTrue(bucket.hasData)
         assertEquals(25, bucket.countedSamples)
-        assertEquals(5f / 25f, bucket.proportionOf(CravingStage.SAFE), 1e-4f)
-        assertEquals(7f / 25f, bucket.proportionOf(CravingStage.OBSERVE), 1e-4f)
-        assertEquals(9f / 25f, bucket.proportionOf(CravingStage.CAUTION), 1e-4f)
-        assertEquals(4f / 25f, bucket.proportionOf(CravingStage.SEVERE), 1e-4f)
-        assertEquals(1f, bucket.proportions().sumOf { it.second.toDouble() }.toFloat(), 1e-4f)
+        assertEquals(5, bucket.stageCounts[CravingStage.SAFE])
+        assertEquals(7, bucket.stageCounts[CravingStage.OBSERVE])
+        assertEquals(9, bucket.stageCounts[CravingStage.CAUTION])
+        assertEquals(4, bucket.stageCounts[CravingStage.SEVERE])
     }
 
     @Test
@@ -149,8 +148,7 @@ class DashboardParserTest {
         )
         val bucket = dashboard.hourly.single()
         assertFalse(bucket.hasData)
-        assertTrue(bucket.proportions().isEmpty())
-        assertEquals(0f, bucket.proportionOf(CravingStage.SAFE), 1e-4f)
+        assertEquals(0, bucket.countedSamples)
         assertFalse(dashboard.hasHourlyData)
     }
 
@@ -166,7 +164,6 @@ class DashboardParserTest {
         val bucket = dashboard.hourly.single()
         assertEquals(4, bucket.stageCounts[CravingStage.SEVERE])
         assertEquals("high", CravingStage.SEVERE.stageCountsKey)
-        assertEquals(1f, bucket.proportionOf(CravingStage.SEVERE), 1e-4f)
     }
 
     @Test

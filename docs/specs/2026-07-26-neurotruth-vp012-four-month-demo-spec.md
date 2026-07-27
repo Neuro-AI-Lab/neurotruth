@@ -49,6 +49,8 @@ Demo operators can provision one clearly fictional VP-012 login without historic
 - Fixed seed and stable UUIDs so reruns are idempotent.
 - 120 calendar days ending at an explicit `--anchor-date` or today in `Asia/Seoul`.
 - VP-012 restaurant-work stress, evening, and weekend variability without a monotonic treatment-effect curve.
+- A 360-point, 10-second recent-hour trace copied from the existing
+  `Alcohol_Test/1_1_010_V1` demo scenario with value order preserved.
 - Dashboard-compatible prediction, alert, AUQ, session, message, intervention, state-inference, and report rows.
 - AES-256-GCM encryption for every sensitive seeded field using the deployed keyring and exact AAD.
 - One active demo session near the anchor date may be excluded; all seeded historical sessions are completed so the user can still start a live demo session.
@@ -81,6 +83,8 @@ Demo operators can provision one clearly fictional VP-012 login without historic
 - The password is read from `DEMO_PATIENT_PASSWORD`, never accepted as a command argument or stored in documentation.
 - `DEMO_SCENARIO_ENABLED` defaults to `false`; ordinary users and the demo identity while disabled retain normal authentication behavior.
 - The reserved profile display name is `"정우식"` without a demo suffix; fictional/demo disclosure remains in seeded metadata and the production runbook.
+- The recent-hour trace is demo-only Alcohol_Test model output, not a VP-012
+  participant measurement. Provenance is retained in each recent prediction.
 
 ## 3. Repository Pattern Baseline
 
@@ -103,6 +107,7 @@ Demo operators can provision one clearly fictional VP-012 login without historic
 | R-003 | Argon2id password helper | `apps/backend/app/core/security/passwords.py::hash_password` | Hash the operator-supplied demo password |
 | R-004 | Existing dashboard tables and aggregation | `apps/backend/app/repositories/postgres.py` | Insert only records already consumed by current APIs |
 | R-005 | VP-012 persona facts and dialogue style | `../neurosync/docs/ai/personas/VP-012_first_visit_alcohol.md` | Drive deterministic scenario language and temporal variability |
+| R-006 | Sustained-rebound recent-hour model trace | `../Alcohol_Test/demo_scenarios/1_1_010_V1.json`; `../Alcohol_Test/docs/ai/personas/NT-DP-002_1_1_010_V1_rebound.ko.md` | Preserve the existing 360-point value order and 60-minute normalization |
 
 ## 4. Decisions and Questions
 
@@ -123,8 +128,9 @@ Demo operators can provision one clearly fictional VP-012 login without historic
 | D-011 | Repeat takes | Remove the complete demo account and scenario after each completed take, then require reprovisioning. | user | Failed takes must be repeatable without accumulating previous data. | Every take begins from a clean identity and dataset. | confirmed | resolved |
 | D-012 | Demo end | Treat the existing app logout action as the exact demo-end boundary. Delete first and return logout success only after the full demo deletion commits; deletion failure is retryable. | user | The user answered “로그아웃 버튼으로 보고 싶다.” | No new mobile button or API route; force-close and disconnect never delete data. | confirmed | resolved |
 | D-013 | Error mapping | Extend the existing auth route error mapper for sanitized retryable demo lifecycle `503` responses. | repository | `routes/auth.py` currently maps only authentication/authorization/conflict errors and logout has no service-error mapping. | Keeps existing endpoints while meeting FR-011 and FR-013; no route is added. | not-required | resolved |
-| D-014 | Login validation | Permit only `demo.vp012@neurotruth.invalid` as a literal alternative to `EmailStr` in `LoginInput.email`; keep signup schemas strict. | repository | Existing Pydantic/email-validator rejects the reserved `.invalid` domain before `AuthService.login`. | Makes the reviewed reserved account usable without weakening ordinary account creation or arbitrary login email validation. | not-required | resolved |
+| D-014 | Login validation | Use the valid, ordinary-looking fictional login `woosik.jeong@neurotruth.kr` and keep `LoginInput.email` as strict `EmailStr`. | user | The reserved `.invalid` login looked visibly like a demo account in the recorded app. | Keeps normal email validation while presenting the fictional profile consistently in the demo. | not-required | resolved |
 | D-015 | Mobile logout | Clear local credentials and per-user caches only after backend logout succeeds; on transport or non-2xx failure retain the session and show a retryable error. | repository | Current `AuthenticatedApiClient.logout` clears in `finally` and `SettingsViewModel` ignores the result, contradicting D-012 retry semantics. | The existing logout button becomes a reliable demo-end boundary without a new screen or API. | not-required | resolved |
+| D-016 | Recent-hour source | Replace the artificial seven-episode waveform with the existing `Alcohol_Test/1_1_010_V1` 360-point trace; use MA10 where present and source softmax during MA10 warm-up. | user | VP-012 has no numeric craving series, and the user directed the implementation to the Alcohol_Test data when absent. | The chart now follows the established sustained-rebound demo curve while retaining explicit demo-only provenance. | confirmed | resolved |
 
 ### Question Register
 
@@ -139,7 +145,11 @@ Demo operators can provision one clearly fictional VP-012 login without historic
 
 - **FR-001:** The CLI shall support `--dry-run`, `--confirm SEED-VP012-120D-DEMO`, `--status`, and `--delete-confirm DELETE-VP012-DEMO`.
 - **FR-002:** The seed shall create one stable login-capable fictional patient and current consent snapshot without changing any non-demo account.
-- **FR-003:** The seed shall create 120 days of deterministic, non-future, dashboard-compatible prediction rows with four-stage variability and enough recent rows for the one-hour chart.
+- **FR-003:** The seed shall create 120 days of deterministic, non-future,
+  dashboard-compatible prediction rows with four-stage variability. The recent
+  hour shall contain the exact 360-value `Alcohol_Test/1_1_010_V1` trace at
+  10-second spacing with source provenance and no interpolation or invented
+  stage episodes.
 - **FR-004:** Alerts shall be sparse, tied to danger predictions, at least 15 minutes apart, and labeled as demo records.
 - **FR-005:** AUQ rows shall use version `2.0`, eight `0..6` responses, and total `0..48`.
 - **FR-006:** Completed free-dialogue sessions shall contain encrypted user/assistant turns, optional delivered interventions, state inference, and ready report metadata with persona-consistent non-diagnostic text.
