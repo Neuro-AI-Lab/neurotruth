@@ -171,19 +171,20 @@ The login-relative recent hour uses the checked-in 360-point
 MA10/value order and 60-minute time normalization are preserved. This trace
 provides the “deep trough, rapid rebound, sustained high” demo shape; it is not
 a physiological measurement from VP-012 and must not be described as one.
-Historical calendar data uses weighted 15-minute representatives only during
-deterministic morning, midday, and evening Watch-worn periods. Each
-representative equals 90 ten-second samples, so a fully measured hour still
-returns 360 samples while unmeasured hours remain empty; no historical day is
-displayed as a continuous 24-hour measurement. Fifty-nine historical event
-days are distributed across the 120-day period. On login, elapsed current-day
-Watch-worn periods are added before the recent-hour trace, and that trace
-contributes one current-day event, AUQ, session, and report. The day and month
-stacked views are therefore populated immediately after login. Every event remains
-backed by a real three-danger sequence, and event-linked AUQ values stay within
-the documented 0..48 research scale. This is seed contract `vp012-120d-v6`;
-after rebuilding the backend, delete and re-provision any still-existing
-v1/v2/v3/v4/v5 reserved demo account before login.
+Historical calendar data uses weighted 15-minute representatives primarily
+during deterministic morning, midday, and evening Watch-worn periods. Six of
+the 120 days include a rare overnight Watch-worn period; overnight rows never
+synthesize alerts. Each representative equals 90 ten-second samples, so a
+fully measured hour still returns 360 samples while unmeasured hours remain
+empty; no historical day is displayed as a continuous 24-hour measurement.
+Each day deterministically receives 2–10 pseudo-random alert events, never more
+than 10 and never less than 15 minutes apart. Login-day rows remain bounded by
+the real login time. Every event is backed by a real three-danger sequence and
+has one linked AUQ/session/report; AUQ values stay within the documented 0..48
+research scale. The baseline is rebalanced so `low`/안정 occupies a visible
+share of measured history. This is seed contract `vp012-120d-v7`; after
+rebuilding the backend, delete and re-provision any older reserved demo account
+before login.
 
 The command reads the login password only from `DEMO_PATIENT_PASSWORD`. Do not
 put the password in a command argument, committed `.env`, screenshot, terminal
