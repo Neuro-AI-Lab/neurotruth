@@ -1311,6 +1311,20 @@ class SqlAlchemyV25Repository(V25Repository):
             AND m.is_active
             AND m.inference_task='binary_classification'
         """
+        display_weight = """
+            CASE
+              WHEN p.output_metadata->>'demo'='true'
+               AND jsonb_typeof(p.output_metadata->'demoDisplayWeight')='number'
+              THEN LEAST(
+                360,
+                GREATEST(
+                  0,
+                  floor((p.output_metadata->>'demoDisplayWeight')::numeric)::int
+                )
+              )
+              ELSE 1
+            END
+        """
         auq_bucket_sql = (
             "extract(hour FROM timezone(:timezone,a.completed_at))::int"
             if auq_bucket_unit == "hour"
@@ -1326,18 +1340,23 @@ class SqlAlchemyV25Repository(V25Repository):
             """), params)).mappings().one_or_none()
             hourly = (await conn.execute(text(f"""
                 SELECT extract(hour FROM timezone(:timezone,p.predicted_at))::int AS local_hour,
-                       avg(p.continuous_value) AS average_probability,
+                       sum(p.continuous_value*({display_weight}))
+                         / NULLIF(sum({display_weight}),0) AS average_probability,
                        min(p.continuous_value) AS minimum_probability,
                        max(p.continuous_value) AS maximum_probability,
-                       count(*) AS sample_count,
-                       count(*) FILTER (WHERE p.continuous_value < 0.25) AS low_count,
-                       count(*) FILTER (
+                       sum({display_weight}) AS sample_count,
+                       COALESCE(sum({display_weight}) FILTER (
+                         WHERE p.continuous_value < 0.25
+                       ),0) AS low_count,
+                       COALESCE(sum({display_weight}) FILTER (
                          WHERE p.continuous_value >= 0.25 AND p.continuous_value < 0.50
-                       ) AS observe_count,
-                       count(*) FILTER (
+                       ),0) AS observe_count,
+                       COALESCE(sum({display_weight}) FILTER (
                          WHERE p.continuous_value >= 0.50 AND p.continuous_value < 0.75
-                       ) AS caution_count,
-                       count(*) FILTER (WHERE p.continuous_value >= 0.75) AS high_count
+                       ),0) AS caution_count,
+                       COALESCE(sum({display_weight}) FILTER (
+                         WHERE p.continuous_value >= 0.75
+                       ),0) AS high_count
                 FROM craving_predictions p
                 JOIN model_versions m ON m.id=p.model_version_id
                 WHERE {prediction_filter}
@@ -1446,18 +1465,36 @@ class SqlAlchemyV25Repository(V25Repository):
             AND m.component='craving_model'
             AND m.inference_task='binary_classification'
         """
+        display_weight = """
+            CASE
+              WHEN p.output_metadata->>'demo'='true'
+               AND jsonb_typeof(p.output_metadata->'demoDisplayWeight')='number'
+              THEN LEAST(
+                360,
+                GREATEST(
+                  0,
+                  floor((p.output_metadata->>'demoDisplayWeight')::numeric)::int
+                )
+              )
+              ELSE 1
+            END
+        """
         async with self.engine.connect() as conn:
             stages = (await conn.execute(text(f"""
                 SELECT {bucket_prediction} AS bucket_key,
-                       count(*) AS sample_count,
-                       count(*) FILTER (WHERE p.continuous_value < 0.25) AS low_count,
-                       count(*) FILTER (
+                       sum({display_weight}) AS sample_count,
+                       COALESCE(sum({display_weight}) FILTER (
+                         WHERE p.continuous_value < 0.25
+                       ),0) AS low_count,
+                       COALESCE(sum({display_weight}) FILTER (
                          WHERE p.continuous_value >= 0.25 AND p.continuous_value < 0.50
-                       ) AS observe_count,
-                       count(*) FILTER (
+                       ),0) AS observe_count,
+                       COALESCE(sum({display_weight}) FILTER (
                          WHERE p.continuous_value >= 0.50 AND p.continuous_value < 0.75
-                       ) AS caution_count,
-                       count(*) FILTER (WHERE p.continuous_value >= 0.75) AS high_count
+                       ),0) AS caution_count,
+                       COALESCE(sum({display_weight}) FILTER (
+                         WHERE p.continuous_value >= 0.75
+                       ),0) AS high_count
                 FROM craving_predictions p
                 JOIN model_versions m ON m.id=p.model_version_id
                 WHERE {prediction_filter}

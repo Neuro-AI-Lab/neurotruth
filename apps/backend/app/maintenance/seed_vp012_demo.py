@@ -26,8 +26,13 @@ PROVISION_CONFIRMATION = "PROVISION-VP012-DEMO"
 DELETE_CONFIRMATION = "DELETE-VP012-DEMO"
 ADVISORY_LOCK_KEY = "neurotruth-vp012-120day-demo"
 DEMO_EMAIL = "woosik.jeong@neurotruth.kr"
-DEMO_SEED = "vp012-120d-v3"
+DEMO_SEED = "vp012-120d-v4"
 DEMO_DAYS = 120
+HISTORICAL_DISPLAY_WEIGHT = 90
+HISTORICAL_EVENT_DAY_OFFSETS = (
+    5, 12, 19, 27, 34, 41, 48, 56,
+    63, 70, 77, 85, 92, 99, 106, 114,
+)
 RECENT_HOUR_TRACE_SCHEMA = "neurotruth-vp012-recent-hour-v1"
 RECENT_HOUR_TRACE_SOURCE = "Alcohol_Test/1_1_010_V1"
 RECENT_HOUR_TRACE_PATH = (
@@ -121,18 +126,84 @@ def _stage(probability: float) -> str:
     return "high"
 
 
-def _probability(day_index: int, point_index: int, weekend: bool) -> float:
-    # Restaurant closing-time stress, weekends and two incommensurate cycles
-    # create repeatable variability without suggesting treatment-driven decline.
-    baseline = (
-        0.42
-        + 0.20 * math.sin(day_index * 0.37)
-        + 0.13 * math.sin(day_index * 0.11 + 1.4)
-        + (0.11 if weekend else 0.0)
-        + (0.10 if day_index % 13 in (0, 1) else 0.0)
+def _historical_probability(
+    day_index: int,
+    hour: int,
+    quarter: int,
+    weekend: bool,
+) -> float:
+    """Return one representative probability for a 15-minute historical block.
+
+    VP-012's restaurant-closing context raises the evening baseline without creating a
+    treatment-shaped decline. Non-event blocks remain below the danger threshold; explicitly
+    scheduled event blocks supply their own three consecutive danger values.
+    """
+
+    hourly_profile = (
+        0.18, 0.16, 0.15, 0.14, 0.14, 0.16,
+        0.20, 0.23, 0.26, 0.28, 0.31, 0.34,
+        0.36, 0.38, 0.40, 0.43, 0.46, 0.50,
+        0.55, 0.60, 0.65, 0.70, 0.58, 0.36,
     )
-    within_window = (-0.25, -0.17, -0.09, -0.02, 0.06, 0.15, 0.24, 0.12)
-    return round(min(0.96, max(0.04, baseline + within_window[point_index % 8])), 4)
+    day_variation = (
+        0.055 * math.sin(day_index * 0.37)
+        + 0.035 * math.sin(day_index * 0.13 + 1.2)
+        + (0.035 if weekend else 0.0)
+        + (0.035 if day_index % 17 in (0, 1) else 0.0)
+    )
+    quarter_variation = (-0.025, 0.0, 0.03, 0.01)[quarter]
+    probability = hourly_profile[hour] + day_variation + quarter_variation
+    return round(min(0.72, max(0.06, probability)), 4)
+
+
+def _historical_day_points(
+    day_index: int,
+    local_day: date,
+) -> list[tuple[datetime, float, int]]:
+    """Compress a full day into weighted 15-minute representatives.
+
+    Four equal representatives per hour carry a display weight of 90 ten-second samples, so
+    calendar totals remain the truthful 360/hour and 8,640/day contracts without inserting over a
+    million fictional rows. On a scheduled event day, one 15-minute representative is split into
+    three 30-sample representatives ten seconds apart; this preserves the same total while
+    satisfying the production three-danger alert rule.
+    """
+
+    event_day = day_index in HISTORICAL_EVENT_DAY_OFFSETS
+    weekend = local_day.weekday() >= 5
+    start = datetime.combine(local_day, time.min, SEOUL).astimezone(timezone.utc)
+    event_probabilities = {
+        (20, 2): 0.77,
+        (20, 3): 0.79,
+        (21, 0): 0.81,
+        (21, 1): 0.83,
+        (21, 3): 0.80,
+    }
+    points: list[tuple[datetime, float, int]] = []
+    for hour in range(24):
+        for quarter in range(4):
+            offset = timedelta(hours=hour, minutes=quarter * 15)
+            if event_day and hour == 21 and quarter == 2:
+                for seconds, probability in zip((0, 10, 20), (0.82, 0.87, 0.84)):
+                    points.append((
+                        start + offset + timedelta(seconds=seconds),
+                        probability,
+                        HISTORICAL_DISPLAY_WEIGHT // 3,
+                    ))
+                continue
+            if event_day and (hour, quarter) in event_probabilities:
+                points.append((
+                    start + offset,
+                    event_probabilities[(hour, quarter)],
+                    HISTORICAL_DISPLAY_WEIGHT,
+                ))
+                continue
+            points.append((
+                start + offset,
+                _historical_probability(day_index, hour, quarter, weekend),
+                HISTORICAL_DISPLAY_WEIGHT,
+            ))
+    return points
 
 
 @lru_cache(maxsize=1)
@@ -225,24 +296,17 @@ def prepare_demo(
         if local_day == today:
             latest = now_utc.replace(microsecond=0)
             latest -= timedelta(seconds=latest.second % 10)
-            point_count = len(recent_hour_trace)
-            first = latest - timedelta(seconds=(point_count - 1) * 10)
+            first = latest - timedelta(seconds=(len(recent_hour_trace) - 1) * 10)
+            point_specs = [
+                (first + timedelta(seconds=index * 10), probability, 1)
+                for index, probability in enumerate(recent_hour_trace)
+            ]
         else:
-            point_count = 24
-            minute = (day_index * 17) % 90
-            first = datetime.combine(
-                local_day, time(18, 15), SEOUL
-            ).astimezone(timezone.utc) + timedelta(minutes=minute)
+            point_specs = _historical_day_points(day_index, local_day)
         day_rows: list[dict[str, Any]] = []
-        for point_index in range(point_count):
-            predicted_at = first + timedelta(seconds=point_index * 10)
+        for point_index, (predicted_at, probability, display_weight) in enumerate(point_specs):
             if predicted_at > now_utc:
                 continue
-            probability = (
-                recent_hour_trace[point_index]
-                if local_day == today
-                else _probability(day_index, point_index, local_day.weekday() >= 5)
-            )
             prediction_id = stable_id("prediction", day_index * 400 + point_index)
             stage = _stage(probability)
             trace_metadata = (
@@ -276,16 +340,18 @@ def prepare_demo(
                 "output_metadata": _json({
                     "predictionSchema": "binary-craving-v1", "source": "watch_sensor",
                     "stage": stage, "demo": True, "fictional": True, "seed": DEMO_SEED,
+                    "demoDisplayWeight": display_weight,
                     **trace_metadata,
                 }),
                 "predicted_at": predicted_at,
             }
             predictions.append(row)
             day_rows.append(row)
-        if day_index % 3 == 2:
+        if day_index in HISTORICAL_EVENT_DAY_OFFSETS:
             consecutive_trigger = _consecutive_danger_trigger(day_rows)
-            if consecutive_trigger is not None:
-                alert_candidates.append(consecutive_trigger)
+            if consecutive_trigger is None:
+                raise DemoSeedError("demo_event_streak_invalid")
+            alert_candidates.append(consecutive_trigger)
 
     alerts: list[dict[str, Any]] = []
     for alert_index, prediction in enumerate(alert_candidates):
@@ -315,7 +381,7 @@ def prepare_demo(
         ("집사람에게 걱정을 끼치고 싶지는 않아요.",
          "걱정을 줄이고 싶은 마음이 중요하게 느껴져요. 지금 가능한 작은 선택부터 살펴봐도 좋습니다."),
     )
-    for session_index, alert in enumerate(alerts[::2]):
+    for session_index, alert in enumerate(alerts[::4]):
         session_id = stable_id("session", session_index)
         started = alert["triggered_at"] + timedelta(minutes=1)
         ended = started + timedelta(minutes=8)

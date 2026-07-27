@@ -14,6 +14,7 @@ from app.maintenance.seed_vp012_demo import (
     DEMO_EMAIL,
     DEMO_PATIENT_ID,
     DEMO_SEED,
+    HISTORICAL_EVENT_DAY_OFFSETS,
     PROVISION_CONFIRMATION,
     RECENT_HOUR_TRACE_SOURCE,
     SEOUL,
@@ -41,7 +42,7 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
     assert [row["id"] for row in first.predictions] == [
         row["id"] for row in second.predictions
     ]
-    assert len(first.predictions) == 119 * 24 + 360
+    assert len(first.predictions) == 119 * 96 + len(HISTORICAL_EVENT_DAY_OFFSETS) * 2 + 360
     assert len({row["id"] for row in first.predictions}) == len(first.predictions)
     local_dates = {
         row["predicted_at"].astimezone(SEOUL).date() for row in first.predictions
@@ -87,6 +88,39 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         == "ma10_order_preserved_time_normalized_60m"
         for row in recent
     )
+    historical = [
+        row for row in first.predictions
+        if row["predicted_at"].astimezone(SEOUL).date() < fixed_now().astimezone(SEOUL).date()
+    ]
+    weighted_days: dict[date, int] = {}
+    weighted_hours: dict[tuple[date, int], int] = {}
+    for row in historical:
+        local = row["predicted_at"].astimezone(SEOUL)
+        weight = int(json.loads(row["output_metadata"])["demoDisplayWeight"])
+        weighted_days[local.date()] = weighted_days.get(local.date(), 0) + weight
+        hour_key = (local.date(), local.hour)
+        weighted_hours[hour_key] = weighted_hours.get(hour_key, 0) + weight
+    assert len(weighted_days) == 119
+    assert set(weighted_days.values()) == {8_640}
+    assert set(weighted_hours.values()) == {360}
+    assert sum(weighted_days.values()) == 119 * 8_640
+    assert HISTORICAL_EVENT_DAY_OFFSETS[-1] < 119
+    assert {
+        later - earlier
+        for earlier, later in zip(
+            HISTORICAL_EVENT_DAY_OFFSETS,
+            HISTORICAL_EVENT_DAY_OFFSETS[1:],
+        )
+    } <= {7, 8}
+    high_by_day: dict[date, int] = {}
+    for row in historical:
+        if row["continuous_value"] < 0.75:
+            continue
+        local_day = row["predicted_at"].astimezone(SEOUL).date()
+        weight = int(json.loads(row["output_metadata"])["demoDisplayWeight"])
+        high_by_day[local_day] = high_by_day.get(local_day, 0) + weight
+    assert len(high_by_day) == len(HISTORICAL_EVENT_DAY_OFFSETS)
+    assert set(high_by_day.values()) == {540}
     stages = {
         json.loads(row["output_metadata"])["stage"] for row in first.predictions
     }
@@ -110,6 +144,10 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         assert len(run) == 3
         assert all(row["continuous_value"] >= 0.75 for row in run)
         assert all(
+            json.loads(row["output_metadata"])["demoDisplayWeight"] == 30
+            for row in run
+        )
+        assert all(
             later["predicted_at"] - earlier["predicted_at"] <= timedelta(seconds=20)
             for earlier, later in zip(run, run[1:])
         )
@@ -117,6 +155,8 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         later["triggered_at"] - earlier["triggered_at"] >= timedelta(minutes=15)
         for earlier, later in zip(first.alerts, first.alerts[1:])
     )
+    assert len(first.alerts) == len(HISTORICAL_EVENT_DAY_OFFSETS) == 16
+    assert len(first.sessions) == 4
     assert all(0 <= row["score"] <= 48 for row in first.assessments)
 
 

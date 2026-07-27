@@ -388,6 +388,8 @@ def test_calendar_invalid_timezone_and_view_are_rejected() -> None:
 
 def test_calendar_sql_keeps_non_overlapping_stage_boundaries() -> None:
     source = getsource(SqlAlchemyV25Repository.craving_calendar_rows)
+    assert "demoDisplayWeight" in source
+    assert "sum({display_weight}) AS sample_count" in source
     assert "p.continuous_value < 0.25" in source
     assert "p.continuous_value >= 0.25 AND p.continuous_value < 0.50" in source
     assert "p.continuous_value >= 0.50 AND p.continuous_value < 0.75" in source
