@@ -26,12 +26,12 @@ PROVISION_CONFIRMATION = "PROVISION-VP012-DEMO"
 DELETE_CONFIRMATION = "DELETE-VP012-DEMO"
 ADVISORY_LOCK_KEY = "neurotruth-vp012-120day-demo"
 DEMO_EMAIL = "woosik.jeong@neurotruth.kr"
-DEMO_SEED = "vp012-120d-v5"
+DEMO_SEED = "vp012-120d-v6"
 DEMO_DAYS = 120
 HISTORICAL_DISPLAY_WEIGHT = 90
-# Roughly two recorded craving events per week.  The current login day adds one
-# more event from the checked-in recent-hour trace.
-HISTORICAL_EVENT_DAY_OFFSETS = tuple(range(3, 116, 4))
+# Every other historical day has one recorded craving event.  The current login
+# day adds one more event from the checked-in recent-hour trace.
+HISTORICAL_EVENT_DAY_OFFSETS = tuple(range(1, 119, 2))
 RECENT_HOUR_TRACE_SCHEMA = "neurotruth-vp012-recent-hour-v1"
 RECENT_HOUR_TRACE_SOURCE = "Alcohol_Test/1_1_010_V1"
 RECENT_HOUR_TRACE_PATH = (
@@ -304,11 +304,18 @@ def prepare_demo(
     recent_hour_trace = _recent_hour_trace()
     for day_index in range(DEMO_DAYS):
         local_day = start_date + timedelta(days=day_index)
+        recent_trace_start: datetime | None = None
         if local_day == today:
             latest = now_utc.replace(microsecond=0)
             latest -= timedelta(seconds=latest.second % 10)
             first = latest - timedelta(seconds=(len(recent_hour_trace) - 1) * 10)
-            point_specs = [
+            recent_trace_start = first
+            elapsed_wearing_points = [
+                spec
+                for spec in _historical_day_points(day_index, local_day)
+                if spec[0] < first
+            ]
+            point_specs = elapsed_wearing_points + [
                 (first + timedelta(seconds=index * 10), probability, 1)
                 for index, probability in enumerate(recent_hour_trace)
             ]
@@ -318,6 +325,10 @@ def prepare_demo(
         for point_index, (predicted_at, probability, display_weight) in enumerate(point_specs):
             if predicted_at > now_utc:
                 continue
+            is_recent_trace = (
+                recent_trace_start is not None
+                and predicted_at >= recent_trace_start
+            )
             prediction_id = stable_id("prediction", day_index * 400 + point_index)
             stage = _stage(probability)
             trace_metadata = (
@@ -325,7 +336,7 @@ def prepare_demo(
                     "traceSource": RECENT_HOUR_TRACE_SOURCE,
                     "traceTransformation": "ma10_order_preserved_time_normalized_60m",
                 }
-                if local_day == today
+                if is_recent_trace
                 else {}
             )
             row = {
@@ -344,7 +355,7 @@ def prepare_demo(
                     "demo": True,
                     **(
                         {"traceSource": RECENT_HOUR_TRACE_SOURCE}
-                        if local_day == today
+                        if is_recent_trace
                         else {}
                     ),
                 }),

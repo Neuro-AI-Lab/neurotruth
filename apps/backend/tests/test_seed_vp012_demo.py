@@ -42,7 +42,7 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
     assert [row["id"] for row in first.predictions] == [
         row["id"] for row in second.predictions
     ]
-    assert len(first.predictions) == 5_314
+    assert len(first.predictions) == 5_403
     assert len({row["id"] for row in first.predictions}) == len(first.predictions)
     local_dates = {
         row["predicted_at"].astimezone(SEOUL).date() for row in first.predictions
@@ -88,6 +88,25 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         == "ma10_order_preserved_time_normalized_60m"
         for row in recent
     )
+    today_rows = [
+        row for row in first.predictions
+        if row["predicted_at"].astimezone(SEOUL).date()
+        == fixed_now().astimezone(SEOUL).date()
+    ]
+    assert len(today_rows) > len(recent)
+    assert sum(
+        int(json.loads(row["output_metadata"])["demoDisplayWeight"])
+        for row in today_rows
+    ) == 2_970
+    elapsed_today = [
+        row for row in today_rows
+        if row["predicted_at"] < recent[0]["predicted_at"]
+    ]
+    assert elapsed_today
+    assert all(
+        "traceSource" not in json.loads(row["output_metadata"])
+        for row in elapsed_today
+    )
     historical = [
         row for row in first.predictions
         if row["predicted_at"].astimezone(SEOUL).date() < fixed_now().astimezone(SEOUL).date()
@@ -119,7 +138,7 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
             HISTORICAL_EVENT_DAY_OFFSETS,
             HISTORICAL_EVENT_DAY_OFFSETS[1:],
         )
-    } == {4}
+    } == {2}
     high_by_day: dict[date, int] = {}
     for row in historical:
         if row["continuous_value"] < 0.75:
@@ -170,7 +189,7 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
         later["triggered_at"] - earlier["triggered_at"] >= timedelta(minutes=15)
         for earlier, later in zip(first.alerts, first.alerts[1:])
     )
-    assert len(HISTORICAL_EVENT_DAY_OFFSETS) == 29
+    assert len(HISTORICAL_EVENT_DAY_OFFSETS) == 59
     assert len(first.alerts) == len(HISTORICAL_EVENT_DAY_OFFSETS) + 1
     assert len(first.sessions) == len(first.alerts)
     assert len(first.assessments) == len(first.alerts)
