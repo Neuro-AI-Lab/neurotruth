@@ -81,6 +81,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 private val ChartHeight = 168.dp
+private val EventAuqChartHeight = 216.dp
 private val RecentHourChartHeight = 240.dp
 private val SignalChartHeight = 112.dp
 private val AxisLabelWidth = 44.dp
@@ -760,7 +761,7 @@ private fun CalendarValueBars(
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(ChartHeight)
+                    .height(EventAuqChartHeight)
                     .semantics {
                         contentDescription = "$description, $yAxisTitle"
                     }

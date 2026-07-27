@@ -171,14 +171,18 @@ The login-relative recent hour uses the checked-in 360-point
 MA10/value order and 60-minute time normalization are preserved. This trace
 provides the “deep trough, rapid rebound, sustained high” demo shape; it is not
 a physiological measurement from VP-012 and must not be described as one.
-Historical calendar data uses four weighted 15-minute representatives per hour:
-each represents 90 ten-second samples, so the API returns 360 samples per hour
-and 8,640 per complete historical day without inserting more than one million
-fictional prediction rows. Sixteen alert days are distributed across the
-120-day period. Each has a visible 90-minute closing-time danger block and is
-backed by a real three-danger sequence. This is seed contract `vp012-120d-v4`;
+Historical calendar data uses weighted 15-minute representatives only during
+deterministic morning, midday, and evening Watch-worn periods. Each
+representative equals 90 ten-second samples, so a fully measured hour still
+returns 360 samples while unmeasured hours remain empty; no historical day is
+displayed as a continuous 24-hour measurement. Twenty-nine historical event
+days are distributed across the 120-day period. The login-relative recent-hour
+trace contributes one current-day event, AUQ, session, and report, so the day
+and month views are populated immediately after login. Every event remains
+backed by a real three-danger sequence, and event-linked AUQ values stay within
+the documented 0..48 research scale. This is seed contract `vp012-120d-v5`;
 after rebuilding the backend, delete and re-provision any still-existing
-v1/v2/v3 reserved demo account before login.
+v1/v2/v3/v4 reserved demo account before login.
 
 The command reads the login password only from `DEMO_PATIENT_PASSWORD`. Do not
 put the password in a command argument, committed `.env`, screenshot, terminal
