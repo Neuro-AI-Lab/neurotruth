@@ -205,7 +205,13 @@ def test_prepared_dataset_is_deterministic_bounded_and_non_monotonic() -> None:
     assert len(first.alerts) == 724
     assert len(first.sessions) == len(first.alerts)
     assert len(first.assessments) == len(first.alerts)
-    assert all(39 <= row["score"] <= 41 for row in first.assessments)
+    assessment_scores = [row["score"] for row in first.assessments]
+    assert min(assessment_scores) <= 18
+    assert max(assessment_scores) >= 42
+    assert all(9 <= score <= 45 for score in assessment_scores)
+    assert len(set(assessment_scores)) >= 25
+    assert assessment_scores != sorted(assessment_scores)
+    assert assessment_scores != sorted(assessment_scores, reverse=True)
     assert sum(
         row["completed_at"].astimezone(SEOUL).date() == date(2026, 7, 26)
         for row in first.assessments

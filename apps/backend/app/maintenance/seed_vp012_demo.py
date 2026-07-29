@@ -28,7 +28,7 @@ PROVISION_CONFIRMATION = "PROVISION-VP012-DEMO"
 DELETE_CONFIRMATION = "DELETE-VP012-DEMO"
 ADVISORY_LOCK_KEY = "neurotruth-vp012-120day-demo"
 DEMO_EMAIL = "woosik.jeong@neurotruth.kr"
-DEMO_SEED = "vp012-120d-v7"
+DEMO_SEED = "vp012-120d-v8"
 DEMO_DAYS = 120
 HISTORICAL_DISPLAY_WEIGHT = 90
 DEMO_EVENT_MIN_PER_DAY = 2
@@ -128,6 +128,75 @@ def _stage(probability: float) -> str:
     if probability < 0.75:
         return "caution"
     return "high"
+
+
+def _demo_auq_responses(
+    session_index: int,
+    *,
+    triggered_at: datetime,
+    probability: float,
+) -> list[int]:
+    """Build a varied but reproducible VP-012 self-report.
+
+    The AUQ is not derived directly from the model output. The model probability
+    only contributes one bounded context term; time of day, weekend context,
+    a slow non-monotonic pattern, and deterministic self-report mismatch keep
+    the dashboard from implying that sensor output and self-report are the same
+    construct. Item offsets reflect this fictional persona's stronger intrusive
+    thoughts and relief expectancy around restaurant closing time.
+    """
+
+    local = triggered_at.astimezone(SEOUL)
+    if local.hour < 10:
+        time_adjustment = -4
+    elif local.hour < 16:
+        time_adjustment = -1
+    elif local.hour < 19:
+        time_adjustment = 2
+    else:
+        time_adjustment = 5
+
+    weekend_adjustment = 2 if local.weekday() >= 5 else 0
+    non_monotonic_variation = round(
+        5.5 * math.sin(session_index * 0.43)
+        + 3.5 * math.sin(local.date().toordinal() * 0.17)
+    )
+    rng = random.Random(88_012 + session_index)
+    self_report_mismatch = rng.choice((-6, -3, 0, 2, 5))
+    target_score = round(
+        15
+        + min(1.0, max(0.0, probability)) * 18
+        + time_adjustment
+        + weekend_adjustment
+        + non_monotonic_variation
+        + self_report_mismatch
+    )
+    target_score = min(45, max(9, target_score))
+
+    item_offsets = (1.0, -0.3, 0.8, 0.5, -0.8, 0.1, -0.6, 0.8)
+    center = target_score / 8.0
+    responses = [
+        min(6, max(0, round(center + offset)))
+        for offset in item_offsets
+    ]
+
+    adjustment_order = list(range(8))
+    rng.shuffle(adjustment_order)
+    while sum(responses) != target_score:
+        increase = sum(responses) < target_score
+        changed = False
+        for item_index in adjustment_order:
+            if increase and responses[item_index] < 6:
+                responses[item_index] += 1
+                changed = True
+            elif not increase and responses[item_index] > 0:
+                responses[item_index] -= 1
+                changed = True
+            if sum(responses) == target_score:
+                break
+        if not changed:
+            raise DemoSeedError("demo_auq_distribution_invalid")
+    return responses
 
 
 def _historical_probability(
@@ -415,6 +484,7 @@ def prepare_demo(
         ("집사람에게 걱정을 끼치고 싶지는 않아요.",
          "걱정을 줄이고 싶은 마음이 중요하게 느껴져요. 지금 가능한 작은 선택부터 살펴봐도 좋습니다."),
     )
+    prediction_by_id = {row["id"]: row for row in predictions}
     for session_index, alert in enumerate(alerts):
         session_id = stable_id("session", session_index)
         started = alert["triggered_at"] + timedelta(minutes=1)
@@ -456,9 +526,14 @@ def prepare_demo(
                     }),
                     "created_at": started + timedelta(seconds=sequence * 45),
                 })
-        # Event-linked demo AUQ results stay in a clearly visible but
-        # non-diagnostic range on the 0..48 dashboard axis.
-        responses = [4 + ((session_index + item) % 3) for item in range(8)]
+        # Event-linked AUQ values vary across dates and events while remaining
+        # deterministic, non-diagnostic, and valid on the 0..48 dashboard axis.
+        trigger_prediction = prediction_by_id[alert["trigger_prediction_id"]]
+        responses = _demo_auq_responses(
+            session_index,
+            triggered_at=alert["triggered_at"],
+            probability=float(trigger_prediction["continuous_value"]),
+        )
         assessment_id = stable_id("assessment", session_index)
         score = sum(responses)
         assessments.append({
@@ -471,7 +546,11 @@ def prepare_demo(
                 },
             ),
             "key_version": keyring.current_key_id, "score": score,
-            "metadata": _json({"adaptation": "ko-research", "demo": True}),
+            "metadata": _json({
+                "adaptation": "ko-research",
+                "demo": True,
+                "scoreProfile": "vp012-contextual-v2",
+            }),
             "completed_at": started + timedelta(seconds=30),
         })
         intervention_ids: list[UUID] = []
