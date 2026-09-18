@@ -1,0 +1,38 @@
+{
+  "open": {
+    "sessionId": "4745b4c8-1dd2-4760-bf94-e9fa6e323bb7",
+    "sessionType": "alert_checkin",
+    "status": "in_progress",
+    "interactionPhase": "free_dialogue",
+    "legacy": false,
+    "createdAt": "2026-07-23T04:59:03.410797+00:00",
+    "startedAt": "2026-07-23T04:59:03.409177+00:00",
+    "endedAt": null,
+    "reportStatus": "not_started",
+    "inactivityTimeoutSeconds": 3600,
+    "safety": {
+      "status": "llm_only",
+      "riskCodes": [],
+      "supportResources": []
+    },
+    "activeInterventions": [],
+    "stateSnapshot": null,
+    "assistantText": "지금 상황이나 원하는 도움을 편하게 말씀해 주세요."
+  },
+  "finish": {
+    "sessionId": "4745b4c8-1dd2-4760-bf94-e9fa6e323bb7",
+    "status": "completed",
+    "interactionPhase": "completed",
+    "stateSnapshot": {
+      "inferenceId": "c657ffe5-2c30-42eb-b5ec-ec0d6d3c0998",
+      "scope": "realtime",
+      "state": "high",
+      "confidence": 0.86,
+      "summaryStatus": "unavailable",
+      "summary": null,
+      "createdAt": "2026-07-23T04:59:32.657551+00:00"
+    },
+    "reportStatus": "generating",
+    "inactivityTimeoutSeconds": 3600
+  }
+}

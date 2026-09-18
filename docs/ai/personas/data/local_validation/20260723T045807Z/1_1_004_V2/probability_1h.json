@@ -1,0 +1,1763 @@
+{
+  "range": "1h",
+  "from": "2026-07-23T03:59:02.570964+00:00",
+  "to": "2026-07-23T04:59:02.570964+00:00",
+  "bucketSeconds": 10,
+  "points": [
+    {
+      "at": "2026-07-23T03:59:10+00:00",
+      "averageCravingProbability": 0.1927,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T03:59:20+00:00",
+      "averageCravingProbability": 0.1908,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T03:59:30+00:00",
+      "averageCravingProbability": 0.1902,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T03:59:40+00:00",
+      "averageCravingProbability": 0.1911,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T03:59:50+00:00",
+      "averageCravingProbability": 0.1932,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:00:00+00:00",
+      "averageCravingProbability": 0.1965,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:00:10+00:00",
+      "averageCravingProbability": 0.2008,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:00:20+00:00",
+      "averageCravingProbability": 0.2046,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:00:30+00:00",
+      "averageCravingProbability": 0.2079,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:00:40+00:00",
+      "averageCravingProbability": 0.2099,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:00:50+00:00",
+      "averageCravingProbability": 0.2101,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:01:00+00:00",
+      "averageCravingProbability": 0.2093,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:01:10+00:00",
+      "averageCravingProbability": 0.2084,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:01:20+00:00",
+      "averageCravingProbability": 0.2075,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:01:30+00:00",
+      "averageCravingProbability": 0.2071,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:01:40+00:00",
+      "averageCravingProbability": 0.2074,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:01:50+00:00",
+      "averageCravingProbability": 0.2079,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:02:00+00:00",
+      "averageCravingProbability": 0.2086,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:02:10+00:00",
+      "averageCravingProbability": 0.2094,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:02:20+00:00",
+      "averageCravingProbability": 0.2093,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:02:30+00:00",
+      "averageCravingProbability": 0.2085,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:02:40+00:00",
+      "averageCravingProbability": 0.2084,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:02:50+00:00",
+      "averageCravingProbability": 0.2089,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:03:00+00:00",
+      "averageCravingProbability": 0.2096,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:03:10+00:00",
+      "averageCravingProbability": 0.2098,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:03:20+00:00",
+      "averageCravingProbability": 0.2094,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:03:30+00:00",
+      "averageCravingProbability": 0.2095,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:03:40+00:00",
+      "averageCravingProbability": 0.21,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:03:50+00:00",
+      "averageCravingProbability": 0.2111,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:04:00+00:00",
+      "averageCravingProbability": 0.213,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:04:10+00:00",
+      "averageCravingProbability": 0.2156,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:04:20+00:00",
+      "averageCravingProbability": 0.2169,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:04:30+00:00",
+      "averageCravingProbability": 0.2166,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:04:40+00:00",
+      "averageCravingProbability": 0.2158,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:04:50+00:00",
+      "averageCravingProbability": 0.2152,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:05:00+00:00",
+      "averageCravingProbability": 0.2136,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:05:10+00:00",
+      "averageCravingProbability": 0.209,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:05:20+00:00",
+      "averageCravingProbability": 0.2012,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:05:30+00:00",
+      "averageCravingProbability": 0.1953,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:05:40+00:00",
+      "averageCravingProbability": 0.1918,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:05:50+00:00",
+      "averageCravingProbability": 0.1896,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:06:00+00:00",
+      "averageCravingProbability": 0.1875,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:06:10+00:00",
+      "averageCravingProbability": 0.1855,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:06:20+00:00",
+      "averageCravingProbability": 0.1836,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:06:30+00:00",
+      "averageCravingProbability": 0.1816,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:06:40+00:00",
+      "averageCravingProbability": 0.1801,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:06:50+00:00",
+      "averageCravingProbability": 0.1812,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:07:00+00:00",
+      "averageCravingProbability": 0.1845,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:07:10+00:00",
+      "averageCravingProbability": 0.1852,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:07:20+00:00",
+      "averageCravingProbability": 0.1828,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:07:30+00:00",
+      "averageCravingProbability": 0.1795,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:07:40+00:00",
+      "averageCravingProbability": 0.1771,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:07:50+00:00",
+      "averageCravingProbability": 0.1753,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:08:00+00:00",
+      "averageCravingProbability": 0.1735,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:08:10+00:00",
+      "averageCravingProbability": 0.1717,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:08:20+00:00",
+      "averageCravingProbability": 0.1702,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:08:30+00:00",
+      "averageCravingProbability": 0.1693,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:08:40+00:00",
+      "averageCravingProbability": 0.1685,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:08:50+00:00",
+      "averageCravingProbability": 0.1678,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:09:00+00:00",
+      "averageCravingProbability": 0.1673,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:09:10+00:00",
+      "averageCravingProbability": 0.1676,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:09:20+00:00",
+      "averageCravingProbability": 0.1682,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:09:30+00:00",
+      "averageCravingProbability": 0.1687,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:09:40+00:00",
+      "averageCravingProbability": 0.1688,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:09:50+00:00",
+      "averageCravingProbability": 0.1689,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:10:00+00:00",
+      "averageCravingProbability": 0.1699,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:10:10+00:00",
+      "averageCravingProbability": 0.1718,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:10:20+00:00",
+      "averageCravingProbability": 0.1747,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:10:30+00:00",
+      "averageCravingProbability": 0.1789,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:10:40+00:00",
+      "averageCravingProbability": 0.184,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:10:50+00:00",
+      "averageCravingProbability": 0.188,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:11:00+00:00",
+      "averageCravingProbability": 0.1908,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:11:10+00:00",
+      "averageCravingProbability": 0.1919,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:11:20+00:00",
+      "averageCravingProbability": 0.1917,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:11:30+00:00",
+      "averageCravingProbability": 0.1906,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:11:40+00:00",
+      "averageCravingProbability": 0.188,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:11:50+00:00",
+      "averageCravingProbability": 0.1842,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:12:00+00:00",
+      "averageCravingProbability": 0.1815,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:12:10+00:00",
+      "averageCravingProbability": 0.1801,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:12:20+00:00",
+      "averageCravingProbability": 0.1787,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:12:30+00:00",
+      "averageCravingProbability": 0.1769,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:12:40+00:00",
+      "averageCravingProbability": 0.1749,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:12:50+00:00",
+      "averageCravingProbability": 0.1745,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:13:00+00:00",
+      "averageCravingProbability": 0.1756,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:13:10+00:00",
+      "averageCravingProbability": 0.1778,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:13:20+00:00",
+      "averageCravingProbability": 0.1803,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:13:30+00:00",
+      "averageCravingProbability": 0.1831,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:13:40+00:00",
+      "averageCravingProbability": 0.1846,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:13:50+00:00",
+      "averageCravingProbability": 0.1847,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:14:00+00:00",
+      "averageCravingProbability": 0.1847,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:14:10+00:00",
+      "averageCravingProbability": 0.1855,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:14:20+00:00",
+      "averageCravingProbability": 0.186,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:14:30+00:00",
+      "averageCravingProbability": 0.1854,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:14:40+00:00",
+      "averageCravingProbability": 0.1838,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:14:50+00:00",
+      "averageCravingProbability": 0.1831,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:15:00+00:00",
+      "averageCravingProbability": 0.1831,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:15:10+00:00",
+      "averageCravingProbability": 0.1831,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:15:20+00:00",
+      "averageCravingProbability": 0.1827,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:15:30+00:00",
+      "averageCravingProbability": 0.1815,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:15:40+00:00",
+      "averageCravingProbability": 0.1796,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:15:50+00:00",
+      "averageCravingProbability": 0.1769,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:16:00+00:00",
+      "averageCravingProbability": 0.1746,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:16:10+00:00",
+      "averageCravingProbability": 0.1733,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:16:20+00:00",
+      "averageCravingProbability": 0.173,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:16:30+00:00",
+      "averageCravingProbability": 0.1722,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:16:40+00:00",
+      "averageCravingProbability": 0.1708,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:16:50+00:00",
+      "averageCravingProbability": 0.1701,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:17:00+00:00",
+      "averageCravingProbability": 0.1702,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:17:10+00:00",
+      "averageCravingProbability": 0.1704,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:17:20+00:00",
+      "averageCravingProbability": 0.1703,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:17:30+00:00",
+      "averageCravingProbability": 0.1701,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:17:40+00:00",
+      "averageCravingProbability": 0.1704,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:17:50+00:00",
+      "averageCravingProbability": 0.1709,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:18:00+00:00",
+      "averageCravingProbability": 0.1723,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:18:10+00:00",
+      "averageCravingProbability": 0.1744,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:18:20+00:00",
+      "averageCravingProbability": 0.1768,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:18:30+00:00",
+      "averageCravingProbability": 0.1779,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:18:40+00:00",
+      "averageCravingProbability": 0.1777,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:18:50+00:00",
+      "averageCravingProbability": 0.1769,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:19:00+00:00",
+      "averageCravingProbability": 0.1763,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:19:10+00:00",
+      "averageCravingProbability": 0.1762,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:19:20+00:00",
+      "averageCravingProbability": 0.1761,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:19:30+00:00",
+      "averageCravingProbability": 0.1759,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:19:40+00:00",
+      "averageCravingProbability": 0.175,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:19:50+00:00",
+      "averageCravingProbability": 0.1728,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:20:00+00:00",
+      "averageCravingProbability": 0.1722,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:20:10+00:00",
+      "averageCravingProbability": 0.1758,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:20:20+00:00",
+      "averageCravingProbability": 0.1829,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:20:30+00:00",
+      "averageCravingProbability": 0.19,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:20:40+00:00",
+      "averageCravingProbability": 0.1971,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:20:50+00:00",
+      "averageCravingProbability": 0.2043,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:21:00+00:00",
+      "averageCravingProbability": 0.2114,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:21:10+00:00",
+      "averageCravingProbability": 0.2184,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:21:20+00:00",
+      "averageCravingProbability": 0.2258,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:21:30+00:00",
+      "averageCravingProbability": 0.2335,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:21:40+00:00",
+      "averageCravingProbability": 0.2375,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:21:50+00:00",
+      "averageCravingProbability": 0.236,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:22:00+00:00",
+      "averageCravingProbability": 0.2301,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:22:10+00:00",
+      "averageCravingProbability": 0.2241,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:22:20+00:00",
+      "averageCravingProbability": 0.2182,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:22:30+00:00",
+      "averageCravingProbability": 0.2133,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:22:40+00:00",
+      "averageCravingProbability": 0.2094,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:22:50+00:00",
+      "averageCravingProbability": 0.2055,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:23:00+00:00",
+      "averageCravingProbability": 0.2007,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:23:10+00:00",
+      "averageCravingProbability": 0.1952,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:23:20+00:00",
+      "averageCravingProbability": 0.1905,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:23:30+00:00",
+      "averageCravingProbability": 0.1869,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:23:40+00:00",
+      "averageCravingProbability": 0.186,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:23:50+00:00",
+      "averageCravingProbability": 0.1878,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:24:00+00:00",
+      "averageCravingProbability": 0.1911,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:24:10+00:00",
+      "averageCravingProbability": 0.1919,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:24:20+00:00",
+      "averageCravingProbability": 0.1903,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:24:30+00:00",
+      "averageCravingProbability": 0.191,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:24:40+00:00",
+      "averageCravingProbability": 0.1949,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:24:50+00:00",
+      "averageCravingProbability": 0.2002,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:25:00+00:00",
+      "averageCravingProbability": 0.2051,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:25:10+00:00",
+      "averageCravingProbability": 0.2097,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:25:20+00:00",
+      "averageCravingProbability": 0.2118,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:25:30+00:00",
+      "averageCravingProbability": 0.2109,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:25:40+00:00",
+      "averageCravingProbability": 0.2106,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:25:50+00:00",
+      "averageCravingProbability": 0.2146,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:26:00+00:00",
+      "averageCravingProbability": 0.2219,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:26:10+00:00",
+      "averageCravingProbability": 0.2251,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:26:20+00:00",
+      "averageCravingProbability": 0.2238,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:26:30+00:00",
+      "averageCravingProbability": 0.2207,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:26:40+00:00",
+      "averageCravingProbability": 0.2181,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:26:50+00:00",
+      "averageCravingProbability": 0.2163,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:27:00+00:00",
+      "averageCravingProbability": 0.2161,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:27:10+00:00",
+      "averageCravingProbability": 0.2175,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:27:20+00:00",
+      "averageCravingProbability": 0.2165,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:27:30+00:00",
+      "averageCravingProbability": 0.2117,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:27:40+00:00",
+      "averageCravingProbability": 0.2046,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:27:50+00:00",
+      "averageCravingProbability": 0.1996,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:28:00+00:00",
+      "averageCravingProbability": 0.1968,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:28:10+00:00",
+      "averageCravingProbability": 0.1958,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:28:20+00:00",
+      "averageCravingProbability": 0.1962,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:28:30+00:00",
+      "averageCravingProbability": 0.1972,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:28:40+00:00",
+      "averageCravingProbability": 0.1979,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:28:50+00:00",
+      "averageCravingProbability": 0.1982,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:29:00+00:00",
+      "averageCravingProbability": 0.1998,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:29:10+00:00",
+      "averageCravingProbability": 0.2026,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:29:20+00:00",
+      "averageCravingProbability": 0.2052,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:29:30+00:00",
+      "averageCravingProbability": 0.2064,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:29:40+00:00",
+      "averageCravingProbability": 0.208,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:29:50+00:00",
+      "averageCravingProbability": 0.2122,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:30:00+00:00",
+      "averageCravingProbability": 0.2191,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:30:10+00:00",
+      "averageCravingProbability": 0.223,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:30:20+00:00",
+      "averageCravingProbability": 0.2238,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:30:30+00:00",
+      "averageCravingProbability": 0.2246,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:30:40+00:00",
+      "averageCravingProbability": 0.2281,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:30:50+00:00",
+      "averageCravingProbability": 0.2339,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:31:00+00:00",
+      "averageCravingProbability": 0.2382,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:31:10+00:00",
+      "averageCravingProbability": 0.2413,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:31:20+00:00",
+      "averageCravingProbability": 0.2429,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:31:30+00:00",
+      "averageCravingProbability": 0.2412,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:31:40+00:00",
+      "averageCravingProbability": 0.236,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:31:50+00:00",
+      "averageCravingProbability": 0.2335,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:32:00+00:00",
+      "averageCravingProbability": 0.2342,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:32:10+00:00",
+      "averageCravingProbability": 0.2344,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:32:20+00:00",
+      "averageCravingProbability": 0.2313,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:32:30+00:00",
+      "averageCravingProbability": 0.2262,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:32:40+00:00",
+      "averageCravingProbability": 0.2254,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:32:50+00:00",
+      "averageCravingProbability": 0.2289,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:33:00+00:00",
+      "averageCravingProbability": 0.2318,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:33:10+00:00",
+      "averageCravingProbability": 0.2334,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:33:20+00:00",
+      "averageCravingProbability": 0.2352,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:33:30+00:00",
+      "averageCravingProbability": 0.2389,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:33:40+00:00",
+      "averageCravingProbability": 0.2439,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:33:50+00:00",
+      "averageCravingProbability": 0.2471,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:34:00+00:00",
+      "averageCravingProbability": 0.2487,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:34:10+00:00",
+      "averageCravingProbability": 0.2505,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:34:20+00:00",
+      "averageCravingProbability": 0.2521,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:34:30+00:00",
+      "averageCravingProbability": 0.2534,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:34:40+00:00",
+      "averageCravingProbability": 0.2567,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:34:50+00:00",
+      "averageCravingProbability": 0.2621,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:35:00+00:00",
+      "averageCravingProbability": 0.2671,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:35:10+00:00",
+      "averageCravingProbability": 0.2698,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:35:20+00:00",
+      "averageCravingProbability": 0.27,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:35:30+00:00",
+      "averageCravingProbability": 0.2699,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:35:40+00:00",
+      "averageCravingProbability": 0.2695,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:35:50+00:00",
+      "averageCravingProbability": 0.2682,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:36:00+00:00",
+      "averageCravingProbability": 0.2647,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:36:10+00:00",
+      "averageCravingProbability": 0.2615,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:36:20+00:00",
+      "averageCravingProbability": 0.2612,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:36:30+00:00",
+      "averageCravingProbability": 0.2631,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:36:40+00:00",
+      "averageCravingProbability": 0.2633,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:36:50+00:00",
+      "averageCravingProbability": 0.262,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:37:00+00:00",
+      "averageCravingProbability": 0.2617,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:37:10+00:00",
+      "averageCravingProbability": 0.2644,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:37:20+00:00",
+      "averageCravingProbability": 0.2703,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:37:30+00:00",
+      "averageCravingProbability": 0.2784,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:37:40+00:00",
+      "averageCravingProbability": 0.2885,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:37:50+00:00",
+      "averageCravingProbability": 0.2969,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:38:00+00:00",
+      "averageCravingProbability": 0.3015,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:38:10+00:00",
+      "averageCravingProbability": 0.3033,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:38:20+00:00",
+      "averageCravingProbability": 0.3071,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:38:30+00:00",
+      "averageCravingProbability": 0.3131,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:38:40+00:00",
+      "averageCravingProbability": 0.318,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:38:50+00:00",
+      "averageCravingProbability": 0.3211,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:39:00+00:00",
+      "averageCravingProbability": 0.3227,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:39:10+00:00",
+      "averageCravingProbability": 0.3222,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:39:20+00:00",
+      "averageCravingProbability": 0.3199,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:39:30+00:00",
+      "averageCravingProbability": 0.3181,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:39:40+00:00",
+      "averageCravingProbability": 0.3173,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:39:50+00:00",
+      "averageCravingProbability": 0.3164,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:40:00+00:00",
+      "averageCravingProbability": 0.3151,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:40:10+00:00",
+      "averageCravingProbability": 0.3136,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:40:20+00:00",
+      "averageCravingProbability": 0.3139,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:40:30+00:00",
+      "averageCravingProbability": 0.3159,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:40:40+00:00",
+      "averageCravingProbability": 0.3186,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:40:50+00:00",
+      "averageCravingProbability": 0.3216,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:41:00+00:00",
+      "averageCravingProbability": 0.3244,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:41:10+00:00",
+      "averageCravingProbability": 0.3257,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:41:20+00:00",
+      "averageCravingProbability": 0.3254,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:41:30+00:00",
+      "averageCravingProbability": 0.3271,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:41:40+00:00",
+      "averageCravingProbability": 0.3309,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:41:50+00:00",
+      "averageCravingProbability": 0.3357,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:42:00+00:00",
+      "averageCravingProbability": 0.3402,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:42:10+00:00",
+      "averageCravingProbability": 0.3444,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:42:20+00:00",
+      "averageCravingProbability": 0.3486,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:42:30+00:00",
+      "averageCravingProbability": 0.353,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:42:40+00:00",
+      "averageCravingProbability": 0.3576,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:42:50+00:00",
+      "averageCravingProbability": 0.3628,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:43:00+00:00",
+      "averageCravingProbability": 0.3683,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:43:10+00:00",
+      "averageCravingProbability": 0.3713,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:43:20+00:00",
+      "averageCravingProbability": 0.3718,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:43:30+00:00",
+      "averageCravingProbability": 0.372,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:43:40+00:00",
+      "averageCravingProbability": 0.3725,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:43:50+00:00",
+      "averageCravingProbability": 0.3736,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:44:00+00:00",
+      "averageCravingProbability": 0.3755,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:44:10+00:00",
+      "averageCravingProbability": 0.3782,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:44:20+00:00",
+      "averageCravingProbability": 0.3813,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:44:30+00:00",
+      "averageCravingProbability": 0.3849,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:44:40+00:00",
+      "averageCravingProbability": 0.3885,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:44:50+00:00",
+      "averageCravingProbability": 0.3919,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:45:00+00:00",
+      "averageCravingProbability": 0.3953,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:45:10+00:00",
+      "averageCravingProbability": 0.3987,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:45:20+00:00",
+      "averageCravingProbability": 0.4019,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:45:30+00:00",
+      "averageCravingProbability": 0.4033,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:45:40+00:00",
+      "averageCravingProbability": 0.4022,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:45:50+00:00",
+      "averageCravingProbability": 0.3998,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:46:00+00:00",
+      "averageCravingProbability": 0.3976,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:46:10+00:00",
+      "averageCravingProbability": 0.3958,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:46:20+00:00",
+      "averageCravingProbability": 0.3956,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:46:30+00:00",
+      "averageCravingProbability": 0.3972,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:46:40+00:00",
+      "averageCravingProbability": 0.3996,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:46:50+00:00",
+      "averageCravingProbability": 0.4008,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:47:00+00:00",
+      "averageCravingProbability": 0.4007,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:47:10+00:00",
+      "averageCravingProbability": 0.4026,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:47:20+00:00",
+      "averageCravingProbability": 0.4069,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:47:30+00:00",
+      "averageCravingProbability": 0.4129,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:47:40+00:00",
+      "averageCravingProbability": 0.4196,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:47:50+00:00",
+      "averageCravingProbability": 0.4268,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:48:00+00:00",
+      "averageCravingProbability": 0.433,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:48:10+00:00",
+      "averageCravingProbability": 0.4381,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:48:20+00:00",
+      "averageCravingProbability": 0.4432,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:48:30+00:00",
+      "averageCravingProbability": 0.4493,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:48:40+00:00",
+      "averageCravingProbability": 0.4561,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:48:50+00:00",
+      "averageCravingProbability": 0.4615,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:49:00+00:00",
+      "averageCravingProbability": 0.4655,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:49:10+00:00",
+      "averageCravingProbability": 0.4693,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:49:20+00:00",
+      "averageCravingProbability": 0.4729,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:49:30+00:00",
+      "averageCravingProbability": 0.4759,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:49:40+00:00",
+      "averageCravingProbability": 0.4786,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:49:50+00:00",
+      "averageCravingProbability": 0.4812,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:50:00+00:00",
+      "averageCravingProbability": 0.4841,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:50:10+00:00",
+      "averageCravingProbability": 0.4875,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:50:20+00:00",
+      "averageCravingProbability": 0.4914,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:50:30+00:00",
+      "averageCravingProbability": 0.4963,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:50:40+00:00",
+      "averageCravingProbability": 0.5023,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:50:50+00:00",
+      "averageCravingProbability": 0.5073,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:51:00+00:00",
+      "averageCravingProbability": 0.5114,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:51:10+00:00",
+      "averageCravingProbability": 0.5156,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:51:20+00:00",
+      "averageCravingProbability": 0.5205,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:51:30+00:00",
+      "averageCravingProbability": 0.5268,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:51:40+00:00",
+      "averageCravingProbability": 0.5349,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:51:50+00:00",
+      "averageCravingProbability": 0.5448,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:52:00+00:00",
+      "averageCravingProbability": 0.553,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:52:10+00:00",
+      "averageCravingProbability": 0.5593,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:52:20+00:00",
+      "averageCravingProbability": 0.5651,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:52:30+00:00",
+      "averageCravingProbability": 0.5722,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:52:40+00:00",
+      "averageCravingProbability": 0.5803,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:52:50+00:00",
+      "averageCravingProbability": 0.5864,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:53:00+00:00",
+      "averageCravingProbability": 0.5906,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:53:10+00:00",
+      "averageCravingProbability": 0.5933,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:53:20+00:00",
+      "averageCravingProbability": 0.5939,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:53:30+00:00",
+      "averageCravingProbability": 0.5922,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:53:40+00:00",
+      "averageCravingProbability": 0.5912,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:53:50+00:00",
+      "averageCravingProbability": 0.5913,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:54:00+00:00",
+      "averageCravingProbability": 0.5929,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:54:10+00:00",
+      "averageCravingProbability": 0.5954,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:54:20+00:00",
+      "averageCravingProbability": 0.5982,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:54:30+00:00",
+      "averageCravingProbability": 0.6029,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:54:40+00:00",
+      "averageCravingProbability": 0.6095,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:54:50+00:00",
+      "averageCravingProbability": 0.6153,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:55:00+00:00",
+      "averageCravingProbability": 0.62,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:55:10+00:00",
+      "averageCravingProbability": 0.6261,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:55:20+00:00",
+      "averageCravingProbability": 0.6363,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:55:30+00:00",
+      "averageCravingProbability": 0.6502,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:55:40+00:00",
+      "averageCravingProbability": 0.6636,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:55:50+00:00",
+      "averageCravingProbability": 0.6769,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:56:00+00:00",
+      "averageCravingProbability": 0.6902,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:56:10+00:00",
+      "averageCravingProbability": 0.7042,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:56:20+00:00",
+      "averageCravingProbability": 0.7189,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:56:30+00:00",
+      "averageCravingProbability": 0.7358,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:56:40+00:00",
+      "averageCravingProbability": 0.7549,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:56:50+00:00",
+      "averageCravingProbability": 0.7734,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:57:00+00:00",
+      "averageCravingProbability": 0.7894,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:57:10+00:00",
+      "averageCravingProbability": 0.8032,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:57:20+00:00",
+      "averageCravingProbability": 0.8166,
+      "sampleCount": 1
+    },
+    {
+      "at": "2026-07-23T04:57:30+00:00",
+      "averageCravingProbability": 0.829,
+      "sampleCount": 1
+    }
+  ]
+}

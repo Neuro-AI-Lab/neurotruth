@@ -1,0 +1,29 @@
+{
+  "triggerAlertId": "de43a2f9-58c8-5349-8d64-5ed7132fbb6e",
+  "latestAssessment": {
+    "assessmentId": "NT-DP-002-AUQ-010",
+    "eventId": "NT-DP-002-CE-065",
+    "date": "2026-07-22",
+    "time": "18:50",
+    "responses": [
+      4,
+      3,
+      4,
+      3,
+      4,
+      3,
+      3,
+      4
+    ],
+    "rawScore": 28,
+    "scaleMin": 0,
+    "scaleMax": 48,
+    "diagnosticCutoff": null,
+    "synthetic": true
+  },
+  "expectedEventCount": 65,
+  "expectedAuqCount": 10,
+  "seededPredictionCount": 425,
+  "seededMonthlyPredictionCount": 65,
+  "seededOneHourPredictionCount": 360
+}

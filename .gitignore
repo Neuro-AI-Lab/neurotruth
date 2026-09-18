@@ -56,6 +56,10 @@ sensor_*.csv
 *.sqlite
 *.sqlite3
 
+# Versioned NeuroTruth demo-persona fixtures and selected research traces
+!docs/ai/personas/data/**/*.csv
+!docs/ai/personas/data/**/*.tsv
+
 # Externally mounted runtime models
 models/whisper-large-v3-turbo/
 
